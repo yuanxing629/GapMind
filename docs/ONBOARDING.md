@@ -117,8 +117,8 @@ Research Topic / Papers
 │              │  │              │           │  zf（微调）           │     │
 │  输出:       │  │              │           │                       │     │
 │  Retrieval   │  │              │  Contract │  ⑦a 构造训练数据      │     │
-│  Result      │  │              │  #2 作为  │     输入: chunks +     │     │
-│              │  │              │  训练目标 │     KnowledgeItems    │     │
+│  Result      │  │              │  #2 作为  │     输入: parsed_text   │     │
+│              │  │              │  训练目标 │     + KnowledgeItems  │     │
 │  Contract #4 │  │              │           │     输出: 训练样本     │     │
 │              │  │              │           │              │        │     │
 │              │  │              │           │              │Contract#3   │
@@ -240,12 +240,13 @@ Research Topic / Papers
 |------|------|
 | **执行者** | yx（基线，用 Deepseek）→ zf（微调模型替代） |
 | **触发** | Paper 解析完成后自动 spawn `extract_knowledge` task |
-| **输入** | chunks（Contract #1） |
-| **处理** | <ul><li>对每个 chunk 调 LLM（Deepseek 或 zf 微调模型）</li><li>LLM 输出结构化 JSON（5 种类型：method/task/dataset/claim/limitation）</li><li>schema 验证 + 写入 `knowledge_items` 表</li><li>建立 `knowledge_relations`（Paper→Method 等）</li><li>建立 `evidence_spans`（KnowledgeItem → chunk + char offset）</li></ul> |
-| **输出** | <ul><li>`knowledge_items` 表记录</li><li>`knowledge_relations` 表记录</li><li>`evidence_spans` 表记录</li></ul> |
+| **输入** | <ul><li>**`parsed_text`（论文全文或章节级 text）**——不是 chunks</li><li>论文元数据（title / authors / year / abstract）作为 prompt 上下文</li><li>5 种类型的 schema 定义（Contract #2）作为 system prompt</li></ul> |
+| **处理** | <ul><li>对**整篇论文**（或按章节切分，每章一次调用）调 LLM（Deepseek 或 zf 微调模型）</li><li>LLM 输出结构化 JSON：<ul><li>5 种类型的 KnowledgeItem（method/task/dataset/claim/limitation）</li><li>KnowledgeRelation（Paper→Method、Method→Task 等）</li><li>每个 item 的 source_provenance（指向 `parsed_text` 的 char offset）</li><li>evidence_text（原文引用片段）</li></ul></li><li>schema 验证 + 写入 `knowledge_items` 表</li><li>建立 `knowledge_relations` 表</li><li>建立 `evidence_spans` 表（指向 `parsed_text_artifact_id` + char offset）</li></ul> |
+| **输出** | <ul><li>`knowledge_items` 表记录（含 source_provenance 指向 parsed_text）</li><li>`knowledge_relations` 表记录</li><li>`evidence_spans` 表记录（指向 parsed_text，不是 chunk）</li></ul> |
 | **下游消费者** | <ul><li>yx 的 Discover Agent（Step ⑧）</li><li>zf（作为微调训练的 ground truth 目标，Step ⑦a）</li><li>前端 Knowledge 列表页</li><li>Step ⑩ Plan（基于已确认的知识生成研究计划）</li><li>Step ⑬ Publish（引用证据）</li></ul> |
 | **Contract** | **#2: knowledge_items** |
 | **状态** | 🚧 待实现（Phase 3） |
+| **关键设计澄清**（zf 反馈驱动） | <ul><li>**输入是 `parsed_text`**（论文全文或章节级），**不是 chunks**——大部分 chunk 没有有效的结构化知识，chunk 级抽取会浪费且切断上下文</li><li>LLM 需要看**整篇论文**才能正确判断实体关系（如同一方法在不同章节出现应归为同一 canonical_name）</li><li>**超长论文（>8K token，超出 LLM context window）**：按章节切分（Abstract/Intro/Method/Experiment/Conclusion），每章一次 LLM 调用，结果合并</li><li>**evidence 指向 `parsed_text`**：用 char offset 定位回全文，不依赖 chunks</li><li>chunks 是 Contract #1 的产物（Contract #4），不是抽取的输入——chunks 只用于向量检索（zwx 的 RAG），不进 LLM</li></ul> |
 
 #### Step ⑦：训练数据 + LoRA 微调 + vLLM 部署（zf）【P0/P1】
 
@@ -255,8 +256,8 @@ Research Topic / Papers
 |------|------|
 | **执行者** | zf（与 yx 协作） |
 | **触发** | yx 产出 KnowledgeItems 后（⑦a）；训练数据就绪后（⑦b）；微调完成（⑦c） |
-| **输入（⑦a）** | <ul><li>chunks（Contract #1）</li><li>KnowledgeItems（Contract #2，作为 ground truth 目标）</li></ul> |
-| **处理（⑦a）** | <ul><li>Silver 阶段：yx 用 Deepseek 跑 30-40 篇论文，产出 ~1500-2000 个 silver 样本</li><li>Gold 阶段：zf + yx 从 silver 抽 300-500 个修正为 gold</li><li>转换为 ShareGPT/Alpaca 格式训练集</li><li>按 paper_id 划分 train/val/test（80/10/10）</li></ul> |
+| **输入（⑦a）** | <ul><li>**`parsed_text`**（论文全文，yx 的 parse_pdf 任务产出，Phase 2 已完成）</li><li>KnowledgeItems（Contract #2，yx 的 extract_knowledge 任务产出，作为 ground truth 目标）</li></ul> |
+| **处理（⑦a）** | <ul><li>Silver 阶段：yx 用 Deepseek 跑 30-40 篇论文的 parsed_text，产出 ~1500-2000 个 silver 样本</li><li>Gold 阶段：zf + yx 从 silver 抽 300-500 个修正为 gold</li><li>训练样本 input 是 parsed_text（整篇或章节级），**不是 chunks**</li><li>转换为 ShareGPT/Alpaca 格式（Contract #3）</li><li>按 paper_id 划分 train/val/test（80/10/10）</li></ul> |
 | **输入（⑦b）** | 训练样本（Contract #3） |
 | **处理（⑦b）** | <ul><li>基座：Qwen3:8B</li><li>方法：QLoRA（单张 3090 够）或标准 LoRA（A100）</li><li>框架：LLaMA-Factory 或 Axolotl</li><li>抽取任务用 non-thinking 模式，Opportunity 生成可用 thinking 模式</li><li>训练两个 adapter：`gapmind-extract-v1` + `gapmind-opportunity-v1`</li></ul> |
 | **处理（⑦c）** | 用 vLLM 部署微调模型，暴露 OpenAI 兼容 HTTP API |
@@ -362,8 +363,8 @@ Research Topic / Papers
 
 | Contract | 生产者 | 消费者 | 何时交付 | 状态 |
 |----------|--------|--------|---------|------|
-| #1 chunks | yx (Step ②) | zwx (Step ④) + zf (Step ⑦a) | Phase 2 完成后持续 | ✅ |
-| #2 knowledge_items | yx (Step ⑥) + zf (Step ⑦b) | yx Discover Agent (Step ⑧) + zf 训练 (Step ⑦a) + Step ⑩/⑬ | Phase 3 持续 | 🚧 |
+| #1 chunks | yx (Step ②) | **zwx (Step ④) only** | Phase 2 完成后持续 | ✅ |
+| #2 knowledge_items | yx (Step ⑥) + zf (Step ⑦b) | yx Discover Agent (Step ⑧) + Step ⑩/⑬ | Phase 3 持续 | 🚧 |
 | #3 training_samples | zf (Step ⑦a) | zf 自己 (Step ⑦b) | Phase 3 中后期 | 🚧 |
 | #4 RetrievalResult | zwx (Step ⑤) | yx Discover Agent (Step ⑧) + Step ⑫ Analyze | Phase 3 | 🚧 |
 | #5 opportunity_candidates | yx (Step ⑧) | zf (Opportunity 微调) + 用户 + Step ⑨ | Phase 5 | 🚧 |
