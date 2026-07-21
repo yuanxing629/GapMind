@@ -52,7 +52,7 @@ def run_migrations_online() -> None:
             connection=connection,
             target_metadata=target_metadata,
             compare_type=True,
-        )0
+        )
         with context.begin_transaction():
             context.run_migrations()
 
