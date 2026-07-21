@@ -117,6 +117,39 @@ def parse_pdf(content: bytes) -> ParsedPdf:
 
         full_text = "".join(full_text_parts)
 
+        # Fix cross-page hyphenation: a word broken at page boundary.
+        #
+        # Academic PDFs commonly break words across pages. The text looks like:
+        #   page N: "...Additionally, Prot-\n"  (trailing newline)
+        #   separator: "\f"
+        #   page N+1: "\nGNN learns..."
+        #
+        # We detect "word-\n?\f[Letter]" and merge: remove the hyphen, keep
+        # the continuation after \f so page boundaries stay detectable.
+        # Total length decreases by 1 (hyphen removed) for each fix. We
+        # rebuild page_char_ranges to stay correct.
+        #
+        # This also catches intra-page "word-\n[Letter]" cases that the per-page
+        # _clean_page_text may have missed (e.g. uppercase continuation).
+        full_text = re.sub(r"([a-z])-\n?\f([a-zA-Z])", r"\1\f\2", full_text)
+        full_text = re.sub(r"([a-z])-\n([a-zA-Z])", r"\1\2", full_text)
+
+        # Rebuild page_char_ranges from the (potentially shortened) full_text
+        # Strategy: iterate through \f positions in the text and record the
+        # page boundary before each \f.
+        page_char_ranges = []
+        search_start = 0
+        for _ in range(doc.page_count):
+            # Find the next \f (if any)
+            ff_pos = full_text.find("\f", search_start)
+            if ff_pos == -1:
+                # Last page (no trailing \f)
+                page_char_ranges.append((search_start, len(full_text)))
+                break
+            else:
+                page_char_ranges.append((search_start, ff_pos))
+                search_start = ff_pos + 1  # skip past \f
+
         sections = _detect_sections(doc, page_char_ranges, page_texts)
 
         return ParsedPdf(
@@ -138,9 +171,20 @@ def _clean_page_text(raw: str) -> str:
 
     text = raw
 
-    # 1. Fix broken hyphenation: "opti-\nmization" -> "optimization"
-    # Only join when the part after newline is lowercase (typical for hyphenation).
+    # 1a. Fix intra-chunk broken hyphenation: "opti-\nmization" -> "optimization"
+    # Lowercase continuation is the safest case (real word-break, not
+    # sentence-start punctuation).
     text = re.sub(r"(\w)-\n([a-z])", r"\1\2", text)
+
+    # 1b. Same fix for uppercase continuation. Common in academic PDFs:
+    #   - author lists: "T. Rau, J.-" + "P. Jaume"
+    #   - dataset / journal names: "Graph-" + "D&D"
+    #   - author names: "Barab´asi-" + "Albert"
+    # Only apply when:
+    #   - the hyphen is preceded by a lowercase letter (real word-break, not
+    #     list/dash punctuation)
+    #   - the line is NOT empty/whitespace on either side of the hyphen
+    text = re.sub(r"([a-z])-\n([A-Z])", r"\1\2", text)
 
     # 2. Normalize whitespace: multiple spaces/tabs -> single space.
     text = re.sub(r"[ \t]+", " ", text)

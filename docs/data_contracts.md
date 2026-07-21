@@ -192,7 +192,7 @@ index_params = {
   "content": { /* 见下方 type-specific schema */ },
   "source_provenance": {
     "paper_id": "uuid",
-    "chunk_id": "uuid",
+    "parsed_text_artifact_id": "uuid",
     "start_char": 1234,
     "end_char": 1456,
     "extracted_by": "deepseek-v4-flash",
@@ -207,6 +207,11 @@ index_params = {
   "updated_at": "2026-07-19T10:00:00Z"
 }
 ```
+
+**关于 `source_provenance` 字段的设计说明**（重要）：
+- **`parsed_text_artifact_id` + `start_char` + `end_char`**：证据定位到 `parsed_text`（全文）的字符偏移。抽取时 LLM 的输入是 `parsed_text`（整篇或章节级），不是 chunks。证据精确定位回全文，而不是定位回 chunk。
+- **不再有 `chunk_id` 字段**：chunks 是给 RAG 检索用的（Contract #1），不是给抽取用的。evidence_spans 和 chunks 解耦——evidence 指向全文，chunks 指向向量索引。
+- 如果某个 evidence 恰好落在一个 chunk 范围内，检索时可以通过 char offset 计算 chunk 关联（这是检索层的事，不是抽取层的事）。
 
 ### 2.2 Phase 3 支持的 5 种类型及其 `content` schema
 
@@ -287,9 +292,7 @@ index_params = {
   "statement": "GNNExplainer provides faithful explanations for GNN predictions.",
   "claim_type": "positive",
   "scope": "small molecular graphs",
-  "conditions": "when the GNN is sufficiently expressive",
-  "supporting_evidence": ["chunk_id_1", "chunk_id_2"],
-  "contradicting_evidence": ["chunk_id_3"]
+  "conditions": "when the GNN is sufficiently expressive"
 }
 ```
 
@@ -299,8 +302,8 @@ index_params = {
 | `claim_type` | string | ✅ | `positive` / `negative` / `comparative` / `conditional` |
 | `scope` | string | ❌ | 适用范围 |
 | `conditions` | string | ❌ | 前提条件 |
-| `supporting_evidence` | string[](chunk_id) | ❌ | 支持证据 chunk IDs（写入后同时创建 EvidenceSpan） |
-| `contradicting_evidence` | string[](chunk_id) | ❌ | 反驳证据 chunk IDs |
+
+> **注**：`supporting_evidence` / `contradicting_evidence` 不在 content 里——证据关系通过 `evidence_spans` 表独立存储（见 2.3 节），`evidence_spans.relation` 字段区分 supports/qualifies/contradicts。这样 claim content 保持简洁，证据关系可以独立演化。
 
 #### type = "limitation"
 
@@ -330,20 +333,23 @@ index_params = {
 {
   "id": "uuid",
   "workspace_id": "uuid",
-  "knowledge_item_id": "uuid",  // 指向所属 KItem
+  "knowledge_item_id": "uuid",          // 指向所属 KItem
   "paper_id": "uuid",
-  "artifact_id": "uuid",
-  "chunk_id": "uuid",           // 新增：指向 chunks contract
-  "chunk_index": 5,
-  "start_char": 1234,           // 在 chunk 内的偏移
-  "end_char": 1456,
-  "text": "We propose GNNExplainer...",
-  "relation": "supports",       // supports / qualifies / contradicts
+  "artifact_id": "uuid",                // 指向 parsed_text artifact（全文）
+  "start_char": 12340,                  // 在 parsed_text 中的字符偏移
+  "end_char": 12890,
+  "text": "We propose GNNExplainer...", // 证据原文
+  "relation": "supports",               // supports / qualifies / contradicts
   "confidence": 0.92
 }
 ```
 
-**重要约定**：`evidence_spans.chunk_id` 必须能 join 回 Contract #1 的 chunks。这样 Discover Agent 可以通过 KnowledgeItem → EvidenceSpan → chunk → paper 实现完整溯源。
+**关键约定**：
+- **`artifact_id` 指向 `parsed_text` artifact**（不是 chunk_index artifact）。证据定位回全文，不是定位回 chunk。
+- **`start_char` / `end_char` 是在 `parsed_text` 中的字符偏移**，和 Contract #2 的 `source_provenance.start_char` / `end_char` 含义一致。
+- **不再有 `chunk_id` / `chunk_index` 字段**：chunks 是检索层（zwx 的工作）的概念，不是抽取层的概念。evidence 和 chunks 解耦。
+- 如果检索时需要知道某个 evidence 落在哪个 chunk，可以通过 `start_char` 在 chunks JSONL 里二分查找（chunk 的 `start_char`/`end_char` 是已知边界）。这是检索层的事，不是抽取层的事。
+- Discover Agent 的溯源链路：KnowledgeItem → EvidenceSpan → parsed_text → paper，**不经过 chunks**。chunks 只用于"找相似内容"的向量检索。
 
 ### 2.4 状态流转
 
@@ -377,36 +383,39 @@ zf 的微调模型产出标记为 `agent`，`source_provenance.extracted_by` 写
 
 ## Contract #3: `training_samples`（微调训练数据）
 
-**生产者**：zf（基于yx产出的 chunks + KnowledgeItems 构造）
+**生产者**：zf（基于yx产出的 **parsed_text** + KnowledgeItems 构造）
 **消费者**：zf（LoRA 微调训练）
 **传输方式**：JSONL 文件
 **何时使用**：Phase 3 中后期
 
 ### 3.1 抽取任务训练样本格式（ShareGPT / Alpaca 兼容）
 
+**重要设计**：LLM 微调训练样本的 input 是 `parsed_text`（论文全文或章节级 text），**不是 chunks**。Chunks 是给 RAG 检索用的，不是给抽取用的。
+
 ```jsonl
 {
   "messages": [
     {
       "role": "system",
-      "content": "You are a research paper information extractor. Given a paper chunk, extract structured knowledge items (Methods, Tasks, Datasets, Claims, Limitations). Return a JSON object with an 'items' array. Each item must have 'type', 'canonical_name', 'content', and 'evidence' fields. Only extract items explicitly supported by the chunk text. If no items are present, return {\"items\": []}."
+      "content": "You are a research paper information extractor. Given a paper's parsed text, extract structured knowledge items (Methods, Tasks, Datasets, Claims, Limitations) and their relationships. For each knowledge item extracted, return it under the appropriate type with full content (description, problem_addressed, inputs/outputs, etc.). For each item, also return the originating paper and the evidence_span pointer to the paper text. Return a JSON object with a 'items' array. Each item must have 'type', 'canonical_name', 'content', 'source_provenance', and 'evidence_text' fields."
     },
     {
       "role": "user",
-      "content": "Extract from the following chunk:\n\n<chunk_text_here>"
+      "content": "From the following paper text, extract structured knowledge items:\n\nTitle: GNNExplainer: Generating Explanations for Graph Neural Networks\n\n<parsed_text_or_section_text_here>"
     },
     {
       "role": "assistant",
-      "content": "{\"items\": [{\"type\": \"method\", \"canonical_name\": \"GNNExplainer\", \"content\": {\"description\": \"...\", \"problem_addressed\": \"...\", ...}, \"evidence\": {\"start_char\": 123, \"end_char\": 456, \"text\": \"...\"}}]}"
+      "content": "{\"items\": [{\"type\": \"method\", \"canonical_name\": \"GNNExplainer\", \"content\": {\"description\": \"GNNExplainer formulates explanation as max mutual information between subgraph and prediction.\", \"problem_addressed\": \"Why does the GNN make this prediction?\", \"inputs\": [\"graph\", \"node index\", \"trained GNN model\"], \"outputs\": [\"explanation subgraph\"], \"key_idea\": \"Optimize a graph mask to retain maximal mutual information.\", \"training_paradigm\": \"post-hoc\", \"computational_cost\": \"moderate\", \"code_repository\": \"https://github.com/RexYing/gnn-model-explainer\"}, \"source_provenance\": {\"paper_id\": \"uuid\", \"start_char\": 1234, \"end_char\": 1456}, \"evidence_text\": \"We formulate GNN explanation as the following optimization problem...\"}, {\"type\": \"task\", \"canonical_name\": \"node classification explanation\", \"content\": {...}, \"source_provenance\": {...}, \"evidence_text\": \"...\"}]}"
     }
   ],
   "metadata": {
-    "chunk_id": "uuid",
+    "parsed_text_artifact_id": "uuid",
+    "section_name": "method",
     "paper_id": "uuid",
     "workspace_id": "uuid",
     "annotator": "teammate_b",
     "annotation_quality": "gold",
-    "schema_version": "v0.1"
+    "schema_version": "v0.2"
   }
 }
 ```
@@ -419,11 +428,13 @@ zf 的微调模型产出标记为 `agent`，`source_provenance.extracted_by` 写
 | `messages[*].role` | string | ✅ | `system` / `user` / `assistant` |
 | `messages[*].content` | string | ✅ | 消息内容 |
 | `metadata` | object | ✅ | 训练样本元信息（不参与训练，用于追溯） |
-| `metadata.chunk_id` | string(UUID) | ✅ | 训练样本来自哪个 chunk |
+| `metadata.parsed_text_artifact_id` | string(UUID) | ✅ | 训练样本来自哪篇论文的 parsed_text |
+| `metadata.section_name` | string | ❌ | 如果是章节级样本，标注章节名（如 "method", "experiment"） |
 | `metadata.paper_id` | string(UUID) | ✅ | 哪篇论文 |
+| `metadata.workspace_id` | string(UUID) | ✅ | |
 | `metadata.annotator` | string | ✅ | 标注者：`teammate_b` / `deepseek_v4_flash` / `you` / `advisor` |
 | `metadata.annotation_quality` | string | ✅ | `gold`（人工修正）/ `silver`（LLM 生成未修正）/ `bronze`（LLM 生成 + 抽查） |
-| `metadata.schema_version` | string | ✅ | 本契约版本，如 `v0.1` |
+| `metadata.schema_version` | string | ✅ | 本契约版本，如 `v0.2` |
 
 ### 3.3 assistant 输出的 JSON 规范
 
@@ -436,22 +447,30 @@ assistant 的 `content` 必须是合法 JSON 字符串，解析后符合：
       "type": "method" | "task" | "dataset" | "claim" | "limitation",
       "canonical_name": "string",
       "content": { /* Contract #2 中对应 type 的 content schema */ },
-      "evidence": {
-        "start_char": int,
-        "end_char": int,
-        "text": "string"
-      }
+      "source_provenance": {
+        "paper_id": "uuid",
+        "start_char": int,            // 在 parsed_text 中的字符偏移
+        "end_char": int
+      },
+      "evidence_text": "直接引用的原文片段"
     }
   ]
 }
 ```
 
 **关键约束**（zf 必须保证训练数据符合）：
-- ✅ `items` 可以为空数组（chunk 没有可抽取内容时）
-- ✅ 每个 item 的 `evidence.text` 必须能在原 chunk 中精确匹配（char offset 准确）
+- ✅ `items` 可以为空数组（论文没有可抽取内容时，如纯实验报告）
+- ✅ 每个 item 的 `source_provenance.start_char`/`end_char` 必须在 `parsed_text` 中精确可定位
+- ✅ 每个 item 的 `evidence_text` 必须是从原 `parsed_text` 截取的真实片段
 - ✅ `canonical_name` 用规范名称（如 `GNNExplainer` 而非 `gnn explainer` 或 `GNN-Explainer`）
-- ❌ 不抽取 chunk 中没有的内容（不允许"基于常识补充"）
-- ❌ 同一 chunk 内同一实体只抽一次（不允许重复）
+- ✅ 同一篇论文内同一实体只抽一次（即使在不同章节出现）
+- ❌ 不抽取论文中没有的内容（不允许"基于常识补充"）
+- ❌ 不跨越论文边界抽取（一个样本对应一篇论文）
+
+**与上一版的关键变更**（zf 反馈驱动）：
+- ✅ 输入：parsed_text（全文或章节级）→ 取代 chunk
+- ✅ evidence：从 chunk 内偏移 → 改为 parsed_text 内偏移
+- ✅ 输出范围：包含 items 数组（保留），但抽取粒度从"单 chunk 的局部信息"变为"整篇论文的全局实体和关系"
 
 ### 3.4 数据集划分
 
@@ -488,6 +507,12 @@ zf 构造的训练数据必须按以下比例划分：
 1. **Silver 阶段**（Week 1-2）：yx用 Deepseek 跑 30-40 篇论文，产出 ~1500-2000 个 silver 样本，不人工修正
 2. **Gold 阶段**（Week 3-4）：yx和zf 从 silver 中抽 300-500 个修正为 gold，作为评估集 + 高质量训练样本
 3. **混合训练**：用 silver + gold 一起训练，gold 作为评估
+
+> **关于 `chunk_id` 的使用约定**（避免混淆）：
+> - **Contract #1 `chunks`**：`chunk_id` 是 chunks JSONL 里的 UUID（检索用的向量单位）
+> - **Contract #4 `RetrievalResult`**：`chunk_id` 引用 Contract #1（RAG 检索返回的是 chunk 级结果）
+> - **Contract #2 `knowledge_items` 的 `source_provenance`**：**不包含 `chunk_id`**，而是 `parsed_text_artifact_id` + char offset（证据定位回全文，不是 chunk）
+> - **Contract #3 `training_samples` 的 `metadata`**：**不包含 `chunk_id`**，而是 `parsed_text_artifact_id`（训练输入是 parsed_text，不是 chunk）
 
 ---
 

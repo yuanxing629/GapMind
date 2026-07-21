@@ -91,6 +91,12 @@ volumes/
 # ---- Misc tool caches ----
 .cache/
 
+# ---- Temporary files ----
+# User-side temp dirs for test PDFs, scratch data, etc.
+backend/temp_storage/
+backend/_tmp_*.py
+backend/scripts/_tmp_*.py
+
 # ---- Internal-only docs (not for teammates) ----
 # code_guide.md: personal code-reading notes, not useful for others
 # progress_and_roadmap.md: internal planning with known-limitations self-critique
