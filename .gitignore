@@ -1,0 +1,98 @@
+# ================================================================
+# GapMind .gitignore
+# ================================================================
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+.installed.cfg
+*.egg
+
+# ---- Virtual env ----
+.venv/
+venv/
+env/
+ENV/
+
+# ---- IDE / Editor ----
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ---- OS ----
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- Env / secrets (NEVER commit) ----
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+backend/.env
+frontend/.env
+infra/.env
+
+# ---- Logs ----
+*.log
+logs/
+
+# ---- Database ----
+*.sqlite3
+*.db
+*.db-journal
+
+# ---- Build / cache artifacts ----
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+coverage/
+
+# ---- Node / Frontend ----
+node_modules/
+dist/
+.vite/
+*.local
+
+# ---- Artifact storage (user-uploaded PDFs, parsed text, chunks) ----
+# These contain real paper content and should never be in git.
+# Ignore directory CONTENTS (not the dirs themselves) so we can keep
+# README.md files as documentation.
+backend/storage/*
+!backend/storage/README.md
+backend/data/*
+!backend/data/README.md
+storage/*
+artifacts/*
+uploads/*
+
+# ---- Milvus / Docker volumes ----
+volumes/
+
+# ---- Jupyter ----
+.ipynb_checkpoints/
+
+# ---- Claude Code (private session/config) ----
+.claude/
+
+# ---- Misc tool caches ----
+.cache/
+
+# ---- Internal-only docs (not for teammates) ----
+# code_guide.md: personal code-reading notes, not useful for others
+# progress_and_roadmap.md: internal planning with known-limitations self-critique
+docs/code_guide.md
+docs/progress_and_roadmap.md
