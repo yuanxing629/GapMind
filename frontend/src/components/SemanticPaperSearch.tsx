@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Alert,
   App,
@@ -61,6 +61,48 @@ const SORT_OPTIONS: Array<{ label: string; value: SemanticScholarSort }> = [
   { label: "Fewest citations", value: "citationCount:asc" },
 ];
 
+const SEARCH_CACHE_KEY = "gapmind.semantic-paper-search.v1";
+const SEARCH_CACHE_TTL_MS = 30 * 60 * 1000;
+
+type SearchSnapshot = {
+  savedAt: number;
+  query: string;
+  searchedQuery: string;
+  yearFrom: number | null;
+  yearTo: number | null;
+  minCitations: number | null;
+  openAccess: boolean;
+  fieldsOfStudy: string[];
+  publicationTypes: string[];
+  venue: string;
+  sort: SemanticScholarSort;
+  papers: SemanticScholarPaper[];
+  total: number;
+  nextOffset: number | null;
+  nextToken: string | null;
+};
+
+function readSearchSnapshot(): SearchSnapshot | null {
+  try {
+    const raw = sessionStorage.getItem(SEARCH_CACHE_KEY);
+    if (!raw) return null;
+
+    const snapshot = JSON.parse(raw) as SearchSnapshot;
+    if (
+      !snapshot ||
+      typeof snapshot.savedAt !== "number" ||
+      Date.now() - snapshot.savedAt > SEARCH_CACHE_TTL_MS ||
+      !Array.isArray(snapshot.papers)
+    ) {
+      sessionStorage.removeItem(SEARCH_CACHE_KEY);
+      return null;
+    }
+    return snapshot;
+  } catch {
+    return null;
+  }
+}
+
 function errorMessage(err: unknown): string {
   const detail = (
     err as {
@@ -82,6 +124,7 @@ function paperYear(paper: SemanticScholarPaper): string {
 
 export default function SemanticPaperSearch() {
   const { message } = App.useApp();
+  const [hydrated, setHydrated] = useState(false);
   const [query, setQuery] = useState("");
   const [searchedQuery, setSearchedQuery] = useState("");
   const [yearFrom, setYearFrom] = useState<number | null>(null);
@@ -103,6 +146,71 @@ export default function SemanticPaperSearch() {
   const [importWorkspaceId, setImportWorkspaceId] = useState<string>();
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [importLoading, setImportLoading] = useState(false);
+
+  useEffect(() => {
+    const snapshot = readSearchSnapshot();
+    if (snapshot) {
+      setQuery(snapshot.query);
+      setSearchedQuery(snapshot.searchedQuery);
+      setYearFrom(snapshot.yearFrom);
+      setYearTo(snapshot.yearTo);
+      setMinCitations(snapshot.minCitations);
+      setOpenAccess(snapshot.openAccess);
+      setFieldsOfStudy(snapshot.fieldsOfStudy);
+      setPublicationTypes(snapshot.publicationTypes);
+      setVenue(snapshot.venue);
+      setSort(snapshot.sort);
+      setPapers(snapshot.papers);
+      setTotal(snapshot.total);
+      setNextOffset(snapshot.nextOffset);
+      setNextToken(snapshot.nextToken);
+    }
+    setHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
+
+    const snapshot: SearchSnapshot = {
+      savedAt: Date.now(),
+      query,
+      searchedQuery,
+      yearFrom,
+      yearTo,
+      minCitations,
+      openAccess,
+      fieldsOfStudy,
+      publicationTypes,
+      venue,
+      sort,
+      papers,
+      total,
+      nextOffset,
+      nextToken,
+    };
+
+    try {
+      sessionStorage.setItem(SEARCH_CACHE_KEY, JSON.stringify(snapshot));
+    } catch {
+      // Ignore storage failures; search remains fully functional in memory.
+    }
+  }, [
+    hydrated,
+    query,
+    searchedQuery,
+    yearFrom,
+    yearTo,
+    minCitations,
+    openAccess,
+    fieldsOfStudy,
+    publicationTypes,
+    venue,
+    sort,
+    papers,
+    total,
+    nextOffset,
+    nextToken,
+  ]);
 
   const runSearch = async (append: boolean) => {
     const activeQuery = (append ? searchedQuery : query).trim();

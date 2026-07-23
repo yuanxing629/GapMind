@@ -43,7 +43,7 @@ MAX_PDF_BYTES = 50 * 1024 * 1024  # 50 MB
 S2_SEARCH_FIELDS = (
     "paperId,corpusId,externalIds,title,abstract,year,publicationDate,authors,"
     "venue,url,citationCount,referenceCount,influentialCitationCount,isOpenAccess,"
-    "openAccessPdf,fieldsOfStudy,s2FieldsOfStudy,publicationTypes,tldr"
+    "openAccessPdf,fieldsOfStudy,s2FieldsOfStudy,publicationTypes"
 )
 S2_IMPORT_FIELDS = "paperId,externalIds,title,abstract,year,authors"
 
