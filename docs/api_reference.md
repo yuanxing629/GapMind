@@ -785,27 +785,38 @@ Phase 5-6 实现。
 
 ## 外部集成
 
-### Semantic Scholar 🚧
+### Semantic Scholar ✅
 
-Phase 2 集成。
+通过后端代理调用 Semantic Scholar Academic Graph API。API key 只在后端
+使用，前端不会接触上游凭据。
 
-#### `GET /workspaces/{workspace_id}/papers/search` 🚧
+#### `GET /papers/search` ✅
 
-通过 Semantic Scholar 搜索论文。
+全局搜索 Semantic Scholar 论文候选结果，不会自动写入 Workspace。
 
-**查询参数**：`query`、`limit`、`offset`、`year_from`、`year_to`
+**查询参数**：
 
-**响应**：候选论文列表（含 S2 元数据，未入库）。
+`query`、`year_from`、`year_to`、`min_citation_count`、`open_access`、
+`fields_of_study`、`publication_types`、`venue`、`sort`、`limit`、`offset`、`token`
 
-#### `POST /workspaces/{workspace_id}/papers/import-from-s2` 🚧
+`sort` 可选：`relevance`、`publicationDate:asc`、`publicationDate:desc`、
+`citationCount:asc`、`citationCount:desc`。
 
-把 S2 搜索结果导入为本地 Paper。
+相关性搜索使用 Semantic Scholar 的 `offset` 分页；按年份或引用数排序时使用
+上游 bulk search 的 `token` 分页。
+
+**响应**：候选论文列表（含 S2 元数据，未入库），字段保持 Semantic Scholar
+的 camelCase 格式，例如 `paperId`、`citationCount`、`openAccessPdf`。
+
+#### `POST /workspaces/{workspace_id}/papers/import-from-s2` ✅
+
+把一个 S2 搜索结果导入为本地 Paper 元数据。PDF 不会自动下载，用户可以随后
+使用已有的 PDF 上传/补传功能。
 
 **请求体**：
 ```json
 {
-  "semantic_scholar_paper_id": "...",
-  "download_pdf": true
+  "semantic_scholar_paper_id": "..."
 }
 ```
 
