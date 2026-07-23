@@ -11,6 +11,8 @@ Endpoints:
 
 from __future__ import annotations
 
+from typing import Literal
+
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
@@ -23,6 +25,8 @@ from app.domains.paper.schemas import (
     PaperListResponse,
     PaperRead,
     PaperUpdate,
+    SemanticScholarImportRequest,
+    SemanticScholarSearchResponse,
 )
 from app.domains.paper.service import (
     PaperAlreadyHasPdfError,
@@ -30,11 +34,18 @@ from app.domains.paper.service import (
     PaperService,
 )
 from app.domains.workspace.service import WorkspaceNotFoundError, WorkspaceService
+from app.gateway.semantic_scholar import SemanticScholarClient, SemanticScholarError
 
 logger = get_logger(__name__)
 router = APIRouter(tags=["paper"])
 
 MAX_PDF_BYTES = 50 * 1024 * 1024  # 50 MB
+S2_SEARCH_FIELDS = (
+    "paperId,corpusId,externalIds,title,abstract,year,publicationDate,authors,"
+    "venue,url,citationCount,referenceCount,influentialCitationCount,isOpenAccess,"
+    "openAccessPdf,fieldsOfStudy,s2FieldsOfStudy,publicationTypes,tldr"
+)
+S2_IMPORT_FIELDS = "paperId,externalIds,title,abstract,year,authors"
 
 
 def _get_paper_service(db: Session = Depends(get_db)) -> PaperService:
@@ -43,6 +54,10 @@ def _get_paper_service(db: Session = Depends(get_db)) -> PaperService:
 
 def _get_workspace_service(db: Session = Depends(get_db)) -> WorkspaceService:
     return WorkspaceService(db)
+
+
+def _get_semantic_scholar_client() -> SemanticScholarClient:
+    return SemanticScholarClient()
 
 
 def _not_found(exc: Exception) -> HTTPException:
@@ -63,6 +78,151 @@ def _conflict(exc: PaperAlreadyHasPdfError) -> HTTPException:
         status_code=status.HTTP_409_CONFLICT,
         detail={"error": "paper_already_has_pdf", "message": str(exc)},
     )
+
+
+def _semantic_scholar_http_error(exc: SemanticScholarError) -> HTTPException:
+    upstream_status = exc.status_code
+    if upstream_status in {400, 401, 403, 429}:
+        response_status = upstream_status
+    elif upstream_status == 504:
+        response_status = status.HTTP_504_GATEWAY_TIMEOUT
+    else:
+        response_status = status.HTTP_502_BAD_GATEWAY
+    return HTTPException(
+        status_code=response_status,
+        detail={"error": "semantic_scholar_error", "message": str(exc)},
+    )
+
+
+@router.get(
+    "/papers/search",
+    response_model=SemanticScholarSearchResponse,
+    response_model_exclude_unset=True,
+)
+def search_external_papers(
+    query: str = Query(..., min_length=2, max_length=200),
+    year_from: int | None = Query(None, ge=1900, le=2100),
+    year_to: int | None = Query(None, ge=1900, le=2100),
+    min_citation_count: int | None = Query(None, ge=0, le=10_000_000),
+    open_access: bool = Query(False),
+    fields_of_study: str | None = Query(None, max_length=500),
+    publication_types: str | None = Query(None, max_length=500),
+    venue: str | None = Query(None, max_length=500),
+    sort: Literal[
+        "relevance",
+        "publicationDate:asc",
+        "publicationDate:desc",
+        "citationCount:asc",
+        "citationCount:desc",
+    ] = Query("relevance"),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    token: str | None = Query(None, max_length=500),
+    client: SemanticScholarClient = Depends(_get_semantic_scholar_client),
+) -> SemanticScholarSearchResponse:
+    """Search Semantic Scholar without exposing the upstream API key."""
+    if year_from is not None and year_to is not None and year_from > year_to:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"error": "invalid_year_range", "message": "year_from must be <= year_to"},
+        )
+
+    year_filter: str | None = None
+    if year_from is not None or year_to is not None:
+        year_filter = f"{year_from or ''}-{year_to or ''}"
+
+    try:
+        raw = client.search(
+            query=query.strip(),
+            fields=S2_SEARCH_FIELDS,
+            sort=sort,
+            limit=limit,
+            offset=offset,
+            token=token,
+            year=year_filter,
+            minCitationCount=min_citation_count,
+            openAccessPdf="" if open_access else None,
+            fieldsOfStudy=fields_of_study,
+            publicationTypes=publication_types,
+            venue=venue,
+        )
+    except SemanticScholarError as exc:
+        raise _semantic_scholar_http_error(exc) from exc
+
+    return SemanticScholarSearchResponse.model_validate(raw)
+
+
+@router.post(
+    "/workspaces/{workspace_id}/papers/import-from-s2",
+    response_model=PaperRead,
+    response_model_exclude_unset=True,
+)
+def import_external_paper(
+    workspace_id: str,
+    payload: SemanticScholarImportRequest,
+    service: PaperService = Depends(_get_paper_service),
+    workspace_service: WorkspaceService = Depends(_get_workspace_service),
+    client: SemanticScholarClient = Depends(_get_semantic_scholar_client),
+) -> PaperRead:
+    """Import Semantic Scholar metadata into a workspace.
+
+    This first version intentionally imports metadata only. The user can
+    attach a PDF through the existing upload-pdf endpoint afterward.
+    """
+    try:
+        workspace_service.get(workspace_id)
+    except WorkspaceNotFoundError as exc:
+        raise _not_found(exc) from exc
+
+    external_id = payload.semantic_scholar_paper_id.strip()
+    existing = service.find_by_external_paper_id(
+        workspace_id=workspace_id,
+        external_paper_id=external_id,
+    )
+    if existing is not None:
+        return PaperRead.model_validate(existing)
+
+    try:
+        raw = client.get_paper(external_id, fields=S2_IMPORT_FIELDS)
+    except SemanticScholarError as exc:
+        raise _semantic_scholar_http_error(exc) from exc
+
+    title = raw.get("title")
+    if not isinstance(title, str) or not title.strip():
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={
+                "error": "semantic_scholar_invalid_paper",
+                "message": "Semantic Scholar paper has no usable title",
+            },
+        )
+
+    authors = [
+        author.get("name", "").strip()
+        for author in raw.get("authors", [])
+        if isinstance(author, dict) and isinstance(author.get("name"), str) and author.get("name", "").strip()
+    ]
+    external_ids = raw.get("externalIds")
+    if not isinstance(external_ids, dict):
+        external_ids = {}
+
+    doi = _external_id_as_string(external_ids, "DOI")
+    arxiv_id = _external_id_as_string(external_ids, "ArXiv", "ARXIV")
+    year = raw.get("year") if isinstance(raw.get("year"), int) else None
+    paper = service.create_from_metadata(
+        workspace_id=workspace_id,
+        payload=PaperCreate(
+            title=title.strip(),
+            authors=authors,
+            year=year,
+            abstract=raw.get("abstract") if isinstance(raw.get("abstract"), str) else None,
+            doi=doi,
+            arxiv_id=arxiv_id,
+        ),
+        source="semantic_scholar",
+        external_paper_id=external_id,
+    )
+    return PaperRead.model_validate(paper)
 
 
 @router.post(
@@ -321,6 +481,15 @@ def delete_paper(
 
 
 # ----------------------------------------------------------------- helpers
+def _external_id_as_string(external_ids: dict[str, object], *names: str) -> str | None:
+    """Read a string-valued external ID without depending on key casing."""
+    for name in names:
+        value = external_ids.get(name)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
 def _stem(filename: str) -> str:
     """Return the filename without extension, used as a default paper title."""
     import os

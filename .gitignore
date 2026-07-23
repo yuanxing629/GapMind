@@ -96,6 +96,8 @@ volumes/
 backend/temp_storage/
 backend/_tmp_*.py
 backend/scripts/_tmp_*.py
+backend/.test-storage-run/
+backend/.pytest-temp-run/
 
 # ---- Internal-only docs (not for teammates) ----
 # code_guide.md: personal code-reading notes, not useful for others

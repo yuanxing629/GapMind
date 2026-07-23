@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -86,3 +87,58 @@ class PaperListResponse(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class SemanticScholarAuthor(BaseModel):
+    """The author fields used by the search result UI."""
+
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    author_id: str | None = Field(None, alias="authorId")
+    name: str | None = None
+
+
+class SemanticScholarPaper(BaseModel):
+    """A deliberately small, forward-compatible S2 paper projection."""
+
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    paper_id: str = Field(alias="paperId")
+    corpus_id: int | None = Field(None, alias="corpusId")
+    external_ids: dict[str, Any] | None = Field(None, alias="externalIds")
+    url: str | None = None
+    title: str | None = None
+    abstract: str | None = None
+    year: int | None = None
+    publication_date: str | None = Field(None, alias="publicationDate")
+    authors: list[SemanticScholarAuthor] = Field(default_factory=list)
+    venue: str | None = None
+    citation_count: int | None = Field(None, alias="citationCount")
+    reference_count: int | None = Field(None, alias="referenceCount")
+    influential_citation_count: int | None = Field(
+        None, alias="influentialCitationCount"
+    )
+    is_open_access: bool | None = Field(None, alias="isOpenAccess")
+    open_access_pdf: dict[str, Any] | None = Field(None, alias="openAccessPdf")
+    fields_of_study: list[str] | None = Field(None, alias="fieldsOfStudy")
+    s2_fields_of_study: list[dict[str, Any]] | None = Field(
+        None, alias="s2FieldsOfStudy"
+    )
+    publication_types: list[str] | None = Field(None, alias="publicationTypes")
+    tldr: dict[str, Any] | None = None
+
+
+class SemanticScholarSearchResponse(BaseModel):
+    """Normalized wrapper for both offset and token based S2 searches."""
+
+    total: int = 0
+    offset: int = 0
+    next: int | None = None
+    token: str | None = None
+    data: list[SemanticScholarPaper] = Field(default_factory=list)
+
+
+class SemanticScholarImportRequest(BaseModel):
+    """Import one search result into a selected Workspace as metadata."""
+
+    semantic_scholar_paper_id: str = Field(..., min_length=1, max_length=255)

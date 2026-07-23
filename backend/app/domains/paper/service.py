@@ -20,7 +20,7 @@ from app.domains.artifact.pdf_metadata import extract_metadata
 from app.domains.artifact.service import ArtifactService
 from app.domains.paper.models import Paper
 from app.domains.paper.schemas import PaperCreate, PaperUpdate
-from app.domains.workspace.service import WorkspaceNotFoundError, WorkspaceService
+from app.domains.workspace.service import WorkspaceService
 
 logger = get_logger(__name__)
 
@@ -297,6 +297,22 @@ class PaperService:
         if p is None or p.is_deleted:
             raise PaperNotFoundError(paper_id)
         return p
+
+    def find_by_external_paper_id(
+        self, *, workspace_id: str, external_paper_id: str
+    ) -> Paper | None:
+        """Find an existing non-deleted external paper in a workspace."""
+        query = (
+            select(Paper)
+            .where(
+                Paper.workspace_id == workspace_id,
+                Paper.external_paper_id == external_paper_id,
+                Paper.is_deleted.is_(False),
+            )
+            .order_by(Paper.created_at.desc())
+            .limit(1)
+        )
+        return self.db.execute(query).scalars().first()
 
     def list(
         self,

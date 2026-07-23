@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { PlusOutlined } from "@ant-design/icons";
 import { healthCheck, type HealthResponse } from "../api/health";
 import workspaceApi from "../api/workspace";
+import SemanticPaperSearch from "../components/SemanticPaperSearch";
 
 const { Title, Paragraph } = Typography;
 
@@ -85,6 +86,8 @@ export default function DashboardPage() {
           </Link>
         </Space>
       </Card>
+
+      <SemanticPaperSearch />
     </div>
   );
 }
