@@ -12,12 +12,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from app.core.deps import get_db
+from app.core.deps import get_db, get_owned_workspace
 from app.domains.artifact.schemas import ArtifactRead
 from app.domains.artifact.service import ArtifactNotFoundError, ArtifactService
 from app.domains.workspace.service import WorkspaceNotFoundError, WorkspaceService
 
-router = APIRouter(tags=["artifact"])
+router = APIRouter(tags=["artifact"], dependencies=[Depends(get_owned_workspace)])
 
 
 def _get_artifact_service(db: Session = Depends(get_db)) -> ArtifactService:

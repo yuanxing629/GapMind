@@ -10,7 +10,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.orm import Session
 
-from app.core.deps import get_db
+from app.core.deps import get_db, get_owned_workspace
 from app.domains.agent.schemas import (
     AgentConfirmResponse,
     AgentRunCreate,
@@ -25,7 +25,11 @@ from app.domains.task.models import Task
 from app.workers.tasks.run_agent import spawn_agent_task
 
 
-router = APIRouter(prefix="/workspaces/{workspace_id}/agent-runs", tags=["agent"])
+router = APIRouter(
+    prefix="/workspaces/{workspace_id}/agent-runs",
+    tags=["agent"],
+    dependencies=[Depends(get_owned_workspace)],
+)
 
 
 def _service(db: Session = Depends(get_db)) -> AgentService:

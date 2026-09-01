@@ -39,6 +39,9 @@ class Workspace(Base, UUIDPKMixin, TimestampMixin):
     is_archived: Mapped[bool] = mapped_column(
         Boolean, default=False, nullable=False, index=True
     )
+    is_demo: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False, index=True
+    )
     is_deleted: Mapped[bool] = mapped_column(
         Boolean, default=False, nullable=False, index=True
     )

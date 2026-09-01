@@ -17,7 +17,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
-from app.core.deps import get_current_user, get_db
+from app.core.deps import get_current_user, get_db, get_owned_workspace
 from app.domains.discover.schemas import (
     ConfirmRequest,
     DecisionRequest,
@@ -43,7 +43,6 @@ from app.domains.discover.schemas import (
 )
 from app.domains.discover.service import DiscoverService
 from app.domains.task.service import TaskService
-from app.domains.workspace.service import WorkspaceService
 from app.workers.tasks.run_discover import spawn_discover_task
 
 
@@ -51,18 +50,10 @@ def _service(db: Session = Depends(get_db)) -> DiscoverService:
     return DiscoverService(db)
 
 
-def _workspace_dependency(
-    workspace_id: str,
-    db: Session = Depends(get_db),
-) -> None:
-    """FastAPI dependency: 404 unless ``workspace_id`` exists."""
-    WorkspaceService(db).get(workspace_id)
-
-
 router = APIRouter(
     prefix="/workspaces/{workspace_id}/discover",
     tags=["discover"],
-    dependencies=[Depends(_workspace_dependency)],
+    dependencies=[Depends(get_owned_workspace)],
 )
 
 

@@ -26,7 +26,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
-from app.core.deps import get_current_user, get_db
+from app.core.deps import get_current_user, get_db, get_owned_workspace
 from app.core.logging import get_logger
 from app.domains.paper.schemas import (
     PaperCreate,
@@ -276,6 +276,7 @@ def delete_search_favorite(
 def import_external_paper(
     workspace_id: str,
     payload: SemanticScholarImportRequest,
+    _owner_id: str = Depends(get_owned_workspace),
     service: PaperService = Depends(_get_paper_service),
     workspace_service: WorkspaceService = Depends(_get_workspace_service),
     client: SemanticScholarClient = Depends(_get_semantic_scholar_client),
@@ -389,6 +390,7 @@ def import_external_paper(
 async def upload_paper(
     workspace_id: str,
     file: UploadFile = File(...),
+    _owner_id: str = Depends(get_owned_workspace),
     title: str | None = Form(None),
     authors: str | None = Form(None),
     year: int | None = Form(None),
@@ -446,6 +448,7 @@ async def attach_pdf_to_paper(
     workspace_id: str,
     paper_id: str,
     file: UploadFile = File(...),
+    _owner_id: str = Depends(get_owned_workspace),
     service: PaperService = Depends(_get_paper_service),
     workspace_service: WorkspaceService = Depends(_get_workspace_service),
 ) -> PaperRead:
@@ -483,6 +486,7 @@ async def attach_pdf_to_paper(
 def create_paper(
     workspace_id: str,
     payload: PaperCreate,
+    _owner_id: str = Depends(get_owned_workspace),
     service: PaperService = Depends(_get_paper_service),
     workspace_service: WorkspaceService = Depends(_get_workspace_service),
 ) -> PaperRead:
@@ -505,6 +509,7 @@ def create_paper(
 )
 def list_papers(
     workspace_id: str,
+    _owner_id: str = Depends(get_owned_workspace),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     service: PaperService = Depends(_get_paper_service),
@@ -527,6 +532,7 @@ def list_papers(
 def trigger_paper_extraction(
     workspace_id: str,
     paper_id: str,
+    _owner_id: str = Depends(get_owned_workspace),
     service: PaperService = Depends(_get_paper_service),
     workspace_service: WorkspaceService = Depends(_get_workspace_service),
 ) -> dict[str, str]:
@@ -559,6 +565,7 @@ def trigger_paper_extraction(
 def get_paper(
     workspace_id: str,
     paper_id: str,
+    _owner_id: str = Depends(get_owned_workspace),
     service: PaperService = Depends(_get_paper_service),
     workspace_service: WorkspaceService = Depends(_get_workspace_service),
 ) -> PaperRead:
@@ -579,6 +586,7 @@ def update_paper(
     workspace_id: str,
     paper_id: str,
     payload: PaperUpdate,
+    _owner_id: str = Depends(get_owned_workspace),
     service: PaperService = Depends(_get_paper_service),
     workspace_service: WorkspaceService = Depends(_get_workspace_service),
 ) -> PaperRead:
@@ -598,6 +606,7 @@ def update_paper(
 def delete_paper(
     workspace_id: str,
     paper_id: str,
+    _owner_id: str = Depends(get_owned_workspace),
     service: PaperService = Depends(_get_paper_service),
     workspace_service: WorkspaceService = Depends(_get_workspace_service),
 ) -> dict[str, str | bool]:
