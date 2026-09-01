@@ -19,8 +19,10 @@ class TimelineEvent(Base, UUIDPKMixin, TimestampMixin):
     `subject_type` + `subject_id` form a generic polymorphic pointer so we
     can answer "what happened to paper X" without separate tables per subject.
     `payload` carries event-specific data (filename, fields changed, etc.).
-    `actor` is one of: "system" | "agent" | "user" - Phase 1b only emits
-    "system" events; "user" / "agent" appear in Phase 4-5.
+    `actor` stores a short system/agent label or the authenticated user's
+    platform identity. User identities are UUIDs today, but the wider column
+    also keeps the timeline compatible with development/external identity
+    tokens.
     """
 
     __tablename__ = "timeline_events"
@@ -29,7 +31,7 @@ class TimelineEvent(Base, UUIDPKMixin, TimestampMixin):
         ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False, index=True
     )
     event_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
-    actor: Mapped[str] = mapped_column(String(16), default="system", nullable=False)
+    actor: Mapped[str] = mapped_column(String(128), default="system", nullable=False)
     subject_type: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     subject_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     payload: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)

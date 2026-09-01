@@ -13,6 +13,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
 
+from sqlalchemy import select
+
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
@@ -23,6 +25,7 @@ from app.domains.discover.service import DISCOVER_PROMPT_VERSION, DiscoverServic
 from app.domains.knowledge.models import KnowledgeItem  # noqa: E402
 from app.domains.paper.models import Paper  # noqa: E402
 from app.domains.retrieval.schemas import RetrievalResponse  # noqa: E402
+from app.domains.timeline.models import TimelineEvent  # noqa: E402
 from app.domains.workspace.models import Workspace  # noqa: E402
 
 
@@ -175,9 +178,11 @@ def test_corpus_snapshot_fingerprint(db_session):
 def test_create_run_stamps_audit_fields(db_session):
     ws = _ws(db_session)
     svc = _service(db_session)
+    actor_id = str(uuid4())
     run, _ = svc.create_run(
         ws.id,
         DiscoverRunCreateRequest(input=DiscoverInput(topic="GNN explanation robustness")),
+        actor=actor_id,
         trigger_type="topic",
     )
     db_session.refresh(run)
@@ -185,3 +190,12 @@ def test_create_run_stamps_audit_fields(db_session):
     assert run.corpus_version == "workspace-v1-0p-0k"
     assert run.model_provider == "deepseek"
     assert run.model_name == "deepseek-chat"
+    event = db_session.scalar(
+        select(TimelineEvent).where(
+            TimelineEvent.workspace_id == ws.id,
+            TimelineEvent.subject_id == run.id,
+            TimelineEvent.event_type == "discover.run_created",
+        )
+    )
+    assert event is not None
+    assert event.actor == actor_id
