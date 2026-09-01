@@ -385,6 +385,8 @@ def test_external_verify_preserves_successes_when_a_later_query_fails(db_session
     assert summary["successful_query_count"] == 1
     assert summary["failed_query_count"] == 1
     assert summary["query_failures"][0]["status_code"] == 429
+    assert summary["query_failures"][0]["failure_kind"] == "rate_limited"
+    assert summary["failure_counts"] == {"rate_limited": 1}
 
 
 def test_external_verify_keeps_non_critical_partial_search_informational(db_session) -> None:
@@ -423,6 +425,7 @@ def test_external_verify_keeps_non_critical_partial_search_informational(db_sess
     assert records["limited query"]["purpose"] == "method_overlap"
     assert records["Unavailable Method"]["purpose"] == "exact_lookup"
     assert records["Unavailable Method"]["status"] == "failed"
+    assert records["Unavailable Method"]["failure_kind"] == "upstream_error"
 
 
 def test_external_verify_marks_primary_failure_as_warning(db_session) -> None:

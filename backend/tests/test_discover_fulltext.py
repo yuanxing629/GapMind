@@ -191,6 +191,7 @@ def test_no_pdf_when_url_missing_and_no_arxiv_fallback(db_session):
 
     db_session.refresh(row)
     assert row.verification_status == "no_pdf"
+    assert row.snapshot_payload["pdf_acquisition"]["status"] == "no_pdf"
     fake.assert_not_called()
 
 

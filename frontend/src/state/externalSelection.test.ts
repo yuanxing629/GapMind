@@ -23,6 +23,6 @@ describe("external paper selection state", () => {
     expect(externalCandidateActionLabel("waiting_for_fulltext", "fulltext_verification", "unverified")).toBe("未选择（当前批次处理中）");
     expect(externalCandidateActionLabel("waiting_for_fulltext", "fulltext_verification", "no_pdf")).toBe("本次核验未完成");
     expect(externalCandidateActionLabel("succeeded", "saved", "unverified")).toBe("本轮未选择");
-    expect(externalCandidateActionLabel("waiting_for_user", "external_selection", "import_failed")).toBe("重新导入并核验");
+    expect(externalCandidateActionLabel("waiting_for_user", "external_selection", "import_failed")).toBe("重新获取 PDF 并核验");
   });
 });

@@ -34,6 +34,16 @@ export function stageSummaryStatus(
   return typeof status === "string" ? status : null;
 }
 
+function externalFailureKind(record: { failure_kind?: unknown; status_code?: unknown }): string {
+  if (typeof record.failure_kind === "string") return record.failure_kind;
+  const statusCode = typeof record.status_code === "number" ? record.status_code : Number(record.status_code);
+  if (statusCode === 429) return "rate_limited";
+  if (statusCode === 504) return "timeout";
+  if (statusCode === 502) return "network_error";
+  if (statusCode >= 500) return "upstream_error";
+  return "request_error";
+}
+
 export function stageSummaryMessage(
   stageSummaries: Record<string, unknown> | null | undefined,
   stage: DiscoverStage,
@@ -49,22 +59,54 @@ export function stageSummaryMessage(
     notice_level?: unknown;
     message?: unknown;
     query_failures?: unknown;
+    failure_counts?: unknown;
+    exact_lookup_failure_count?: unknown;
+    candidate_count?: unknown;
   };
   const status = typeof summary.status === "string" ? summary.status : null;
+  const failures = Array.isArray(summary.query_failures) ? summary.query_failures : [];
+  const failureCounts: Record<string, number> = {};
+  if (summary.failure_counts && typeof summary.failure_counts === "object" && !Array.isArray(summary.failure_counts)) {
+    Object.entries(summary.failure_counts as Record<string, unknown>).forEach(([kind, count]) => {
+      if (typeof count === "number" && count > 0) failureCounts[kind] = count;
+    });
+  }
+  if (Object.keys(failureCounts).length === 0) {
+    failures.forEach((item) => {
+      if (!item || typeof item !== "object") return;
+      const kind = externalFailureKind(item as { failure_kind?: unknown; status_code?: unknown });
+      failureCounts[kind] = (failureCounts[kind] || 0) + 1;
+    });
+  }
+  const failureLabels: Record<string, string> = {
+    rate_limited: "频率限制",
+    timeout: "请求超时",
+    network_error: "网络/TLS异常",
+    upstream_error: "外部服务异常",
+    request_error: "请求异常",
+  };
+  const failureReason = Object.entries(failureCounts)
+    .filter(([, count]) => count > 0)
+    .map(([kind, count]) => `${failureLabels[kind] || "请求异常"} ${count} 条`)
+    .join("、");
+  const candidateCount = Number(summary.candidate_count ?? 0);
+  const retained = candidateCount > 0 ? `已保留 ${candidateCount} 篇候选。` : "已保留成功结果。";
+  const exactLookupFailureCount = Number(summary.exact_lookup_failure_count ?? 0);
+  const exactLookupNotice = exactLookupFailureCount > 0
+    ? `另有 ${exactLookupFailureCount} 条方法精确查找未完成。`
+    : "";
   if (status === "failed") {
+    if (stage === "external_search") {
+      const failedCount = Number(summary.failed_query_count ?? failures.length);
+      return `外部文献初筛未完成：${failedCount || "所有"} 个检索方向未获得结果${failureReason ? `。原因：${failureReason}` : "。"}`;
+    }
     return typeof summary.error === "string" ? summary.error : "该阶段执行失败";
   }
-  if (status === "succeeded" && summary.notice_level === "informational" && Number(summary.failed_query_count ?? 0) > 0) {
-    return typeof summary.message === "string"
-      ? summary.message
-      : `外部检索成功 ${Number(summary.successful_query_count ?? 0)} 个查询，${Number(summary.failed_query_count ?? 0)} 个查询受限；已保留成功结果`;
+  if (status === "succeeded" && summary.notice_level === "informational" && (Number(summary.failed_query_count ?? 0) > 0 || Number(summary.exact_lookup_failure_count ?? 0) > 0)) {
+    return `已完成 ${Number(summary.successful_query_count ?? 0)}/${Number(summary.successful_query_count ?? 0) + Number(summary.failed_query_count ?? 0)} 个检索方向。${retained}${failureReason ? `未完成原因：${failureReason}。` : ""}${exactLookupNotice}`;
   }
   if (status === "succeeded_partial") {
-    const failures = Array.isArray(summary.query_failures) ? summary.query_failures : [];
-    const rateLimited = failures.filter((item) => item && typeof item === "object" && (item as { status_code?: unknown }).status_code === 429).length;
-    const reason = rateLimited > 0 ? `；其中 ${rateLimited} 个因 Semantic Scholar 请求频率受限（HTTP 429）失败` : "";
-    if (typeof summary.message === "string") return summary.message + reason;
-    return `部分成功：${Number(summary.successful_query_count ?? 0)} 个查询成功，${Number(summary.failed_query_count ?? 0)} 个失败，已保留成功结果${reason}`;
+    return `已完成 ${Number(summary.successful_query_count ?? 0)}/${Number(summary.successful_query_count ?? 0) + Number(summary.failed_query_count ?? 0)} 个检索方向。${retained}${failureReason ? `未完成原因：${failureReason}。` : ""}${exactLookupNotice}`;
   }
   if (status === "succeeded_empty") return "检索已执行，但没有返回候选论文";
   if (status === "skipped") return "该阶段已由用户跳过";

@@ -445,7 +445,37 @@ def test_partial_external_search_counts_as_executed(db_session) -> None:
     )
 
     assert gate["external_search_executed"] is True
+    assert gate["external_search_complete"] is False
+    assert gate["external_verification_completed"] is False
     assert gate["external_search_status"] == "succeeded_partial"
+    assert "external verification did not complete" in gate["warnings"]
+
+
+def test_exact_lookup_failure_is_also_incomplete_external_coverage(db_session) -> None:
+    run = _run(str(uuid4()))
+    run.stage_summaries = {
+        "external_search": {
+            "status": "succeeded",
+            "successful_query_count": 8,
+            "failed_query_count": 0,
+            "exact_lookup_failure_count": 1,
+        }
+    }
+    gate = DiscoverService(db_session)._evidence_gate(
+        run,
+        candidate=None,
+        supporting=_supporting_response([]),
+        counter=RetrievalResponse(
+            workspace_id=run.workspace_id,
+            purpose="counter_evidence",
+            status="succeeded",
+        ),
+    )
+
+    assert gate["external_search_executed"] is True
+    assert gate["external_search_complete"] is False
+    assert gate["external_verification_completed"] is False
+    assert "external verification did not complete" in gate["warnings"]
 
 
 def test_incomplete_gate_does_not_cap_agent_confidence() -> None:

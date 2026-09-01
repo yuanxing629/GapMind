@@ -20,8 +20,8 @@ describe("Discover state helpers", () => {
       },
     };
     expect(stageSummaryStatus(summaries, "external_search")).toBe("succeeded_partial");
-    expect(stageSummaryMessage(summaries, "external_search")).toContain("3 个查询成功");
-    expect(stageSummaryMessage(summaries, "external_search")).toContain("2 个因 Semantic Scholar 请求频率受限");
+    expect(stageSummaryMessage(summaries, "external_search")).toContain("已完成 3/5 个检索方向");
+    expect(stageSummaryMessage(summaries, "external_search")).toContain("频率限制 2 条");
   });
 
   it("keeps a non-critical partial search visually successful but explains the limitation", () => {
@@ -31,11 +31,31 @@ describe("Discover state helpers", () => {
         notice_level: "informational",
         successful_query_count: 11,
         failed_query_count: 1,
-        message: "外部检索成功 11/12 条查询，1 条受限；已保留成功结果。",
+        candidate_count: 10,
+        message: "外部文献初筛部分完成：11/12 个检索方向成功，已保留 10 篇候选。未完成原因：请求超时 1 条。",
       },
     };
     expect(stageSummaryMessage(summaries, "external_search")).toContain("11/12");
-    expect(stageSummaryMessage(summaries, "external_search")).toContain("已保留成功结果");
+    expect(stageSummaryMessage(summaries, "external_search")).toContain("已保留 10 篇候选");
+  });
+
+  it("normalizes legacy external messages instead of showing raw limited wording", () => {
+    const summaries = {
+      external_search: {
+        status: "succeeded_partial",
+        successful_query_count: 4,
+        failed_query_count: 8,
+        candidate_count: 32,
+        query_failures: [{ status_code: 504 }, { status_code: 502 }],
+        message: "外部检索成功 4/12 条查询，8 条受限；已保留成功结果。",
+      },
+    };
+    const detail = stageSummaryMessage(summaries, "external_search") || "";
+    expect(detail).toContain("4/12");
+    expect(detail).not.toContain("外部文献初筛部分完成");
+    expect(detail).toContain("请求超时 1 条");
+    expect(detail).toContain("网络/TLS异常 1 条");
+    expect(detail).not.toContain("8 条受限");
   });
 
   it("uses low-frequency polling for waiting states and stops at terminal states", () => {

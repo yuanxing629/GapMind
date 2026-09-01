@@ -25,7 +25,7 @@ export function externalCandidateActionLabel(
   if (candidateStatus === "verified") return "已完成全文核验";
   if (externalSelectionIsOpen(runStatus, runStage)) {
     return ["no_pdf", "import_failed", "verification_failed"].includes(candidateStatus)
-      ? "重新导入并核验"
+      ? "重新获取 PDF 并核验"
       : "导入并核验";
   }
   if (runStatus === "waiting_for_fulltext" || runStage === "fulltext_verification") {

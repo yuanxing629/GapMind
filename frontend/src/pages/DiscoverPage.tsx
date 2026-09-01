@@ -5,7 +5,6 @@ import {
   Button,
   Card,
   Checkbox,
-  Collapse,
   Descriptions,
   Divider,
   Drawer,
@@ -31,7 +30,7 @@ import { OpportunityEvidenceViewer } from "../components/EvidenceViewer";
 import { getStatusMeta } from "../components/common/StatusBadge";
 import { currentRunStage, currentRunStatus, DISCOVER_STAGE_LABELS, DISCOVER_STAGES, pollingInterval, selectedOpportunityCount, stageIndex, stageSummaryMessage, stageSummaryStatus, TERMINAL_RUN_STATUSES } from "../state/discoverState";
 import { canSelectExternalCandidate, externalCandidateActionLabel, externalSelectionIsOpen } from "../state/externalSelection";
-import { discoverStageLabel, evidenceLevelDisplayLabel, evidenceRelationLabel, evidenceSourceScopeLabel, gateMessageLabel, localizedGeneratedText, opportunityStatusLabel, verificationStatusLabel as verificationDisplayLabel } from "../state/discoverLabels";
+import { discoverRunVerificationStatusLabel, discoverStageLabel, evidenceLevelDisplayLabel, evidenceRelationLabel, evidenceSourceScopeLabel, gateMessageLabel, localizedGeneratedText, opportunityStatusLabel, verificationStatusLabel as verificationDisplayLabel } from "../state/discoverLabels";
 
 const { Text, Title, Paragraph } = Typography;
 
@@ -86,22 +85,15 @@ function externalRoleLabel(role: string): string {
   }
 }
 
-function externalQueryPurposeLabel(purpose: string): string {
-  switch (purpose) {
-    case "primary_question": return "主问题";
-    case "method_overlap": return "方法／重合";
-    case "counter_evidence": return "反证";
-    case "evaluation": return "评估";
-    case "exact_lookup": return "精确查找";
-    default: return "其他查询";
-  }
-}
-
-function externalQueryStatusLabel(status: string): string {
-  if (status === "succeeded") return "成功";
-  if (status === "failed") return "受限";
-  if (status === "no_verified_match") return "无精确匹配";
-  return status || "未记录";
+function pdfAcquisitionLabel(candidate: DiscoverExternalCandidate): string | null {
+  const acquisition = candidate.snapshot_payload?.pdf_acquisition;
+  if (!acquisition || typeof acquisition !== "object" || Array.isArray(acquisition)) return null;
+  const status = (acquisition as { status?: unknown }).status;
+  if (status === "no_pdf") return "未找到开放获取 PDF 地址";
+  if (status === "retryable_failure") return "PDF 下载暂时失败，可重试";
+  if (status === "unavailable") return "可用来源均未返回有效 PDF";
+  if (status === "local_import_failed") return "PDF 已获取，但本地导入失败";
+  return null;
 }
 
 function gateDetails(sourcePayload: Record<string, unknown>): { verified: boolean; confirmable: boolean; blockingMissing: string[]; warnings: string[]; missing: string[]; reason?: string } | null {
@@ -391,21 +383,13 @@ export default function DiscoverPage() {
   const activeRun = runDetail?.id === selectedRun?.id ? runDetail : selectedRun;
   const externalSelectionOpen = externalSelectionIsOpen(currentStatus, stage);
   const stageIssues = DISCOVER_STAGES.flatMap((item) => {
+    if (item === "external_search") return [];
     const status = stageSummaryStatus(activeRun?.stage_summaries, item);
     const detail = stageSummaryMessage(activeRun?.stage_summaries, item);
     return status && detail && ["failed", "succeeded_partial", "succeeded_empty"].includes(status)
       ? [{ stage: item, status, detail }]
       : [];
   });
-  const externalSummary = (activeRun?.stage_summaries?.external_search ?? {}) as Record<string, unknown>;
-  const externalQueryRecords = Array.isArray(externalSummary.query_records)
-    ? externalSummary.query_records.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
-    : [];
-  const externalQueryFailureCount = typeof externalSummary.failed_query_count === "number" ? externalSummary.failed_query_count : 0;
-  const externalExactLookupFailureCount = typeof externalSummary.exact_lookup_failure_count === "number" ? externalSummary.exact_lookup_failure_count : 0;
-  const externalFailureTotal = externalQueryFailureCount + externalExactLookupFailureCount;
-  const externalQuerySuccessCount = typeof externalSummary.successful_query_count === "number" ? externalSummary.successful_query_count : 0;
-  const externalQueryTotal = externalQuerySuccessCount + externalQueryFailureCount;
   const selectedOpportunities = opportunities.filter((item) => !selectedRun || item.discover_run_id === selectedRun.id);
 
   return (
@@ -422,12 +406,10 @@ export default function DiscoverPage() {
           <Space direction="vertical" size={16} style={{ width: "100%" }}>
             <Card title="运行概览" extra={selectedRun && <Space wrap><Tag color={statusColor(selectedRun.status)}>{getStatusMeta(selectedRun.status).label}</Tag>{selectedRun.status === "waiting_for_fulltext" && <Tag color="orange">等待 PDF 流水线</Tag>}</Space>}>
               {!selectedRun ? <Empty description="新建任务后可在这里查看进度和候选结果" /> : <>
-                <Descriptions size="small" column={{ xs: 1, sm: 2 }}><Descriptions.Item label="研究主题">{selectedRun.input_topic || "基于论断的发现任务"}</Descriptions.Item><Descriptions.Item label="核验状态">{verificationDisplayLabel(selectedRun.verification_status)}</Descriptions.Item><Descriptions.Item label="当前阶段">{discoverStageLabel(stage)}</Descriptions.Item><Descriptions.Item label="研究机会候选数">{selectedOpportunityCount(opportunities, selectedRun.id)}</Descriptions.Item></Descriptions>
+                <Descriptions size="small" column={{ xs: 1, sm: 2 }}><Descriptions.Item label="研究主题">{selectedRun.input_topic || "基于论断的发现任务"}</Descriptions.Item><Descriptions.Item label="核验状态">{discoverRunVerificationStatusLabel(selectedRun.verification_status, selectedRun.status, stage, activeRun?.stage_summaries)}</Descriptions.Item><Descriptions.Item label="当前阶段">{discoverStageLabel(stage)}</Descriptions.Item><Descriptions.Item label="研究机会候选数">{selectedOpportunityCount(opportunities, selectedRun.id)}</Descriptions.Item></Descriptions>
                 <Progress percent={Math.round((runDetail?.id === selectedRun.id ? runDetail.progress : selectedRun.progress) * 100)} status={selectedRun.status === "failed" ? "exception" : undefined} />
-                {externalSummary.notice_level === "informational" && externalFailureTotal > 0 && <Tag color="default">外部检索 {externalQuerySuccessCount}/{externalQueryTotal}，{externalQueryFailureCount} 条受限{externalExactLookupFailureCount > 0 ? `，精确查找 ${externalExactLookupFailureCount} 条受限` : ""}，已保留成功结果</Tag>}
-                {externalQueryRecords.length > 0 && externalFailureTotal > 0 && <Collapse size="small" style={{ marginTop: 12 }} items={[{ key: "external-query-log", label: "外部检索查询日志", children: <List size="small" dataSource={externalQueryRecords} renderItem={(record) => { const status = String(record.status ?? ""); const purpose = String(record.purpose ?? ""); return <List.Item><Space wrap><Tag color={status === "failed" ? "orange" : "default"}>{externalQueryPurposeLabel(purpose)}</Tag><Tag color={status === "failed" ? "orange" : "green"}>{externalQueryStatusLabel(status)}</Tag><Text>{String(record.query ?? "")}</Text>{typeof record.result_count === "number" && <Text type="secondary">结果 {record.result_count}</Text>}{typeof record.error === "string" && <Text type="secondary">{record.error}</Text>}</Space></List.Item>; }} /> }]} />}
                 {stagePosition < 0 ? <Tag color="red">未知阶段：{stage || "未提供"}</Tag> : <Steps size="small" current={stagePosition} responsive items={DISCOVER_STAGES.map((item, index) => { const summaryStatus = stageSummaryStatus(activeRun?.stage_summaries, item); const detail = stageSummaryMessage(activeRun?.stage_summaries, item); const failed = summaryStatus === "failed"; const partial = summaryStatus === "succeeded_partial" || summaryStatus === "succeeded_empty"; const visualStatus = failed ? "error" : index < stagePosition || (index === stagePosition && TERMINAL_RUN_STATUSES.has(activeRun?.status || "")) ? "finish" : index === stagePosition ? "process" : "wait"; return { status: visualStatus as "error" | "finish" | "process" | "wait", title: <Tooltip title={detail || DISCOVER_STAGE_LABELS[item]}><span style={partial ? { color: "#d48806" } : undefined}>{DISCOVER_STAGE_LABELS[item]}{partial ? " ⚠" : ""}</span></Tooltip> }; })} />}
-                {stageIssues.length > 0 && <Alert style={{ marginTop: 16 }} type={stageIssues.some((item) => item.status === "failed") ? "error" : "warning"} showIcon message="部分核验阶段未完整完成" description={<Space direction="vertical" size={2}>{stageIssues.map((item) => <Text key={item.stage}><Text strong>{DISCOVER_STAGE_LABELS[item.stage]}：</Text>{item.detail}</Text>)}</Space>} />}
+                {stageIssues.length > 0 && <Alert style={{ marginTop: 16 }} type={stageIssues.some((item) => item.status === "failed") ? "error" : "warning"} showIcon message="其他核验阶段需要注意" description={<Space direction="vertical" size={2}>{stageIssues.map((item) => <Text key={item.stage}><Text strong>{DISCOVER_STAGE_LABELS[item.stage]}：</Text>{item.detail}</Text>)}</Space>} />}
                 {selectedRun.status === "waiting_for_fulltext" && <Paragraph type="warning" style={{ marginTop: 16 }}>已选论文正在进行 PDF 解析、知识抽取和向量索引。流水线完成前，候选综合将暂停。</Paragraph>}
                 {externalSelectionOpen && <Alert style={{ marginTop: 16 }} type="info" showIcon message="外部候选论文已准备好" description={<Space direction="vertical" size={8}><Text>可以勾选一篇或多篇论文统一导入并执行全文核验，也可以只使用当前工作区已有证据继续。</Text><Button onClick={skipExternalSelection} loading={actionLoading}>跳过外部论文核验并继续</Button></Space>} />}
                 {selectedRun.error_message && <Paragraph type="danger" style={{ marginTop: 16 }}>{selectedRun.error_message}</Paragraph>}
@@ -463,6 +445,7 @@ export default function DiscoverPage() {
                   dataSource={runDetail.external_candidates}
                   renderItem={(candidate) => {
                     const selectable = canSelectExternalCandidate(currentStatus, stage, candidate.verification_status);
+                    const pdfStatus = pdfAcquisitionLabel(candidate);
                     return (
                       <List.Item
                         actions={[
@@ -495,6 +478,7 @@ export default function DiscoverPage() {
                                 {verificationStatusLabel(candidate.verification_status)}
                               </Tag>
                               <Tag>{externalRoleLabel(candidate.role)}</Tag>
+                              {pdfStatus ? <Text type="secondary">{pdfStatus}</Text> : null}
                             </Space>
                           )}
                         />

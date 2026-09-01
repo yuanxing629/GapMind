@@ -127,7 +127,7 @@ counter-evidence / critiques, evaluation benchmarks, and the domain axis \
 - Do not quote the workspace paper titles verbatim
 - Never repeat the same idea in two queries
 
-Also choose up to 4 workspace method names whose papers you want surfaced
+Also choose up to 2 workspace method names whose papers you want surfaced
 PRECISELY (these are searched by exact title, so give the full descriptive
 name — expand abbreviations). Prefer methods that are foundational or likely
 to have counter-evidence / variants. Do not list the same method twice.
@@ -147,9 +147,9 @@ Output a JSON object, nothing else:
 # calls and the LLM role-judge batches bounded. The LLM-decomposed axis
 # queries are the highest-value external-search keys, so they are prioritized
 # over raw workspace signals and generic keywords.
-EXTERNAL_QUERY_MAX_TOTAL = 12  # max external search queries per run
-EXTERNAL_QUERY_AXIS_COUNT = 6  # LLM-generated axis queries to request
-EXTERNAL_QUERY_MAX_EXACT_LOOKUPS = 4  # LLM-selected method names to look up by exact title
+EXTERNAL_QUERY_MAX_TOTAL = 8  # kept for compatibility with older imports
+EXTERNAL_QUERY_AXIS_COUNT = 5  # kept for compatibility with older imports
+EXTERNAL_QUERY_MAX_EXACT_LOOKUPS = 2  # kept for compatibility with older imports
 EXTERNAL_QUERY_SIGNAL_TYPES = ("method", "claim", "task", "limitation")
 EXTERNAL_QUERY_MIN_CONFIDENCE = 0.3  # skip low-confidence extracted signals
 EXTERNAL_QUERY_MAX_KEYWORDS = 2  # generic user keywords are lowest priority
@@ -1205,8 +1205,15 @@ class DiscoverService(OpportunityWorkflow):
             "succeeded_partial",
             "succeeded_empty",
         }
+        external_search_complete = (
+            external_summary.get("status") in {"succeeded", "succeeded_empty"}
+            and int(external_summary.get("failed_query_count") or 0) == 0
+            and int(external_summary.get("exact_lookup_failure_count") or 0) == 0
+        )
         external_verification_completed = (
-            external_executed and not self._external_selection_skipped(run)
+            external_executed
+            and external_search_complete
+            and not self._external_selection_skipped(run)
         )
         supporting_checked = supporting.status == "succeeded"
         counter_checked = counter.status == "succeeded"
@@ -1237,6 +1244,7 @@ class DiscoverService(OpportunityWorkflow):
             "counter_checked": counter_checked,
             "counter_status": counter.status,
             "external_search_executed": external_executed,
+            "external_search_complete": external_search_complete,
             "external_verification_completed": external_verification_completed,
             "external_search_status": external_summary.get("status", "not_run"),
             "evidence_coverage": coverage,

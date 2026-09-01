@@ -23,10 +23,12 @@ const EVIDENCE_LEVEL_LABELS: Record<string, string> = {
 const VERIFICATION_STATUS_LABELS: Record<string, string> = {
   not_started: "尚未开始",
   in_progress: "核验中",
+  incomplete: "证据尚未充分",
   unverified: "未核验",
   verification_incomplete: "核验不完整",
   verified: "核验完成",
   verified_with_warnings: "核验完成（有警告）",
+  failed: "核验失败",
   verification_failed: "核验失败",
 };
 
@@ -79,6 +81,31 @@ export function discoverStageLabel(stage: string | null | undefined): string {
 export function verificationStatusLabel(status: string | null | undefined): string {
   if (!status) return "未核验";
   return VERIFICATION_STATUS_LABELS[status] ?? status;
+}
+
+export function discoverRunVerificationStatusLabel(
+  status: string | null | undefined,
+  runStatus: string | null | undefined,
+  stage: string | null | undefined,
+  stageSummaries: Record<string, unknown> | null | undefined,
+): string {
+  const externalSummary = stageSummaries?.external_search;
+  const externalStatus = externalSummary && typeof externalSummary === "object" && !Array.isArray(externalSummary)
+    ? (externalSummary as { status?: unknown }).status
+    : null;
+
+  if (runStatus === "waiting_for_user" && stage === "external_selection") {
+    return status === "failed" ? "外部全文核验失败" : "待选择外部论文";
+  }
+  if (runStatus === "waiting_for_fulltext" || (stage === "fulltext_verification" && status === "in_progress")) {
+    return "等待全文核验";
+  }
+  if (status === "incomplete") {
+    if (externalStatus === "succeeded_partial") return "证据尚未充分（外部检索部分完成）";
+    if (externalStatus === "succeeded_empty") return "证据尚未充分（未发现外部候选）";
+    return "证据尚未充分";
+  }
+  return verificationStatusLabel(status);
 }
 
 export function opportunityStatusLabel(status: string | null | undefined): string {
