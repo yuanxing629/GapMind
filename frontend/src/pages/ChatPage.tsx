@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, Button, Drawer, Grid, Modal, Result, Spin, message } from "antd";
+import { Button, Drawer, Grid, Modal, Popover, Result, Spin, message } from "antd";
+import { DatabaseOutlined, InfoCircleOutlined, LockOutlined } from "@ant-design/icons";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import chatApi, { type ChatContextArtifactOption, type ChatContextPlanOption, type ChatConversation, type ChatMessage } from "../api/chat";
 import workspaceApi from "../api/workspace";
@@ -16,6 +17,29 @@ import ChatMessages from "../components/chat/ChatMessages";
 const localMessage = (conversationId: string, role: "user" | "assistant", content: string, sequence: number): ChatMessage => ({ id: `local-${role}-${Date.now()}-${sequence}`, conversation_id: conversationId, role, content, status: role === "assistant" ? "generating" : "completed", error_message: null, sequence, model: null, prompt_tokens: null, completion_tokens: null, total_tokens: null, prompt_chars: null, response_chars: null, first_token_latency_ms: null, completion_latency_ms: null, grounding_status: "not_requested", citations: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
 
 const MODE_VALUES: ChatMode[] = ["chat", "research_plan", "code_generation", "analyze", "write", "respond"];
+
+const CHAT_DATA_POLICY = "根据当前部署配置，问题和系统选取的论文片段可能发送至 Embedding、LLM 或其他远程服务。请仅使用已授权、已脱敏的资料；结果会标注证据来源、AI 生成和未确认状态。";
+
+function ChatNoticeBar({ independent, activeWorkspaceId, activeWorkspaceName, hasConversation }: { independent: boolean; activeWorkspaceId?: string; activeWorkspaceName?: string; hasConversation: boolean }) {
+  const scopeNotice = independent
+    ? { label: "独立模式 · 不检索", message: "当前为独立模式：仅使用本次提供的材料，不会检索课题空间论文或知识库。" }
+    : activeWorkspaceId
+      ? { label: `${activeWorkspaceName ?? "课题空间"} · 已索引论文`, message: `正在使用“${activeWorkspaceName ?? "课题空间"}”中已索引的论文回答；计划、报告与代码草案会单独标注来源。` }
+      : hasConversation
+        ? { label: "普通对话 · 不检索", message: "当前是普通 AI 对话，不会自动检索论文或知识库。" }
+        : null;
+
+  return <div className="gm-chat-notice-row">
+    <Popover title="资料发送提示" content={<div className="gm-chat-notice-popover">{CHAT_DATA_POLICY}</div>} trigger="click" placement="bottomLeft">
+      <Button type="text" size="small" className="gm-chat-notice-trigger" icon={<InfoCircleOutlined />}>资料边界</Button>
+    </Popover>
+    {scopeNotice && <Popover title="当前回答范围" content={<div className="gm-chat-notice-popover">{scopeNotice.message}</div>} trigger="click" placement="bottomLeft">
+      <Button type="text" size="small" className="gm-chat-notice-trigger gm-chat-scope-trigger" icon={independent ? <LockOutlined /> : <DatabaseOutlined />}>
+        <span>{scopeNotice.label}</span>
+      </Button>
+    </Popover>}
+  </div>;
+}
 
 export default function ChatPage() {
   const { conversationId, id: routeWorkspaceId } = useParams<{ conversationId: string; id: string }>();
@@ -431,5 +455,5 @@ export default function ChatPage() {
   const sourceOptions = contextArtifacts
     .filter((artifact) => artifact.plan_id === researchPlanId)
     .map((artifact) => ({ value: artifact.id, label: `${artifact.label}：${artifact.title}`, title: artifact.status }));
-  return <div className="gm-chat-page"><div className="gm-chat-layout">{!isMobile && <aside className="gm-chat-sidebar">{historyPanel}</aside>}<main className="gm-chat-main"><ChatHeader title={conversation?.title ?? "新对话"} workspaces={workspaces} workspaceId={activeWorkspaceId} independent={independentMode} scopeLocked={Boolean(conversation)} onWorkspaceChange={changeWorkspace} onOpenHistory={() => setHistoryOpen(true)} /><Alert className="gm-chat-data-note" type="warning" showIcon message="资料发送提示" description="根据当前部署配置，问题和系统选取的论文片段可能发送至 Embedding、LLM 或其他远程服务。请仅使用已授权、已脱敏的资料；结果会标注证据来源、AI 生成和未确认状态。" /><div className="gm-chat-scroll" ref={messagesRef}>{conversationError ? <Result status="404" title="找不到这段对话" subTitle={conversationError} extra={<Button type="primary" onClick={newConversation}>开始新对话</Button>} /> : loadingConversation ? <div className="gm-chat-loading"><Spin /></div> : messages.length === 0 ? <ChatEmptyState onExample={setInput} workspaceName={workspaceEnabled ? activeWorkspaceName : undefined} independent={independentMode} /> : <ChatMessages conversationId={conversationId} messages={messages} agentRuns={agentRuns} onRetry={retry} retryingId={retryingId} agentActionId={agentActionId} onRefreshAgent={(run) => void refreshAgent(run)} onConfirmAgent={(run) => void confirmAgent(run)} onCancelAgent={(run) => void cancelAgent(run)} onRepairCode={(run) => requestCodeRepair(run)} onDownloadAgent={(run) => activeWorkspaceId ? void agentApi.downloadBundle(activeWorkspaceId, run.id) : undefined} onDownloadArtifact={(run, artifactId) => void downloadArtifact(run, artifactId)} />}</div>{independentMode ? <Alert className="gm-chat-scope-note" type="info" showIcon message="当前为独立模式：仅使用本次提供的材料，不会检索课题空间论文或知识库。" /> : activeWorkspaceId ? <Alert className="gm-chat-scope-note" type="success" showIcon message={`正在使用“${activeWorkspaceName ?? "课题空间"}”中已索引的论文回答；计划、报告与代码草案会单独标注来源。`} /> : conversation && <Alert className="gm-chat-scope-note" type="info" showIcon message="当前是普通 AI 对话，不会自动检索论文或知识库。" />}{sending && <div className="gm-chat-sending-note">{mode === "chat" ? "正在检索并组织回答，请稍候…" : "正在执行已确认的 Agent 操作，请稍候…"}</div>}<ChatComposer value={input} onChange={setInput} onSend={(value) => void send(value)} loading={sending || Boolean(retryingId)} workspaceEnabled={workspaceEnabled} mode={mode} onModeChange={setMode} planOptions={planOptions} researchPlanId={researchPlanId} onResearchPlanChange={setResearchPlanId} sourceOptions={sourceOptions} sourceArtifactIds={sourceArtifactIds} onSourceArtifactChange={setSourceArtifactIds} /></main></div><Drawer title="历史对话" placement="left" open={isMobile && historyOpen} onClose={() => setHistoryOpen(false)} width={300}>{historyPanel}</Drawer></div>;
+  return <div className="gm-chat-page"><div className="gm-chat-layout">{!isMobile && <aside className="gm-chat-sidebar">{historyPanel}</aside>}<main className="gm-chat-main"><ChatHeader title={conversation?.title ?? "新对话"} workspaces={workspaces} workspaceId={activeWorkspaceId} independent={independentMode} scopeLocked={Boolean(conversation)} onWorkspaceChange={changeWorkspace} onOpenHistory={() => setHistoryOpen(true)} /><ChatNoticeBar independent={independentMode} activeWorkspaceId={activeWorkspaceId} activeWorkspaceName={activeWorkspaceName} hasConversation={Boolean(conversation)} /><div className="gm-chat-scroll" ref={messagesRef}>{conversationError ? <Result status="404" title="找不到这段对话" subTitle={conversationError} extra={<Button type="primary" onClick={newConversation}>开始新对话</Button>} /> : loadingConversation ? <div className="gm-chat-loading"><Spin /></div> : messages.length === 0 ? <ChatEmptyState onExample={setInput} workspaceName={workspaceEnabled ? activeWorkspaceName : undefined} independent={independentMode} /> : <ChatMessages conversationId={conversationId} messages={messages} agentRuns={agentRuns} onRetry={retry} retryingId={retryingId} agentActionId={agentActionId} onRefreshAgent={(run) => void refreshAgent(run)} onConfirmAgent={(run) => void confirmAgent(run)} onCancelAgent={(run) => void cancelAgent(run)} onRepairCode={(run) => requestCodeRepair(run)} onDownloadAgent={(run) => activeWorkspaceId ? void agentApi.downloadBundle(activeWorkspaceId, run.id) : undefined} onDownloadArtifact={(run, artifactId) => void downloadArtifact(run, artifactId)} />}</div>{sending && <div className="gm-chat-sending-note">{mode === "chat" ? "正在检索并组织回答，请稍候…" : "正在执行已确认的 Agent 操作，请稍候…"}</div>}<ChatComposer value={input} onChange={setInput} onSend={(value) => void send(value)} loading={sending || Boolean(retryingId)} workspaceEnabled={workspaceEnabled} mode={mode} onModeChange={setMode} planOptions={planOptions} researchPlanId={researchPlanId} onResearchPlanChange={setResearchPlanId} sourceOptions={sourceOptions} sourceArtifactIds={sourceArtifactIds} onSourceArtifactChange={setSourceArtifactIds} /></main></div><Drawer title="历史对话" placement="left" open={isMobile && historyOpen} onClose={() => setHistoryOpen(false)} width={300}>{historyPanel}</Drawer></div>;
 }

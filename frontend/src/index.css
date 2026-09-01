@@ -143,6 +143,65 @@ body,
   font-size: 14px;
 }
 
+.gm-profile-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--gm-ink);
+}
+
+.gm-profile-name {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gm-auth-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(420px, 520px);
+  background: var(--gm-layout-bg);
+}
+
+.gm-auth-intro {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: clamp(36px, 8vw, 120px);
+  border-right: 1px solid var(--gm-border);
+}
+
+.gm-auth-intro .ant-typography { max-width: 570px; }
+.gm-auth-intro h1 { margin: 16px 0 22px; color: var(--gm-ink); font-size: clamp(36px, 5vw, 68px); line-height: 1.08; letter-spacing: -.045em; }
+.gm-auth-intro p { max-width: 500px; color: var(--gm-text-secondary); font-size: 16px; }
+.gm-auth-kicker { color: #1677ff; font-size: 11px; font-weight: 700; letter-spacing: .14em; }
+.gm-auth-proof { display: flex; gap: 12px; align-items: center; margin-top: 48px; color: var(--gm-text-secondary); font-size: 12px; letter-spacing: .04em; }
+.gm-auth-proof span:first-child { color: #1677ff; font-weight: 700; }
+
+.gm-auth-panel { display: grid; place-items: center; padding: 32px; background: var(--gm-surface); }
+.gm-auth-card { width: min(100%, 380px); }
+.gm-auth-card-heading { margin-bottom: 28px; }
+.gm-auth-card-heading .ant-typography { display: block; margin: 0; }
+.gm-auth-card-heading h2 { margin-top: 8px; color: var(--gm-ink); }
+.gm-auth-links { display: flex; justify-content: space-between; gap: 16px; margin-top: 18px; color: var(--gm-text-secondary); font-size: 12px; }
+.gm-auth-loading { display: grid; min-height: 180px; place-items: center; }
+
+.gm-admin-page .gm-page-header { margin-top: 0; }
+.gm-admin-page .ant-card { background: var(--gm-surface); }
+
+@media (max-width: 800px) {
+  .gm-auth-shell { grid-template-columns: 1fr; }
+  .gm-auth-intro { min-height: 320px; padding: 48px 28px 28px; border-right: 0; border-bottom: 1px solid var(--gm-border); }
+  .gm-auth-intro h1 { font-size: 42px; }
+  .gm-auth-proof { margin-top: 24px; }
+  .gm-auth-panel { padding: 32px 24px 56px; }
+}
+
+@media (max-width: 560px) {
+  .gm-profile-name { display: none; }
+}
+
 .gm-content {
   min-height: calc(100vh - 64px);
   padding: 28px clamp(16px, 4vw, 48px);
@@ -1044,4 +1103,135 @@ body,
   .gm-active-workspace-updated { width: 100%; padding-left: 54px; }
   .gm-active-workspace-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .gm-active-workspace-activity-item > .ant-typography { display: none; }
+}
+
+/* Keep the application shell and its two reading surfaces independent. The
+   browser viewport stays fixed while the sidebar and main content own their
+   own scroll positions. */
+.gm-app-layout {
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
+}
+.gm-app-layout > .ant-layout {
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+.gm-sider {
+  position: relative;
+  height: 100%;
+  max-height: 100vh;
+  flex: 0 0 auto;
+  overflow: hidden !important;
+}
+.gm-sider .ant-layout-sider-children {
+  height: 100%;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: hidden;
+}
+.gm-sider > .ant-menu,
+.gm-sider .ant-layout-sider-children > .ant-menu {
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+.gm-content {
+  height: calc(100vh - 64px);
+  min-height: 0;
+}
+.gm-sider-footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.gm-sider-footer-copy {
+  min-width: 0;
+  flex: 1;
+}
+.gm-sider-collapse {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  padding: 0;
+  color: var(--gm-text-secondary);
+}
+.gm-sider-collapse:hover,
+.gm-sider-collapse:focus-visible {
+  color: var(--gm-ink);
+  background: var(--gm-surface-3);
+}
+.gm-sider.ant-layout-sider-collapsed .gm-brand {
+  justify-content: center;
+  padding-inline: 0;
+}
+.gm-sider.ant-layout-sider-collapsed .gm-brand > div:last-child,
+.gm-sider.ant-layout-sider-collapsed .gm-workspace-selector-copy,
+.gm-sider.ant-layout-sider-collapsed .gm-workspace-selector-chevron,
+.gm-sider.ant-layout-sider-collapsed .gm-sider-footer-copy {
+  display: none;
+}
+.gm-sider.ant-layout-sider-collapsed .gm-workspace-selector {
+  width: 40px;
+  justify-content: center;
+  margin-inline: auto;
+  padding: 7px;
+}
+.gm-sider.ant-layout-sider-collapsed .gm-sider-footer {
+  justify-content: center;
+  margin-inline: 8px;
+}
+.gm-sider.ant-layout-sider-collapsed > .ant-menu,
+.gm-sider.ant-layout-sider-collapsed .ant-layout-sider-children > .ant-menu {
+  padding-inline: 8px;
+}
+.gm-sider.ant-layout-sider-collapsed .ant-menu-item {
+  padding-inline: 0 !important;
+  text-align: center;
+}
+
+.gm-chat-notice-row {
+  display: flex;
+  min-height: 30px;
+  align-items: center;
+  gap: 2px;
+  padding: 0 18px;
+  background: var(--gm-surface-2);
+  border-bottom: 1px solid var(--gm-border-2);
+}
+.gm-chat-notice-trigger {
+  min-width: 0;
+  max-width: min(48vw, 420px);
+  padding-inline: 6px;
+  color: var(--gm-text-secondary);
+  font-size: 11px;
+}
+.gm-chat-notice-trigger:hover,
+.gm-chat-notice-trigger:focus-visible {
+  color: var(--gm-ink);
+  background: var(--gm-surface-3);
+}
+.gm-chat-notice-trigger > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gm-chat-scope-trigger {
+  color: #4f60e8;
+}
+.gm-chat-notice-popover {
+  max-width: 360px;
+  color: var(--gm-text);
+  line-height: 1.6;
+}
+
+@media (max-width: 767px) {
+  .gm-chat-notice-row {
+    padding-inline: 12px;
+  }
+  .gm-chat-notice-trigger {
+    max-width: calc(100vw - 100px);
+  }
 }

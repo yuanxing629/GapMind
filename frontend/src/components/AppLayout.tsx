@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
-import { Button, Layout, Menu, Space, Tag, Tooltip, theme } from "antd";
+import { Avatar, Button, Dropdown, Layout, Menu, Space, Tag, Tooltip, Typography, theme } from "antd";
 import {
   BarChartOutlined,
   AppstoreOutlined,
+  LogoutOutlined,
+  SettingOutlined,
   BulbOutlined,
   CodeOutlined,
   EditOutlined,
@@ -16,11 +18,13 @@ import {
   MoonOutlined,
   ProjectOutlined,
   ThunderboltOutlined,
+  UserOutlined,
 } from "@ant-design/icons";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAppStore } from "../store/appStore";
 import { selectedGlobalKey } from "./layout/navigation";
 import { useTheme } from "../state/theme";
+import { useAuth } from "../state/auth";
 
 const { Header, Sider, Content } = Layout;
 
@@ -48,6 +52,7 @@ export default function AppLayout() {
   const [mobile, setMobile] = useState(false);
   const currentWorkspaceId = useAppStore((state) => state.currentWorkspaceId);
   const currentWorkspaceName = useAppStore((state) => state.currentWorkspaceName);
+  const { user, logout } = useAuth();
 
   useEffect(() => {
     setCollapsed(mobile);
@@ -86,12 +91,31 @@ export default function AppLayout() {
     },
   ];
 
+  const profileItems = [
+    {
+      key: "identity",
+      label: user?.email || user?.display_name || "本地开发用户",
+      disabled: true,
+    },
+    ...(user?.is_platform_admin ? [{ key: "admin", icon: <SettingOutlined />, label: "管理员控制台" }] : []),
+    { type: "divider" as const, key: "profile-divider" },
+    { key: "logout", icon: <LogoutOutlined />, label: "退出登录", danger: true },
+  ];
+
+  const handleProfileAction = async ({ key }: { key: string }) => {
+    if (key === "admin") navigate("/admin");
+    if (key === "logout") {
+      await logout();
+      navigate("/login", { replace: true });
+    }
+  };
+
   return (
     <Layout className="gm-app-layout">
       <Sider
         width={232}
         breakpoint="lg"
-        collapsedWidth={0}
+        collapsedWidth={mobile ? 0 : 64}
         collapsed={collapsed}
         trigger={null}
         onBreakpoint={(broken) => {
@@ -125,8 +149,19 @@ export default function AppLayout() {
           style={{ borderRight: 0 }}
         />
         <div className="gm-sider-footer">
-          <Tag color="blue">证据驱动研究</Tag>
-          <TypographyFooter />
+          <div className="gm-sider-footer-copy">
+            <Tag color="blue">证据驱动研究</Tag>
+            <TypographyFooter />
+          </div>
+          <Tooltip title={collapsed ? "展开导航" : "收起导航"} placement="right">
+            <Button
+              type="text"
+              className="gm-sider-collapse"
+              aria-label={collapsed ? "展开导航" : "收起导航"}
+              icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+              onClick={() => setCollapsed((value) => !value)}
+            />
+          </Tooltip>
         </div>
       </Sider>
       <Layout>
@@ -158,6 +193,12 @@ export default function AppLayout() {
             <Tooltip title={isDark ? "切换到浅色模式" : "切换到深色模式"}>
               <Button type="text" aria-label="切换主题" icon={isDark ? <BulbOutlined /> : <MoonOutlined />} onClick={toggleTheme} />
             </Tooltip>
+            <Dropdown menu={{ items: profileItems, onClick: handleProfileAction }} placement="bottomRight">
+              <Button type="text" className="gm-profile-trigger">
+                <Avatar size="small" icon={<UserOutlined />} />
+                <Typography.Text className="gm-profile-name">{user?.display_name || user?.email || "本地用户"}</Typography.Text>
+              </Button>
+            </Dropdown>
           </Space>
         </Header>
         <Content className="gm-content">

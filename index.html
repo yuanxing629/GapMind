@@ -1,0 +1,2551 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GapMind — AI Research Workspace</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
+    rel="stylesheet">
+  <style>
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --bg: #FFFFFF;
+      --bg-subtle: #FAFAFB;
+      --bg-hover: #F5F5F7;
+      --bg-card: #FFFFFF;
+
+      --border: #EAECEF;
+      --border-subtle: #F1F3F5;
+      --border-strong: #D4D7DC;
+
+      --text-primary: #0A0A0B;
+      --text-secondary: #4A4F57;
+      --text-tertiary: #8A8F98;
+      --text-quaternary: #B5B9C0;
+
+      --primary: #5B6CFF;
+      --primary-hover: #4A5BEE;
+      --primary-light: #EEF0FF;
+      --primary-subtle: #F5F7FF;
+
+      --accent-purple: #8B5CF6;
+      --accent-cyan: #06B6D4;
+      --accent-green: #10B981;
+      --accent-orange: #F59E0B;
+      --accent-pink: #EC4899;
+      --accent-red: #EF4444;
+      --accent-fire: #F97316;
+
+      --shadow-xs: 0 1px 2px rgba(10, 10, 11, 0.04);
+      --shadow-sm: 0 1px 3px rgba(10, 10, 11, 0.06), 0 1px 2px rgba(10, 10, 11, 0.04);
+      --shadow-md: 0 4px 12px rgba(10, 10, 11, 0.06), 0 2px 4px rgba(10, 10, 11, 0.04);
+      --shadow-lg: 0 12px 32px rgba(10, 10, 11, 0.08), 0 4px 8px rgba(10, 10, 11, 0.04);
+      --shadow-primary: 0 8px 24px rgba(91, 108, 255, 0.20);
+      --shadow-glow: 0 0 40px rgba(91, 108, 255, 0.15);
+
+      --radius-sm: 6px;
+      --radius: 8px;
+      --radius-md: 12px;
+      --radius-lg: 16px;
+      --radius-xl: 20px;
+
+      --font: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --font-mono: 'JetBrains Mono', "SF Mono", Menlo, monospace;
+
+      --sidebar-width: 248px;
+      --topbar-height: 60px;
+    }
+
+    html,
+    body {
+      height: 100%;
+    }
+
+    body {
+      font-family: var(--font);
+      color: var(--text-primary);
+      background: var(--bg-subtle);
+      font-size: 14px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      font-feature-settings: "cv11", "ss01";
+    }
+
+    /* ====== App Layout ====== */
+    .app {
+      display: flex;
+      min-height: 100vh;
+    }
+
+    /* ====== Sidebar ====== */
+    .sidebar {
+      width: var(--sidebar-width);
+      background: var(--bg);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 18px 18px 14px;
+    }
+
+    .brand-mark {
+      width: 30px;
+      height: 30px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .brand-mark::after {
+      content: '';
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      width: 6px;
+      height: 6px;
+      background: var(--primary);
+      border-radius: 50%;
+      box-shadow: 0 0 8px var(--primary);
+    }
+
+    .brand-mark svg {
+      color: white;
+    }
+
+    .brand-name {
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      line-height: 1.2;
+    }
+
+    .brand-tag {
+      font-size: 10px;
+      color: var(--text-tertiary);
+      font-weight: 500;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      line-height: 1.2;
+    }
+
+    .workspace-selector {
+      margin: 4px 12px 16px;
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .workspace-selector:hover {
+      background: var(--bg-hover);
+      border-color: var(--border-strong);
+    }
+
+    .ws-icon {
+      width: 22px;
+      height: 22px;
+      border-radius: 5px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: 600;
+      font-size: 11px;
+      flex-shrink: 0;
+    }
+
+    .ws-icon.default {
+      background: linear-gradient(135deg, #5B6CFF, #8B5CF6);
+    }
+
+    .workspace-name {
+      flex: 1;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-primary);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .workspace-chevron {
+      color: var(--text-tertiary);
+      flex-shrink: 0;
+    }
+
+    /* Nav */
+    .nav {
+      flex: 1;
+      padding: 0 8px;
+    }
+
+    .nav-section {
+      margin-bottom: 14px;
+    }
+
+    .nav-section-title {
+      padding: 8px 12px 4px;
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--text-tertiary);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 7px 10px;
+      border-radius: var(--radius);
+      color: var(--text-secondary);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      position: relative;
+    }
+
+    .nav-item:hover {
+      background: var(--bg-hover);
+      color: var(--text-primary);
+    }
+
+    .nav-item.active {
+      background: var(--primary-light);
+      color: var(--primary);
+      font-weight: 600;
+    }
+
+    .nav-item.active::before {
+      content: '';
+      position: absolute;
+      left: -8px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 3px;
+      height: 16px;
+      background: var(--primary);
+      border-radius: 0 2px 2px 0;
+    }
+
+    .nav-icon {
+      width: 16px;
+      height: 16px;
+      flex-shrink: 0;
+    }
+
+    .nav-badge {
+      margin-left: auto;
+      background: var(--primary);
+      color: white;
+      font-size: 10px;
+      font-weight: 600;
+      padding: 1px 6px;
+      border-radius: 10px;
+      min-width: 18px;
+      text-align: center;
+    }
+
+    .nav-item:not(.active) .nav-badge {
+      background: var(--bg-hover);
+      color: var(--text-tertiary);
+    }
+
+    .sidebar-footer {
+      padding: 12px;
+      border-top: 1px solid var(--border-subtle);
+    }
+
+    .user-card {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px;
+      border-radius: var(--radius);
+      cursor: pointer;
+      transition: background 0.15s ease;
+    }
+
+    .user-card:hover {
+      background: var(--bg-hover);
+    }
+
+    .avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #5B6CFF, #8B5CF6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: 600;
+      font-size: 12px;
+      flex-shrink: 0;
+    }
+
+    .user-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .user-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-primary);
+      line-height: 1.2;
+    }
+
+    .user-email {
+      font-size: 11px;
+      color: var(--text-tertiary);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      line-height: 1.2;
+      margin-top: 2px;
+    }
+
+    /* ====== Main ====== */
+    .main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    /* Top bar */
+    .topbar {
+      height: var(--topbar-height);
+      background: rgba(255, 255, 255, 0.85);
+      backdrop-filter: saturate(180%) blur(12px);
+      -webkit-backdrop-filter: saturate(180%) blur(12px);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 0 24px;
+      gap: 16px;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    .breadcrumb {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      color: var(--text-tertiary);
+    }
+
+    .breadcrumb-sep {
+      color: var(--text-quaternary);
+    }
+
+    .breadcrumb-current {
+      color: var(--text-primary);
+      font-weight: 600;
+    }
+
+    .search-bar {
+      flex: 1;
+      max-width: 520px;
+      margin: 0 auto;
+      position: relative;
+    }
+
+    .search-input {
+      width: 100%;
+      height: 36px;
+      background: var(--bg-subtle);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 0 60px 0 36px;
+      font-size: 13px;
+      font-family: var(--font);
+      color: var(--text-primary);
+      transition: all 0.15s ease;
+    }
+
+    .search-input::placeholder {
+      color: var(--text-tertiary);
+    }
+
+    .search-input:focus {
+      outline: none;
+      background: var(--bg);
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px var(--primary-light);
+    }
+
+    .search-icon {
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-tertiary);
+    }
+
+    .search-kbd {
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      display: flex;
+      gap: 2px;
+    }
+
+    .kbd {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      padding: 2px 5px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text-tertiary);
+      line-height: 1;
+    }
+
+    .topbar-actions {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+    }
+
+    /* AI Status pill in topbar */
+    .ai-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      background: var(--primary-subtle);
+      border: 1px solid var(--primary-light);
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--primary);
+    }
+
+    .ai-status-dot {
+      width: 6px;
+      height: 6px;
+      background: var(--primary);
+      border-radius: 50%;
+      box-shadow: 0 0 6px var(--primary);
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    .icon-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: var(--radius);
+      border: none;
+      background: transparent;
+      color: var(--text-secondary);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s ease;
+      position: relative;
+    }
+
+    .icon-btn:hover {
+      background: var(--bg-hover);
+      color: var(--text-primary);
+    }
+
+    .notification-dot {
+      position: absolute;
+      top: 8px;
+      right: 9px;
+      width: 7px;
+      height: 7px;
+      background: var(--accent-red);
+      border: 2px solid var(--bg);
+      border-radius: 50%;
+    }
+
+    .topbar-divider {
+      width: 1px;
+      height: 24px;
+      background: var(--border);
+      margin: 0 4px;
+    }
+
+    /* ====== Content ====== */
+    .content {
+      padding: 28px 40px 80px;
+      max-width: 1440px;
+      width: 100%;
+      margin: 0 auto;
+    }
+
+    /* ====== HERO: AI Discovery ====== */
+    .hero {
+      display: grid;
+      grid-template-columns: 1fr 1.2fr;
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+
+    /* Left: AI Discovery Summary */
+    .hero-discovery {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 28px 28px 24px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero-discovery::before {
+      content: '';
+      position: absolute;
+      top: -40%;
+      right: -20%;
+      width: 400px;
+      height: 400px;
+      background: radial-gradient(circle, rgba(91, 108, 255, 0.06), transparent 60%);
+      pointer-events: none;
+    }
+
+    .hero-greeting {
+      font-size: 12px;
+      color: var(--text-tertiary);
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .hero-title {
+      font-size: 26px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin: 6px 0 22px;
+      line-height: 1.2;
+      color: var(--text-primary);
+    }
+
+    .ai-found-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      background: linear-gradient(135deg, var(--primary), var(--accent-purple));
+      color: white;
+      font-size: 11px;
+      font-weight: 700;
+      border-radius: 20px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      margin-bottom: 16px;
+      box-shadow: var(--shadow-primary);
+    }
+
+    .ai-found-label svg {
+      color: white;
+    }
+
+    .ai-found-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 22px;
+    }
+
+    .ai-found-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 12px;
+      background: var(--bg-subtle);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius);
+      transition: all 0.15s ease;
+      cursor: pointer;
+    }
+
+    .ai-found-item:hover {
+      background: var(--primary-subtle);
+      border-color: var(--primary-light);
+    }
+
+    .ai-found-item.featured {
+      background: linear-gradient(135deg, var(--primary-subtle), #F9F5FF);
+      border-color: var(--primary-light);
+    }
+
+    .ai-found-num {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--primary);
+      letter-spacing: -0.02em;
+      min-width: 36px;
+    }
+
+    .ai-found-item.featured .ai-found-num {
+      color: var(--primary);
+    }
+
+    .ai-found-text {
+      flex: 1;
+      font-size: 13px;
+      color: var(--text-primary);
+      font-weight: 500;
+    }
+
+    .ai-found-text strong {
+      color: var(--primary);
+      font-weight: 600;
+    }
+
+    .ai-found-arrow {
+      color: var(--text-tertiary);
+      flex-shrink: 0;
+    }
+
+    .ai-found-item:hover .ai-found-arrow {
+      color: var(--primary);
+      transform: translateX(2px);
+    }
+
+    .ai-found-arrow {
+      transition: all 0.15s ease;
+    }
+
+    .hero-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 9px 14px;
+      border-radius: var(--radius);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      border: none;
+      font-family: var(--font);
+      line-height: 1;
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      color: white;
+      font-weight: 600;
+    }
+
+    .btn-primary:hover {
+      background: var(--primary-hover);
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-primary);
+    }
+
+    .btn-ghost {
+      background: var(--bg-subtle);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+    }
+
+    .btn-ghost:hover {
+      background: var(--bg-hover);
+      border-color: var(--border-strong);
+    }
+
+    .btn-secondary-dark {
+      background: rgba(255, 255, 255, 0.08);
+      color: white;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+    }
+
+    .btn-secondary-dark:hover {
+      background: rgba(255, 255, 255, 0.14);
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+
+    /* Right: Top Research Opportunity */
+    .hero-opportunity {
+      background: linear-gradient(135deg, #0A0A0B 0%, #1E1E23 100%);
+      border-radius: var(--radius-lg);
+      padding: 28px 30px;
+      color: white;
+      position: relative;
+      overflow: hidden;
+      border: 1px solid #1E1E23;
+    }
+
+    .hero-opportunity::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      right: -20%;
+      width: 500px;
+      height: 500px;
+      background: radial-gradient(circle, rgba(91, 108, 255, 0.4), transparent 60%);
+      pointer-events: none;
+    }
+
+    .hero-opportunity::after {
+      content: '';
+      position: absolute;
+      bottom: -40%;
+      left: 20%;
+      width: 400px;
+      height: 400px;
+      background: radial-gradient(circle, rgba(139, 92, 246, 0.25), transparent 60%);
+      pointer-events: none;
+    }
+
+    .opp-eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      background: rgba(255, 255, 255, 0.08);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: white;
+      font-size: 10px;
+      font-weight: 700;
+      border-radius: 20px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      position: relative;
+      margin-bottom: 14px;
+    }
+
+    .opp-eyebrow::before {
+      content: '';
+      width: 6px;
+      height: 6px;
+      background: #FBBF24;
+      border-radius: 50%;
+      box-shadow: 0 0 8px #FBBF24;
+    }
+
+    .opp-title {
+      font-size: 24px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      line-height: 1.2;
+      margin-bottom: 8px;
+      position: relative;
+      background: linear-gradient(180deg, #FFFFFF 0%, #D4D4D8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .opp-desc {
+      font-size: 13px;
+      color: rgba(255, 255, 255, 0.65);
+      line-height: 1.55;
+      margin-bottom: 22px;
+      max-width: 480px;
+      position: relative;
+    }
+
+    .opp-desc strong {
+      color: white;
+      font-weight: 600;
+    }
+
+    .opp-metrics {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-bottom: 22px;
+      position: relative;
+    }
+
+    .opp-metric {
+      padding: 12px 14px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: var(--radius);
+    }
+
+    .opp-metric-label {
+      font-size: 10px;
+      color: rgba(255, 255, 255, 0.5);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+
+    .opp-metric-value {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: white;
+      display: flex;
+      align-items: baseline;
+      gap: 4px;
+    }
+
+    .opp-metric-value .unit {
+      font-size: 12px;
+      font-weight: 500;
+      color: rgba(255, 255, 255, 0.6);
+    }
+
+    .opp-metric-bar {
+      height: 4px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 2px;
+      overflow: hidden;
+      margin-top: 8px;
+    }
+
+    .opp-metric-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #5B6CFF, #8B5CF6);
+      border-radius: 2px;
+    }
+
+    .opp-metric.feasibility .opp-metric-value {
+      color: #34D399;
+    }
+
+    .opp-actions {
+      display: flex;
+      gap: 8px;
+      position: relative;
+    }
+
+    .btn-opp-primary {
+      background: white;
+      color: #0A0A0B;
+      font-weight: 600;
+    }
+
+    .btn-opp-primary:hover {
+      background: rgba(255, 255, 255, 0.92);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+
+    /* ====== Section ====== */
+    .section {
+      margin-bottom: 32px;
+    }
+
+    .section-header {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      margin-bottom: 14px;
+    }
+
+    .section-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text-primary);
+      letter-spacing: -0.01em;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .section-subtitle {
+      font-size: 12px;
+      color: var(--text-tertiary);
+      margin-top: 2px;
+    }
+
+    .section-link {
+      font-size: 12px;
+      color: var(--text-tertiary);
+      font-weight: 500;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 6px 10px;
+      border-radius: var(--radius-sm);
+      transition: all 0.15s ease;
+    }
+
+    .section-link:hover {
+      color: var(--text-primary);
+      background: var(--bg-hover);
+    }
+
+    .section-link.primary {
+      color: var(--primary);
+    }
+
+    .section-link.primary:hover {
+      color: var(--primary-hover);
+      background: var(--primary-subtle);
+    }
+
+    /* ====== Quick Actions with AI Status ====== */
+    .quick-actions {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 10px;
+    }
+
+    .action-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .action-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: var(--accent, var(--primary));
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+
+    .action-card:hover {
+      border-color: var(--primary);
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-md);
+    }
+
+    .action-card:hover::before {
+      opacity: 1;
+    }
+
+    .action-card.discover {
+      --accent: linear-gradient(90deg, #3B82F6, #60A5FA);
+    }
+
+    .action-card.plan {
+      --accent: linear-gradient(90deg, #F59E0B, #FBBF24);
+    }
+
+    .action-card.execute {
+      --accent: linear-gradient(90deg, #10B981, #34D399);
+    }
+
+    .action-card.analyze {
+      --accent: linear-gradient(90deg, #EC4899, #F472B6);
+    }
+
+    .action-card.publish {
+      --accent: linear-gradient(90deg, #4F46E5, #818CF8);
+    }
+
+    .action-card.respond {
+      --accent: linear-gradient(90deg, #EF4444, #F87171);
+    }
+
+    .action-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 12px;
+    }
+
+    .action-icon.discover {
+      background: linear-gradient(135deg, #DBEAFE, #BFDBFE);
+      color: #2563EB;
+    }
+
+    .action-icon.plan {
+      background: linear-gradient(135deg, #FEF3C7, #FDE68A);
+      color: #D97706;
+    }
+
+    .action-icon.execute {
+      background: linear-gradient(135deg, #D1FAE5, #A7F3D0);
+      color: #059669;
+    }
+
+    .action-icon.analyze {
+      background: linear-gradient(135deg, #FCE7F3, #FBCFE8);
+      color: #DB2777;
+    }
+
+    .action-icon.publish {
+      background: linear-gradient(135deg, #E0E7FF, #C7D2FE);
+      color: #4F46E5;
+    }
+
+    .action-icon.respond {
+      background: linear-gradient(135deg, #FFE4E6, #FECDD3);
+      color: #E11D48;
+    }
+
+    .action-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 2px;
+      letter-spacing: -0.01em;
+    }
+
+    .action-subtitle {
+      font-size: 10px;
+      color: var(--text-tertiary);
+      margin-bottom: 12px;
+      line-height: 1.3;
+    }
+
+    .action-status {
+      padding-top: 10px;
+      border-top: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .action-status-text {
+      font-size: 11px;
+      color: var(--text-secondary);
+      font-weight: 500;
+      flex: 1;
+      line-height: 1.3;
+    }
+
+    .action-status-text strong {
+      color: var(--text-primary);
+      font-weight: 700;
+    }
+
+    .live-dot {
+      width: 6px;
+      height: 6px;
+      background: var(--accent-green);
+      border-radius: 50%;
+      box-shadow: 0 0 0 0 var(--accent-green);
+      animation: pulse-ring 2s ease-out infinite;
+      flex-shrink: 0;
+    }
+
+    @keyframes pulse-ring {
+      0% {
+        box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5);
+      }
+
+      70% {
+        box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
+      }
+
+      100% {
+        box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+      }
+    }
+
+    /* ====== Two Column: Workspace + AI Copilot ====== */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1.3fr 1fr;
+      gap: 16px;
+    }
+
+    .panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 20px;
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+
+    .panel-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-primary);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      letter-spacing: -0.01em;
+    }
+
+    .panel-title-icon {
+      width: 18px;
+      height: 18px;
+      border-radius: 5px;
+      background: var(--primary-light);
+      color: var(--primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Active Workspace (data center) */
+    .workspace-intel {
+      padding: 22px;
+    }
+
+    .workspace-head {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .ws-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      font-weight: 700;
+      font-size: 15px;
+      color: white;
+    }
+
+    .ws-icon.graphrag {
+      background: linear-gradient(135deg, #5B6CFF, #8B5CF6);
+    }
+
+    .ws-head-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .ws-head-name {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text-primary);
+      letter-spacing: -0.01em;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .ws-head-desc {
+      font-size: 12px;
+      color: var(--text-tertiary);
+      margin-top: 2px;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      line-height: 1.5;
+    }
+
+    .status-active {
+      background: #ECFDF5;
+      color: #059669;
+    }
+
+    .status-active::before {
+      content: '';
+      width: 5px;
+      height: 5px;
+      background: #10B981;
+      border-radius: 50%;
+    }
+
+    .ws-metrics {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      margin-bottom: 18px;
+    }
+
+    .ws-metric {
+      padding: 12px;
+      background: var(--bg-subtle);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius);
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .ws-metric:hover {
+      border-color: var(--primary-light);
+      background: var(--primary-subtle);
+    }
+
+    .ws-metric-label {
+      font-size: 10px;
+      color: var(--text-tertiary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+
+    .ws-metric-value {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text-primary);
+      letter-spacing: -0.02em;
+      line-height: 1.1;
+    }
+
+    .ws-metric-detail {
+      font-size: 10px;
+      color: var(--text-tertiary);
+      margin-top: 4px;
+    }
+
+    .ws-metric-detail.alert {
+      color: var(--accent-orange);
+      font-weight: 500;
+    }
+
+    .ws-activity {
+      border-top: 1px solid var(--border-subtle);
+      padding-top: 14px;
+    }
+
+    .ws-activity-title {
+      font-size: 10px;
+      color: var(--text-tertiary);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-weight: 600;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .ws-activity-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .ws-activity-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+
+    .ws-activity-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--primary);
+      flex-shrink: 0;
+    }
+
+    .ws-activity-dot.user {
+      background: var(--text-tertiary);
+    }
+
+    .ws-activity-dot.alert {
+      background: var(--accent-orange);
+    }
+
+    .ws-activity-text {
+      flex: 1;
+      line-height: 1.4;
+    }
+
+    .ws-activity-time {
+      font-size: 10px;
+      color: var(--text-tertiary);
+      flex-shrink: 0;
+    }
+
+    /* AI Copilot */
+    .ai-copilot {
+      padding: 22px;
+      background: linear-gradient(180deg, var(--bg-card), #FBFBFE);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .ai-copilot::before {
+      content: '';
+      position: absolute;
+      top: -20%;
+      right: -20%;
+      width: 300px;
+      height: 300px;
+      background: radial-gradient(circle, rgba(91, 108, 255, 0.05), transparent 60%);
+      pointer-events: none;
+    }
+
+    .copilot-head {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 16px;
+      position: relative;
+    }
+
+    .ai-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #0A0A0B, #1E1E23);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      flex-shrink: 0;
+    }
+
+    .ai-avatar::after {
+      content: '';
+      position: absolute;
+      bottom: -1px;
+      right: -1px;
+      width: 10px;
+      height: 10px;
+      background: #10B981;
+      border: 2px solid var(--bg-card);
+      border-radius: 50%;
+    }
+
+    .ai-avatar svg {
+      color: white;
+    }
+
+    .copilot-head-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .copilot-name {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text-primary);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .copilot-status {
+      font-size: 11px;
+      color: var(--text-tertiary);
+      margin-top: 2px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .copilot-status-dot {
+      width: 5px;
+      height: 5px;
+      background: #10B981;
+      border-radius: 50%;
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+
+      0%,
+      100% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: 0.4;
+      }
+    }
+
+    .copilot-message {
+      padding: 14px 16px;
+      background: var(--bg-subtle);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius);
+      margin-bottom: 14px;
+      position: relative;
+    }
+
+    .copilot-greeting {
+      font-size: 13px;
+      color: var(--text-primary);
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+
+    .copilot-insight {
+      font-size: 12px;
+      color: var(--text-secondary);
+      line-height: 1.55;
+    }
+
+    .copilot-insight strong {
+      color: var(--text-primary);
+      font-weight: 600;
+    }
+
+    .copilot-insight mark {
+      background: linear-gradient(transparent 60%, #FEF3C7 60%);
+      color: inherit;
+      padding: 0 2px;
+      font-weight: 500;
+    }
+
+    .copilot-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .copilot-action {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      cursor: pointer;
+      transition: all 0.15s ease;
+      text-align: left;
+      font-family: var(--font);
+    }
+
+    .copilot-action:hover {
+      border-color: var(--primary);
+      background: var(--primary-subtle);
+    }
+
+    .copilot-action.primary {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: white;
+    }
+
+    .copilot-action.primary:hover {
+      background: var(--primary-hover);
+    }
+
+    .copilot-action-icon {
+      width: 18px;
+      height: 18px;
+      flex-shrink: 0;
+    }
+
+    .copilot-action-text {
+      flex: 1;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .copilot-action.primary .copilot-action-text {
+      color: white;
+      font-weight: 600;
+    }
+
+    .copilot-action-arrow {
+      color: currentColor;
+      opacity: 0.6;
+    }
+
+    /* ====== Research Intelligence Row ====== */
+    .intelligence-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 10px;
+    }
+
+    .intelligence-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .intelligence-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: var(--accent);
+    }
+
+    .intelligence-card:hover {
+      border-color: var(--border-strong);
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .intelligence-card.fire {
+      --accent: linear-gradient(90deg, #F97316, #FB923C);
+    }
+
+    .intelligence-card.opportunity {
+      --accent: linear-gradient(90deg, #5B6CFF, #8B5CF6);
+    }
+
+    .intelligence-card.alert {
+      --accent: linear-gradient(90deg, #EF4444, #F87171);
+    }
+
+    .intelligence-card.trend {
+      --accent: linear-gradient(90deg, #10B981, #34D399);
+    }
+
+    .intelligence-card.citation {
+      --accent: linear-gradient(90deg, #06B6D4, #22D3EE);
+    }
+
+    .intelligence-head {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+
+    .intelligence-icon {
+      font-size: 14px;
+      line-height: 1;
+    }
+
+    .intelligence-type {
+      font-size: 10px;
+      color: var(--text-tertiary);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-weight: 600;
+    }
+
+    .intelligence-value {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text-primary);
+      letter-spacing: -0.02em;
+      line-height: 1.1;
+      display: flex;
+      align-items: baseline;
+      gap: 4px;
+    }
+
+    .intelligence-value .unit {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-tertiary);
+    }
+
+    .intelligence-trend {
+      font-size: 10px;
+      color: var(--accent-green);
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 1px;
+      margin-left: 4px;
+    }
+
+    .intelligence-desc {
+      font-size: 11px;
+      color: var(--text-tertiary);
+      margin-top: 6px;
+      line-height: 1.4;
+    }
+
+    /* ====== Timeline ====== */
+    .timeline-section {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 22px;
+    }
+
+    .timeline {
+      position: relative;
+      margin-top: 4px;
+    }
+
+    .timeline::before {
+      content: '';
+      position: absolute;
+      left: 11px;
+      top: 6px;
+      bottom: 6px;
+      width: 1px;
+      background: var(--border);
+    }
+
+    .timeline-day {
+      margin-bottom: 10px;
+    }
+
+    .timeline-day-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+
+    .timeline-date-badge {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-primary);
+      background: var(--bg);
+      border: 1px solid var(--border);
+      padding: 3px 8px;
+      border-radius: var(--radius-sm);
+      letter-spacing: 0.01em;
+    }
+
+    .timeline-day-label {
+      font-size: 10px;
+      color: var(--text-tertiary);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-weight: 600;
+    }
+
+    .timeline-item {
+      position: relative;
+      display: flex;
+      align-items: flex-start;
+      gap: 0;
+      padding: 6px 0;
+      margin-left: 8px;
+    }
+
+    .timeline-dot {
+      position: absolute;
+      left: -3px;
+      top: 12px;
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--bg);
+      border: 2px solid var(--border-strong);
+      z-index: 1;
+    }
+
+    .timeline-dot.ai {
+      background: linear-gradient(135deg, var(--primary), var(--accent-purple));
+      border-color: white;
+      box-shadow: 0 0 0 2px var(--primary-light);
+    }
+
+    .timeline-dot.success {
+      background: #10B981;
+      border-color: white;
+      box-shadow: 0 0 0 2px #D1FAE5;
+    }
+
+    .timeline-content {
+      flex: 1;
+      padding-left: 22px;
+    }
+
+    .timeline-title {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-primary);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      line-height: 1.3;
+    }
+
+    .timeline-meta {
+      font-size: 11px;
+      color: var(--text-tertiary);
+      margin-top: 3px;
+      line-height: 1.3;
+    }
+
+    .timeline-ai-tag {
+      background: linear-gradient(135deg, var(--primary), var(--accent-purple));
+      color: white;
+      font-size: 9px;
+      font-weight: 700;
+      padding: 1px 5px;
+      border-radius: 3px;
+      letter-spacing: 0.05em;
+      line-height: 1.4;
+    }
+
+    /* ====== Floating AI Button ====== */
+    .fab {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      width: 48px;
+      height: 48px;
+      border-radius: 14px;
+      background: linear-gradient(135deg, #0A0A0B 0%, #1E1E23 100%);
+      color: white;
+      border: 1px solid #2A2A30;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 8px 24px rgba(10, 10, 11, 0.25);
+      transition: all 0.2s ease;
+      z-index: 100;
+    }
+
+    .fab:hover {
+      transform: translateY(-2px) scale(1.04);
+      box-shadow: 0 12px 32px rgba(10, 10, 11, 0.35);
+    }
+
+    .fab::after {
+      content: '';
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      width: 8px;
+      height: 8px;
+      background: #5B6CFF;
+      border-radius: 50%;
+      box-shadow: 0 0 6px #5B6CFF;
+    }
+
+    /* Scrollbar */
+    .sidebar::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .sidebar::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .sidebar::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 3px;
+    }
+
+    .sidebar::-webkit-scrollbar-thumb:hover {
+      background: var(--border-strong);
+    }
+
+    /* Selection */
+    ::selection {
+      background: var(--primary-light);
+      color: var(--primary-hover);
+    }
+  </style>
+</head>
+
+<body>
+  <div class="app">
+    <!-- ============== SIDEBAR ============== -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M12 2L2 7l10 5 10-5-10-5z" />
+            <path d="M2 17l10 5 10-5" />
+            <path d="M2 12l10 5 10-5" />
+          </svg>
+        </div>
+        <div>
+          <div class="brand-name">GapMind</div>
+          <div class="brand-tag">Research OS</div>
+        </div>
+      </div>
+
+      <div class="workspace-selector">
+        <div class="ws-icon default">YX</div>
+        <div class="workspace-name">Yuan Xing Lab</div>
+        <svg class="workspace-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          stroke-width="2">
+          <polyline points="6 9 12 15 18 9"></polyline>
+        </svg>
+      </div>
+
+      <nav class="nav">
+        <div class="nav-section">
+          <div class="nav-item active">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="7" height="7" rx="1.5" />
+              <rect x="14" y="3" width="7" height="7" rx="1.5" />
+              <rect x="14" y="14" width="7" height="7" rx="1.5" />
+              <rect x="3" y="14" width="7" height="7" rx="1.5" />
+            </svg>
+            Dashboard
+          </div>
+          <div class="nav-item">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+            </svg>
+            Workspaces
+            <span class="nav-badge">12</span>
+          </div>
+          <div class="nav-item">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z" />
+              <path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z" />
+            </svg>
+            Knowledge Base
+            <span class="nav-badge">1.2k</span>
+          </div>
+        </div>
+
+        <div class="nav-section">
+          <div class="nav-section-title">Research Lifecycle</div>
+          <div class="nav-item">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              <path d="M11 8v6M8 11h6" />
+            </svg>
+            Discover
+          </div>
+          <div class="nav-item">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M9 11H5a2 2 0 00-2 2v7a2 2 0 002 2h14a2 2 0 002-2v-7a2 2 0 00-2-2h-4" />
+              <path d="M9 11V7a3 3 0 016 0v4" />
+            </svg>
+            Plan
+          </div>
+          <div class="nav-item">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="16 18 22 12 16 6" />
+              <polyline points="8 6 2 12 8 18" />
+              <circle cx="12" cy="12" r="2" />
+            </svg>
+            Execute
+          </div>
+          <div class="nav-item">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="20" x2="18" y2="10" />
+              <line x1="12" y1="20" x2="12" y2="4" />
+              <line x1="6" y1="20" x2="6" y2="14" />
+              <circle cx="18" cy="6" r="2" />
+            </svg>
+            Analyze
+          </div>
+          <div class="nav-item">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 19l7-7 3 3-7 7-3-3z" />
+              <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z" />
+              <path d="M2 2l7.586 7.586" />
+              <circle cx="11" cy="11" r="2" />
+            </svg>
+            Publish
+          </div>
+          <div class="nav-item">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
+            </svg>
+            Respond
+            <span class="nav-badge">3</span>
+          </div>
+        </div>
+
+        <div class="nav-section">
+          <div class="nav-section-title">Account</div>
+          <div class="nav-item">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3" />
+              <path
+                d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" />
+            </svg>
+            Settings
+          </div>
+        </div>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="user-card">
+          <div class="avatar">YC</div>
+          <div class="user-info">
+            <div class="user-name">Yuan Xing</div>
+            <div class="user-email">yuanxing629@163.com</div>
+          </div>
+          <button class="icon-btn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="5" r="1" />
+              <circle cx="12" cy="12" r="1" />
+              <circle cx="12" cy="19" r="1" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ============== MAIN ============== -->
+    <main class="main">
+      <!-- Top bar -->
+      <div class="topbar">
+        <div class="breadcrumb">
+          <span>Yuan Xing Lab</span>
+          <span class="breadcrumb-sep">/</span>
+          <span class="breadcrumb-current">Dashboard</span>
+        </div>
+
+        <div class="search-bar">
+          <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="2">
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+          <input type="text" class="search-input" placeholder="Search papers, opportunities, experiments, citations...">
+          <div class="search-kbd">
+            <span class="kbd">⌘</span>
+            <span class="kbd">K</span>
+          </div>
+        </div>
+
+        <div class="topbar-actions">
+          <div class="ai-status">
+            <span class="ai-status-dot"></span>
+            AI is online
+          </div>
+          <button class="icon-btn" title="Notifications">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9" />
+              <path d="M13.73 21a2 2 0 01-3.46 0" />
+            </svg>
+            <span class="notification-dot"></span>
+          </button>
+          <div class="topbar-divider"></div>
+          <div class="avatar" style="cursor: pointer;">YX</div>
+        </div>
+      </div>
+
+      <!-- Content -->
+      <div class="content">
+
+        <!-- ============== HERO: AI Discovery + Top Opportunity ============== -->
+        <div class="hero">
+          <!-- LEFT: AI Discovery Summary -->
+          <div class="hero-discovery">
+            <div class="hero-greeting">
+              <span>Friday · July 18 · 19:20</span>
+            </div>
+            <h1 class="hero-title">Good Evening, Yuan.</h1>
+
+            <div class="ai-found-label">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 2L9.5 7.5 4 8.5l4 4-1 6L12 16l5 2.5-1-6 4-4-5.5-1z" />
+              </svg>
+              Today, your AI found
+            </div>
+
+            <div class="ai-found-list">
+              <div class="ai-found-item featured">
+                <div class="ai-found-num">2</div>
+                <div class="ai-found-text"><strong>Research Opportunities</strong> with high novelty score</div>
+                <svg class="ai-found-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                  stroke-width="2">
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                  <polyline points="12 5 19 12 12 19" />
+                </svg>
+              </div>
+              <div class="ai-found-item">
+                <div class="ai-found-num">18</div>
+                <div class="ai-found-text">new papers indexed in your fields</div>
+                <svg class="ai-found-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                  stroke-width="2">
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                  <polyline points="12 5 19 12 12 19" />
+                </svg>
+              </div>
+              <div class="ai-found-item">
+                <div class="ai-found-num">1</div>
+                <div class="ai-found-text">Experiment Anomaly detected in batch #4</div>
+                <svg class="ai-found-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                  stroke-width="2">
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                  <polyline points="12 5 19 12 12 19" />
+                </svg>
+              </div>
+              <div class="ai-found-item">
+                <div class="ai-found-num">↗</div>
+                <div class="ai-found-text">Reviewer trend updated — RAG acceptance +12%</div>
+                <svg class="ai-found-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                  stroke-width="2">
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                  <polyline points="12 5 19 12 12 19" />
+                </svg>
+              </div>
+            </div>
+
+            <div class="hero-actions">
+              <button class="btn btn-primary">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <circle cx="11" cy="11" r="8" />
+                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                </svg>
+                Explore Opportunities
+              </button>
+              <button class="btn btn-ghost">View all AI activity</button>
+            </div>
+          </div>
+
+          <!-- RIGHT: Top Research Opportunity -->
+          <div class="hero-opportunity">
+            <div class="opp-eyebrow">Top Research Opportunity Today</div>
+            <h2 class="opp-title">Prototype-based Dynamic GNN Explanation</h2>
+            <p class="opp-desc">Across <strong>18 recent papers</strong> on GNN interpretability, an unaddressed gap
+              exists: combining prototype learning with dynamic graph structures. <strong>Estimated novelty:
+                91%.</strong></p>
+
+            <div class="opp-metrics">
+              <div class="opp-metric">
+                <div class="opp-metric-label">Novelty</div>
+                <div class="opp-metric-value">91<span class="unit">%</span></div>
+                <div class="opp-metric-bar">
+                  <div class="opp-metric-fill" style="width: 91%;"></div>
+                </div>
+              </div>
+              <div class="opp-metric">
+                <div class="opp-metric-label">Evidence</div>
+                <div class="opp-metric-value">18 <span class="unit">papers</span></div>
+                <div class="opp-metric-bar">
+                  <div class="opp-metric-fill" style="width: 72%;"></div>
+                </div>
+              </div>
+              <div class="opp-metric feasibility">
+                <div class="opp-metric-label">Feasibility</div>
+                <div class="opp-metric-value">High</div>
+                <div class="opp-metric-bar">
+                  <div class="opp-metric-fill"
+                    style="width: 85%; background: linear-gradient(90deg, #10B981, #34D399);"></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="opp-actions">
+              <button class="btn btn-opp-primary">
+                Explore Opportunity
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                  <polyline points="12 5 19 12 12 19" />
+                </svg>
+              </button>
+              <button class="btn btn-secondary-dark">Save for later</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ============== Quick Actions with AI Status ============== -->
+        <div class="section">
+          <div class="section-header">
+            <div>
+              <div class="section-title">Modules</div>
+              <div class="section-subtitle">AI is working across your research lifecycle</div>
+            </div>
+            <a href="#" class="section-link">Customize →</a>
+          </div>
+
+          <div class="quick-actions">
+            <div class="action-card discover">
+              <div class="action-icon discover">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="11" cy="11" r="8" />
+                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                  <path d="M11 8v6M8 11h6" />
+                </svg>
+              </div>
+              <div class="action-title">Discover</div>
+              <div class="action-subtitle">Research Opportunity Discovery</div>
+              <div class="action-status">
+                <span class="live-dot"></span>
+                <span class="action-status-text"><strong>5</strong> opportunities today</span>
+              </div>
+            </div>
+
+            <div class="action-card plan">
+              <div class="action-icon plan">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M9 11H5a2 2 0 00-2 2v7a2 2 0 002 2h14a2 2 0 002-2v-7a2 2 0 00-2-2h-4" />
+                  <path d="M9 11V7a3 3 0 016 0v4" />
+                </svg>
+              </div>
+              <div class="action-title">Plan</div>
+              <div class="action-subtitle">Experiment & Methodology</div>
+              <div class="action-status">
+                <span class="live-dot"></span>
+                <span class="action-status-text"><strong>2</strong> plans in progress</span>
+              </div>
+            </div>
+
+            <div class="action-card execute">
+              <div class="action-icon execute">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="16 18 22 12 16 6" />
+                  <polyline points="8 6 2 12 8 18" />
+                  <circle cx="12" cy="12" r="2" />
+                </svg>
+              </div>
+              <div class="action-title">Execute</div>
+              <div class="action-subtitle">Baseline Reproduction</div>
+              <div class="action-status">
+                <span class="live-dot"></span>
+                <span class="action-status-text"><strong>1</strong> job running · GPU A100</span>
+              </div>
+            </div>
+
+            <div class="action-card analyze">
+              <div class="action-icon analyze">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="18" y1="20" x2="18" y2="10" />
+                  <line x1="12" y1="20" x2="12" y2="4" />
+                  <line x1="6" y1="20" x2="6" y2="14" />
+                  <circle cx="18" cy="6" r="2" />
+                </svg>
+              </div>
+              <div class="action-title">Analyze</div>
+              <div class="action-subtitle">Result Interpretation</div>
+              <div class="action-status">
+                <span class="live-dot"></span>
+                <span class="action-status-text"><strong>3</strong> results ready</span>
+              </div>
+            </div>
+
+            <div class="action-card publish">
+              <div class="action-icon publish">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 19l7-7 3 3-7 7-3-3z" />
+                  <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z" />
+                  <path d="M2 2l7.586 7.586" />
+                  <circle cx="11" cy="11" r="2" />
+                </svg>
+              </div>
+              <div class="action-title">Publish</div>
+              <div class="action-subtitle">Writing Assistant</div>
+              <div class="action-status">
+                <span class="live-dot"></span>
+                <span class="action-status-text"><strong>1</strong> draft ready</span>
+              </div>
+            </div>
+
+            <div class="action-card respond">
+              <div class="action-icon respond">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
+                  <path d="M9 10h.01M9 14h6" />
+                </svg>
+              </div>
+              <div class="action-title">Respond</div>
+              <div class="action-subtitle">Reviewer Rebuttal</div>
+              <div class="action-status">
+                <span class="live-dot"></span>
+                <span class="action-status-text"><strong>3</strong> reviews pending</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ============== Active Workspace + AI Copilot ============== -->
+        <div class="section">
+          <div class="grid-2">
+            <!-- Active Workspace (data center) -->
+            <div class="panel workspace-intel">
+              <div class="panel-header">
+                <div class="panel-title">
+                  <span class="panel-title-icon">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                      stroke-width="2.5">
+                      <path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                    </svg>
+                  </span>
+                  Active Workspace
+                </div>
+                <a href="#" class="section-link">All workspaces →</a>
+              </div>
+
+              <div class="workspace-head">
+                <div class="ws-icon graphrag">G</div>
+                <div class="ws-head-info">
+                  <div class="ws-head-name">
+                    GraphRAG-X
+                    <span class="status-pill status-active">Active</span>
+                  </div>
+                  <div class="ws-head-desc">Explainable retrieval-augmented generation</div>
+                </div>
+              </div>
+
+              <div class="ws-metrics">
+                <div class="ws-metric">
+                  <div class="ws-metric-label">Papers</div>
+                  <div class="ws-metric-value">125</div>
+                  <div class="ws-metric-detail">+18 this week</div>
+                </div>
+                <div class="ws-metric">
+                  <div class="ws-metric-label">Experiments</div>
+                  <div class="ws-metric-value">4</div>
+                  <div class="ws-metric-detail alert">⚠ 1 anomaly</div>
+                </div>
+                <div class="ws-metric">
+                  <div class="ws-metric-label">Drafts</div>
+                  <div class="ws-metric-value">2</div>
+                  <div class="ws-metric-detail">1 ready</div>
+                </div>
+                <div class="ws-metric">
+                  <div class="ws-metric-label">Reviews</div>
+                  <div class="ws-metric-value">3</div>
+                  <div class="ws-metric-detail alert">3 pending</div>
+                </div>
+              </div>
+
+              <div class="ws-activity">
+                <div class="ws-activity-title">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2L9.5 7.5 4 8.5l4 4-1 6L12 16l5 2.5-1-6 4-4-5.5-1z" />
+                  </svg>
+                  Recent AI Activity
+                </div>
+                <div class="ws-activity-list">
+                  <div class="ws-activity-item">
+                    <div class="ws-activity-dot"></div>
+                    <div class="ws-activity-text">Generated 2 new <strong>Research Opportunities</strong></div>
+                    <div class="ws-activity-time">2h ago</div>
+                  </div>
+                  <div class="ws-activity-item">
+                    <div class="ws-activity-dot alert"></div>
+                    <div class="ws-activity-text">Flagged experiment anomaly in batch #4</div>
+                    <div class="ws-activity-time">5h ago</div>
+                  </div>
+                  <div class="ws-activity-item">
+                    <div class="ws-activity-dot"></div>
+                    <div class="ws-activity-text">Indexed 18 new papers from arXiv</div>
+                    <div class="ws-activity-time">1d ago</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- AI Copilot (proactive, not chat) -->
+            <div class="panel ai-copilot">
+              <div class="copilot-head">
+                <div class="ai-avatar">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2L9.5 7.5 4 8.5l4 4-1 6L12 16l5 2.5-1-6 4-4-5.5-1z" />
+                  </svg>
+                </div>
+                <div class="copilot-head-info">
+                  <div class="copilot-name">
+                    GapMind AI
+                    <span class="ai-badge" style="font-size: 9px; padding: 1px 5px;">Proactive</span>
+                  </div>
+                  <div class="copilot-status">
+                    <span class="copilot-status-dot"></span>
+                    Watching your workspace · synced 2 min ago
+                  </div>
+                </div>
+              </div>
+
+              <div class="copilot-message">
+                <div class="copilot-greeting">Hi Yuan 👋</div>
+                <div class="copilot-insight">
+                  Based on your current Workspace, I found <strong>7 papers</strong> discussing dynamic GNN
+                  explainability. <mark>They all cite the same limitation</mark> about prototype stability on temporal
+                  graphs.
+                </div>
+              </div>
+
+              <div class="copilot-actions">
+                <button class="copilot-action primary">
+                  <svg class="copilot-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    stroke-width="2">
+                    <circle cx="11" cy="11" r="8" />
+                    <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                    <path d="M11 8v6M8 11h6" />
+                  </svg>
+                  <span class="copilot-action-text">Generate Research Opportunity</span>
+                  <svg class="copilot-action-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" stroke-width="2.5">
+                    <line x1="5" y1="12" x2="19" y2="12" />
+                    <polyline points="12 5 19 12 12 19" />
+                  </svg>
+                </button>
+                <button class="copilot-action">
+                  <svg class="copilot-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    stroke-width="2">
+                    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                  </svg>
+                  <span class="copilot-action-text">Show me the 7 papers</span>
+                  <svg class="copilot-action-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" stroke-width="2">
+                    <line x1="5" y1="12" x2="19" y2="12" />
+                    <polyline points="12 5 19 12 12 19" />
+                  </svg>
+                </button>
+                <button class="copilot-action">
+                  <svg class="copilot-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    stroke-width="2">
+                    <path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z" />
+                  </svg>
+                  <span class="copilot-action-text">Add to reading list</span>
+                  <svg class="copilot-action-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" stroke-width="2">
+                    <line x1="5" y1="12" x2="19" y2="12" />
+                    <polyline points="12 5 19 12 12 19" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ============== Today's Research Intelligence ============== -->
+        <div class="section">
+          <div class="section-header">
+            <div>
+              <div class="section-title">Today's Research Intelligence</div>
+              <div class="section-subtitle">Real-time signals curated by AI · refreshed continuously</div>
+            </div>
+            <a href="#" class="section-link primary">Explore intelligence →</a>
+          </div>
+
+          <div class="intelligence-grid">
+            <div class="intelligence-card fire">
+              <div class="intelligence-head">
+                <span class="intelligence-icon">🔥</span>
+                <span class="intelligence-type">New Papers</span>
+              </div>
+              <div class="intelligence-value">5 <span class="unit">today</span></div>
+              <div class="intelligence-desc">Highly relevant to GraphRAG-X</div>
+            </div>
+
+            <div class="intelligence-card opportunity">
+              <div class="intelligence-head">
+                <span class="intelligence-icon">🎯</span>
+                <span class="intelligence-type">Opportunity Score</span>
+              </div>
+              <div class="intelligence-value">87 <span class="unit">/ 100</span></div>
+              <div class="intelligence-desc">2 high-impact opportunities</div>
+            </div>
+
+            <div class="intelligence-card alert">
+              <div class="intelligence-head">
+                <span class="intelligence-icon">⚠️</span>
+                <span class="intelligence-type">Experiment Alert</span>
+              </div>
+              <div class="intelligence-value">1 <span class="unit">anomaly</span></div>
+              <div class="intelligence-desc">Batch #4 deviates from baseline</div>
+            </div>
+
+            <div class="intelligence-card trend">
+              <div class="intelligence-head">
+                <span class="intelligence-icon">📈</span>
+                <span class="intelligence-type">Reviewer Trend</span>
+              </div>
+              <div class="intelligence-value">+12% <span class="intelligence-trend">↗</span></div>
+              <div class="intelligence-desc">RAG acceptance rising at ICLR</div>
+            </div>
+
+            <div class="intelligence-card citation">
+              <div class="intelligence-head">
+                <span class="intelligence-icon">🔗</span>
+                <span class="intelligence-type">Citation Opportunity</span>
+              </div>
+              <div class="intelligence-value">3 <span class="unit">missing</span></div>
+              <div class="intelligence-desc">Key refs in your rebuttal</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ============== Research Timeline ============== -->
+        <div class="section">
+          <div class="timeline-section">
+            <div class="section-header" style="margin-bottom: 14px;">
+              <div>
+                <div class="section-title">Research Timeline</div>
+                <div class="section-subtitle">Auto-recorded across all modules — not a fixed process</div>
+              </div>
+              <a href="#" class="section-link">Full history →</a>
+            </div>
+
+            <div class="timeline">
+              <div class="timeline-day">
+                <div class="timeline-day-header">
+                  <span class="timeline-date-badge">Jul 25</span>
+                  <span class="timeline-day-label">Yesterday</span>
+                </div>
+                <div class="timeline-item">
+                  <div class="timeline-dot"></div>
+                  <div class="timeline-content">
+                    <div class="timeline-title">Prepared Reviewer Rebuttal v1</div>
+                    <div class="timeline-meta">GraphRAG-X · 4 sections drafted</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="timeline-day">
+                <div class="timeline-day-header">
+                  <span class="timeline-date-badge">Jul 20</span>
+                  <span class="timeline-day-label">5 days ago</span>
+                </div>
+                <div class="timeline-item">
+                  <div class="timeline-dot ai"></div>
+                  <div class="timeline-content">
+                    <div class="timeline-title">
+                      AI Generated Related Work
+                      <span class="timeline-ai-tag">AI</span>
+                    </div>
+                    <div class="timeline-meta">38 papers cited · auto-formatted for ICLR</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="timeline-day">
+                <div class="timeline-day-header">
+                  <span class="timeline-date-badge">Jul 18</span>
+                  <span class="timeline-day-label">Last week</span>
+                </div>
+                <div class="timeline-item">
+                  <div class="timeline-dot success"></div>
+                  <div class="timeline-content">
+                    <div class="timeline-title">Uploaded Experiment Results</div>
+                    <div class="timeline-meta">5 datasets · accuracy 87.3% · 12 figures</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="timeline-day">
+                <div class="timeline-day-header">
+                  <span class="timeline-date-badge">Jul 13</span>
+                  <span class="timeline-day-label">2 weeks ago</span>
+                </div>
+                <div class="timeline-item">
+                  <div class="timeline-dot ai"></div>
+                  <div class="timeline-content">
+                    <div class="timeline-title">
+                      AI Found 3 Research Opportunities
+                      <span class="timeline-ai-tag">AI</span>
+                    </div>
+                    <div class="timeline-meta">Novel directions surfaced from 142-paper analysis</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="timeline-day">
+                <div class="timeline-day-header">
+                  <span class="timeline-date-badge">Jul 10</span>
+                  <span class="timeline-day-label">Workspace created</span>
+                </div>
+                <div class="timeline-item">
+                  <div class="timeline-dot"></div>
+                  <div class="timeline-content">
+                    <div class="timeline-title">Imported 120 Papers from arXiv</div>
+                    <div class="timeline-meta">GraphRAG-X workspace initialized</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </main>
+  </div>
+
+  <!-- Floating AI Button -->
+  <button class="fab" title="Open AI Assistant (⌘J)">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 2L9.5 7.5 4 8.5l4 4-1 6L12 16l5 2.5-1-6 4-4-5.5-1z" />
+    </svg>
+  </button>
+
+  <script>
+    // Light interactivity — purely cosmetic for prototype feel
+    document.querySelectorAll('.action-card').forEach(card => {
+      card.addEventListener('click', () => {
+        const title = card.querySelector('.action-title').textContent.trim();
+        console.log('[GapMind] Open module:', title);
+      });
+    });
+
+    document.querySelectorAll('.ai-found-item').forEach(item => {
+      item.addEventListener('click', () => {
+        const text = item.querySelector('.ai-found-text').textContent.trim();
+        console.log('[GapMind] Explore AI finding:', text);
+      });
+    });
+
+    document.querySelectorAll('.intelligence-card').forEach(card => {
+      card.addEventListener('click', () => {
+        const type = card.querySelector('.intelligence-type').textContent.trim();
+        console.log('[GapMind] Open intelligence:', type);
+      });
+    });
+
+    document.querySelectorAll('.copilot-action').forEach(a => {
+      a.addEventListener('click', () => {
+        console.log('[GapMind] AI action:', a.querySelector('.copilot-action-text').textContent.trim());
+      });
+    });
+
+    document.querySelector('.fab').addEventListener('click', () => {
+      console.log('[GapMind] Open AI assistant');
+    });
+
+    // ⌘K to focus search
+    document.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        const input = document.querySelector('.search-input');
+        input.focus();
+        input.select();
+      }
+    });
+  </script>
+</body>
+
+</html>
