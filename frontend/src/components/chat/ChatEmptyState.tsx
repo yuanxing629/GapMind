@@ -1,6 +1,6 @@
 import { Card, Space, Typography } from "antd";
 
-const examples = ["帮我梳理这个研究问题的思路", "解释一下什么是时间图神经网络", "帮我比较两种实验方案", "把下面这段研究描述改得更清楚"];
+const examples = ["帮我梳理这个研究问题的思路", "分析一下实验结果", "帮我比较两种实验方案", "把下面这段研究描述改得更清楚:"];
 
 export default function ChatEmptyState({ onExample, workspaceName, independent = false }: { onExample: (value: string) => void; workspaceName?: string; independent?: boolean }) {
   const description = independent

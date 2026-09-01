@@ -46,6 +46,10 @@ const lifecycleNavigation = [
 export default function AppLayout() {
   const location = useLocation();
   const navigate = useNavigate();
+  const isChatSurface =
+    location.pathname === "/chat" ||
+    location.pathname.startsWith("/chat/") ||
+    /\/assistant(?:\/|$)/.test(location.pathname);
   const { token } = theme.useToken();
   const { isDark, toggleTheme } = useTheme();
   const [collapsed, setCollapsed] = useState(false);
@@ -111,7 +115,7 @@ export default function AppLayout() {
   };
 
   return (
-    <Layout className="gm-app-layout">
+    <Layout className={`gm-app-layout${isChatSurface ? " gm-app-layout--chat" : ""}`}>
       <Sider
         width={232}
         breakpoint="lg"

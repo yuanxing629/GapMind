@@ -85,6 +85,9 @@ class Settings(BaseSettings):
     deepseek_api_key: str = ""
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-v4-flash"
+    # Only chat requests carrying images use this model. Keep text chat on the
+    # regular model so the existing retrieval and cost profile is unchanged.
+    deepseek_vision_model: str = "deepseek-v4-flash-vision-exp"
     # demo-day fuse: fall over to a backup OpenAI-compatible endpoint when the
     # primary fails; enabled only when all three backup fields are set
     deepseek_backup_api_key: str = ""
@@ -116,6 +119,8 @@ class Settings(BaseSettings):
     chat_history_message_limit: int = 20
     chat_history_char_limit: int = 60000
     chat_max_input_chars: int = 12000
+    chat_max_image_count: int = 3
+    chat_max_image_bytes: int = 8 * 1024 * 1024
     chat_prompt_max_context_chars: int = 48000
     chat_rag_top_k: int = 6
     chat_rag_max_context_chars: int = 18000

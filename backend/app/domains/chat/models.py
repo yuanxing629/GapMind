@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, JSON, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDPKMixin
@@ -80,6 +80,34 @@ class ChatMessage(Base, UUIDPKMixin, TimestampMixin):
         cascade="all, delete-orphan",
         order_by="ChatMessageEvidence.rank",
     )
+    images: Mapped[list["ChatMessageImage"]] = relationship(
+        back_populates="message",
+        cascade="all, delete-orphan",
+        order_by="ChatMessageImage.created_at",
+    )
+
+
+class ChatMessageImage(Base, UUIDPKMixin, TimestampMixin):
+    """A user-uploaded image attached to one chat message.
+
+    Images are chat materials only. They are not Artifacts, are not indexed in
+    the workspace corpus, and are served through the chat ownership boundary.
+    """
+
+    __tablename__ = "chat_message_images"
+    __table_args__ = (
+        Index("ix_chat_message_images_message_id", "message_id"),
+    )
+
+    message_id: Mapped[str] = mapped_column(
+        ForeignKey("chat_messages.id", ondelete="CASCADE"), nullable=False
+    )
+    filename: Mapped[str] = mapped_column(String(512), nullable=False)
+    mime_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    file_path: Mapped[str] = mapped_column(String(1024), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+
+    message: Mapped[ChatMessage] = relationship(back_populates="images")
 
 
 class ChatMessageEvidence(Base, UUIDPKMixin, TimestampMixin):

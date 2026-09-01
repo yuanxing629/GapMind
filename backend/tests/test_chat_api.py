@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 from dataclasses import dataclass
 from types import SimpleNamespace
 from uuid import uuid4
@@ -22,6 +23,7 @@ class FakeResponse:
 
 class FakeGateway:
     api_key = "test-key"
+    vision_model = "fake-vision"
 
     def __init__(self, content: str = "这是 AI 的回答") -> None:
         self.content = content
@@ -109,6 +111,86 @@ def test_first_send_creates_conversation_and_two_messages(client, fake_gateway):
 
     detail = client.get(f"/api/v1/chat/conversations/{body['conversation']['id']}").json()
     assert [item["role"] for item in detail["messages"]] == ["user", "assistant"]
+
+
+def _test_png_data_url() -> str:
+    return "data:image/png;base64," + base64.b64encode(b"\x89PNG\r\n\x1a\nimage").decode("ascii")
+
+
+def test_image_send_uses_vision_model_and_protected_attachment(
+    client, fake_gateway, monkeypatch, tmp_path
+):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "app_storage_dir", str(tmp_path))
+    response = client.post(
+        "/api/v1/chat/conversations/send",
+        json={
+            "content": "请解释这张图",
+            "images": [
+                {
+                    "filename": "figure.png",
+                    "mime_type": "image/png",
+                    "data_url": _test_png_data_url(),
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    image = body["user_message"]["images"][0]
+    assert image["filename"] == "figure.png"
+    assert image["mime_type"] == "image/png"
+    assert fake_gateway.call_kwargs[-1]["model_override"] == "fake-vision"
+    assert fake_gateway.calls[-1][-1]["content"][0] == {
+        "type": "text",
+        "text": "请解释这张图",
+    }
+    assert fake_gateway.calls[-1][-1]["content"][1]["type"] == "image_url"
+
+    image_response = client.get(
+        f"/api/v1/chat/conversations/{body['conversation']['id']}"
+    )
+    assert image_response.status_code == 200
+    persisted_image = image_response.json()["messages"][0]["images"][0]
+    served = client.get(
+        f"/api/v1/chat/conversations/{body['conversation']['id']}"
+        f"/messages/{body['user_message']['id']}/images/{persisted_image['id']}"
+    )
+    assert served.status_code == 200
+    assert served.headers["content-type"].startswith("image/png")
+    assert served.content == b"\x89PNG\r\n\x1a\nimage"
+
+
+def test_stream_image_uses_vision_model(client, fake_gateway, monkeypatch, tmp_path):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "app_storage_dir", str(tmp_path))
+    conversation = client.post(
+        "/api/v1/chat/conversations", json={"title": "图片对话"}
+    ).json()
+    response = client.post(
+        f"/api/v1/chat/conversations/{conversation['id']}/messages/stream",
+        json={
+            "content": "继续分析这张图",
+            "images": [
+                {
+                    "filename": "chart.png",
+                    "mime_type": "image/png",
+                    "data_url": _test_png_data_url(),
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    assert "data:" in response.text
+    assert fake_gateway.stream_call_kwargs[-1]["model_override"] == "fake-vision"
+    detail = client.get(
+        f"/api/v1/chat/conversations/{conversation['id']}"
+    ).json()
+    assert detail["messages"][0]["images"][0]["filename"] == "chart.png"
 
 
 def test_existing_send_includes_completed_history(client, fake_gateway):

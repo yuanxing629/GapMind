@@ -1589,6 +1589,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/chat/conversations/{conversation_id}/messages/{message_id}/images/{image_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Chat Image */
+        get: operations["get_chat_image_api_v1_chat_conversations__conversation_id__messages__message_id__images__image_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/chat/conversations/{conversation_id}/messages/{assistant_message_id}/retry": {
         parameters: {
             query?: never;
@@ -2229,6 +2246,21 @@ export interface components {
             /** Message */
             message?: string | null;
         };
+        /**
+         * ChatImageInput
+         * @description A browser image encoded as a data URL for the current request.
+         */
+        ChatImageInput: {
+            /**
+             * Filename
+             * @default image
+             */
+            filename: string;
+            /** Mime Type */
+            mime_type: string;
+            /** Data Url */
+            data_url: string;
+        };
         /** ChatMessageCreate */
         ChatMessageCreate: {
             /** Content */
@@ -2239,6 +2271,8 @@ export interface components {
             research_plan_id?: string | null;
             /** Source Artifact Ids */
             source_artifact_ids?: string[];
+            /** Images */
+            images?: components["schemas"]["ChatImageInput"][];
         };
         /** ChatMessageEvidenceRead */
         ChatMessageEvidenceRead: {
@@ -2268,6 +2302,29 @@ export interface components {
             score: number;
             /** Rank */
             rank: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** ChatMessageImageRead */
+        ChatMessageImageRead: {
+            /** Id */
+            id: string;
+            /** Message Id */
+            message_id: string;
+            /** Filename */
+            filename: string;
+            /** Mime Type */
+            mime_type: string;
+            /** Size Bytes */
+            size_bytes: number;
             /**
              * Created At
              * Format: date-time
@@ -2322,6 +2379,8 @@ export interface components {
             retrieval_audit?: components["schemas"]["RetrievalAuditRead"];
             /** Citations */
             citations?: components["schemas"]["ChatMessageEvidenceRead"][];
+            /** Images */
+            images?: components["schemas"]["ChatMessageImageRead"][];
             citation_check?: components["schemas"]["CitationCheckRead"] | null;
             /** Sources */
             sources?: components["schemas"]["ChatMessageSourceRead"][];
@@ -8744,6 +8803,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChatSendResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_chat_image_api_v1_chat_conversations__conversation_id__messages__message_id__images__image_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
+            path: {
+                conversation_id: string;
+                message_id: string;
+                image_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

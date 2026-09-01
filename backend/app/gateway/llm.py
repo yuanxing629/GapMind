@@ -50,6 +50,7 @@ class LLMGateway:
         backup_api_key: str | None = None,
         backup_base_url: str | None = None,
         backup_model: str | None = None,
+        vision_model: str | None = None,
     ) -> None:
         self.api_key = api_key if api_key is not None else settings.deepseek_api_key
         self.base_url = base_url if base_url is not None else settings.deepseek_base_url
@@ -64,6 +65,9 @@ class LLMGateway:
         )
         self.backup_model = (
             backup_model if backup_model is not None else settings.deepseek_backup_model
+        )
+        self.vision_model = (
+            vision_model if vision_model is not None else settings.deepseek_vision_model
         )
         self._client: OpenAI | None = None
         self._backup_client: OpenAI | None = None
@@ -91,7 +95,11 @@ class LLMGateway:
         return self._backup_client
 
     def _create_with_fallback(
-        self, kwargs: dict[str, Any], *, stream: bool = False
+        self,
+        kwargs: dict[str, Any],
+        *,
+        stream: bool = False,
+        allow_backup: bool = True,
     ) -> Any:
         """Call the primary endpoint, fall over to the backup on failure.
 
@@ -102,7 +110,7 @@ class LLMGateway:
             return self.client.chat.completions.create(**kwargs, stream=stream)
         except Exception as primary_error:
             backup_attempts: list[dict[str, Any]] = []
-            if self.backup_enabled:
+            if allow_backup and self.backup_enabled:
                 backup_attempts.append({**kwargs, "model": self.backup_model})
                 if "extra_body" in kwargs:
                     # some strict OpenAI-compatible servers reject the
@@ -130,12 +138,13 @@ class LLMGateway:
 
     def chat_completion(
         self,
-        messages: list[dict[str, str]],
+        messages: list[dict[str, Any]],
         *,
         temperature: float = 0.2,
         max_tokens: int | None = None,
         response_format: dict[str, Any] | None = None,
         disable_thinking: bool = False,
+        model_override: str | None = None,
     ) -> LLMResponse:
         """Run a chat completion against the configured Deepseek model.
 
@@ -150,8 +159,9 @@ class LLMGateway:
         NOTE: do NOT combine ``thinking.type="disabled"`` with a
         ``reasoning_effort`` param — Deepseek returns a 400 on that conflict.
         """
+        request_model = model_override or self.model
         kwargs: dict[str, Any] = {
-            "model": self.model,
+            "model": request_model,
             "messages": messages,
             "temperature": temperature,
         }
@@ -162,8 +172,13 @@ class LLMGateway:
         if disable_thinking:
             kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
 
-        logger.info("llm.chat.start", model=self.model, messages=len(messages))
-        resp = self._create_with_fallback(kwargs)
+        logger.info("llm.chat.start", model=request_model, messages=len(messages))
+        # A text-only backup model must never receive image content. Vision
+        # requests therefore fail explicitly instead of silently falling over.
+        resp = self._create_with_fallback(
+            kwargs,
+            allow_backup=model_override is None,
+        )
         choice = resp.choices[0]
         usage = resp.usage
         return LLMResponse(
@@ -178,11 +193,12 @@ class LLMGateway:
 
     def stream_chat_completion(
         self,
-        messages: list[dict[str, str]],
+        messages: list[dict[str, Any]],
         *,
         temperature: float = 0.2,
         max_tokens: int | None = None,
         disable_thinking: bool = False,
+        model_override: str | None = None,
     ) -> Generator[str, None, None]:
         """Yield text deltas from a streaming chat completion (P0.5-1).
 
@@ -190,8 +206,9 @@ class LLMGateway:
         string is one content delta. Structured-format callers should keep
         using the non-streaming version.
         """
+        request_model = model_override or self.model
         kwargs: dict[str, Any] = {
-            "model": self.model,
+            "model": request_model,
             "messages": messages,
             "temperature": temperature,
         }
@@ -199,7 +216,11 @@ class LLMGateway:
             kwargs["max_tokens"] = max_tokens
         if disable_thinking:
             kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
-        stream = self._create_with_fallback(kwargs, stream=True)
+        stream = self._create_with_fallback(
+            kwargs,
+            stream=True,
+            allow_backup=model_override is None,
+        )
         for chunk in stream:
             if not chunk.choices:
                 continue

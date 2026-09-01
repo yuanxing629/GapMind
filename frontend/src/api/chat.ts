@@ -1,5 +1,11 @@
 import apiClient, { apiBaseURL, getCsrfToken } from "./client";
 
+export interface ChatImageInput {
+  filename: string;
+  mime_type: string;
+  data_url: string;
+}
+
 export interface ChatConversation {
   id: string;
   title: string;
@@ -31,11 +37,24 @@ export interface ChatMessage {
   citation_quality?: CitationQuality;
   retrieval_audit?: RetrievalAudit;
   citations?: ChatMessageEvidence[];
+  images?: ChatMessageImage[];
   citation_check?: CitationCheck | null;
   sources?: ChatMessageSource[];
   source_check?: SourceCheck | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface ChatMessageImage {
+  id: string;
+  message_id: string;
+  filename: string;
+  mime_type: string;
+  size_bytes: number;
+  created_at: string;
+  updated_at: string;
+  /** Browser-only data URL used by optimistic messages before persistence. */
+  data_url?: string;
 }
 
 export interface CitationCheck {
@@ -180,24 +199,26 @@ export const chatApi = {
     const { data } = await apiClient.delete<{ id: string; deleted: boolean }>(`/chat/conversations/${id}`);
     return data;
   },
-  async sendNew(content: string, workspaceId?: string, context: { researchPlanId?: string; sourceArtifactIds?: string[] } = {}) {
+  async sendNew(content: string, workspaceId?: string, context: { researchPlanId?: string; sourceArtifactIds?: string[]; images?: ChatImageInput[] } = {}) {
     const { data } = await apiClient.post<ChatSendResponse>("/chat/conversations/send", {
       content,
       workspace_id: workspaceId ?? null,
       research_plan_id: context.researchPlanId ?? null,
       source_artifact_ids: context.sourceArtifactIds ?? [],
+      images: context.images ?? [],
     });
     return data;
   },
-  async sendMessage(id: string, content: string, context: { researchPlanId?: string; sourceArtifactIds?: string[] } = {}) {
+  async sendMessage(id: string, content: string, context: { researchPlanId?: string; sourceArtifactIds?: string[]; images?: ChatImageInput[] } = {}) {
     const { data } = await apiClient.post<ChatSendResponse>(`/chat/conversations/${id}/messages`, {
       content,
       research_plan_id: context.researchPlanId ?? null,
       source_artifact_ids: context.sourceArtifactIds ?? [],
+      images: context.images ?? [],
     });
     return data;
   },
-  async streamSend(conversationId: string, content: string, context: { researchPlanId?: string; sourceArtifactIds?: string[] } = {}): Promise<Response> {
+  async streamSend(conversationId: string, content: string, context: { researchPlanId?: string; sourceArtifactIds?: string[]; images?: ChatImageInput[] } = {}): Promise<Response> {
     // SSE uses the same API base as Axios so a separately hosted frontend can
     // carry the session cookie with an explicit CORS configuration.
     const csrf = getCsrfToken();
@@ -212,6 +233,7 @@ export const chatApi = {
         content,
         research_plan_id: context.researchPlanId ?? null,
         source_artifact_ids: context.sourceArtifactIds ?? [],
+        images: context.images ?? [],
       }),
     });
   },

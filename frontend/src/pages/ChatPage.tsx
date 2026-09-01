@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Drawer, Grid, Modal, Popover, Result, Spin, message } from "antd";
 import { DatabaseOutlined, InfoCircleOutlined, LockOutlined } from "@ant-design/icons";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import chatApi, { type ChatContextArtifactOption, type ChatContextPlanOption, type ChatConversation, type ChatMessage } from "../api/chat";
+import chatApi, { type ChatContextArtifactOption, type ChatContextPlanOption, type ChatConversation, type ChatImageInput, type ChatMessage, type ChatMessageImage } from "../api/chat";
 import workspaceApi from "../api/workspace";
 import agentApi, { type AgentRunDetail } from "../api/agent";
 import type { Workspace } from "../api/types/workspace";
@@ -14,7 +14,9 @@ import ChatHeader from "../components/chat/ChatHeader";
 import ChatHistory from "../components/chat/ChatHistory";
 import ChatMessages from "../components/chat/ChatMessages";
 
-const localMessage = (conversationId: string, role: "user" | "assistant", content: string, sequence: number): ChatMessage => ({ id: `local-${role}-${Date.now()}-${sequence}`, conversation_id: conversationId, role, content, status: role === "assistant" ? "generating" : "completed", error_message: null, sequence, model: null, prompt_tokens: null, completion_tokens: null, total_tokens: null, prompt_chars: null, response_chars: null, first_token_latency_ms: null, completion_latency_ms: null, grounding_status: "not_requested", citations: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
+const localMessage = (conversationId: string, role: "user" | "assistant", content: string, sequence: number, images: ChatMessageImage[] = []): ChatMessage => ({ id: `local-${role}-${Date.now()}-${sequence}`, conversation_id: conversationId, role, content, status: role === "assistant" ? "generating" : "completed", error_message: null, sequence, model: null, prompt_tokens: null, completion_tokens: null, total_tokens: null, prompt_chars: null, response_chars: null, first_token_latency_ms: null, completion_latency_ms: null, grounding_status: "not_requested", citations: [], images, created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
+
+const localImages = (messageId: string, images: ChatImageInput[]): ChatMessageImage[] => images.map((image, index) => ({ id: `local-image-${Date.now()}-${index}`, message_id: messageId, filename: image.filename, mime_type: image.mime_type, size_bytes: 0, data_url: image.data_url, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }));
 
 const MODE_VALUES: ChatMode[] = ["chat", "research_plan", "code_generation", "analyze", "write", "respond"];
 
@@ -59,6 +61,7 @@ export default function ChatPage() {
   const [loadingConversation, setLoadingConversation] = useState(false);
   const [conversationError, setConversationError] = useState<string | null>(null);
   const [input, setInput] = useState("");
+  const [imageInputs, setImageInputs] = useState<ChatImageInput[]>([]);
   const [sending, setSending] = useState(false);
   const [streaming, setStreaming] = useState(false);
   const [retryingId, setRetryingId] = useState<string>();
@@ -163,8 +166,8 @@ export default function ChatPage() {
     return () => window.clearInterval(timer);
   }, [activeWorkspaceId, agentRuns, conversationId, loadAgentRuns, loadConversation]);
 
-  const selectConversation = (item: ChatConversation) => { navigate(chatConversationPath(item)); setHistoryOpen(false); };
-  const newConversation = () => { navigate(routeWorkspaceId ? `/workspaces/${routeWorkspaceId}/assistant` : "/chat/new"); setInput(""); setHistoryOpen(false); };
+  const selectConversation = (item: ChatConversation) => { navigate(chatConversationPath(item)); setImageInputs([]); setHistoryOpen(false); };
+  const newConversation = () => { navigate(routeWorkspaceId ? `/workspaces/${routeWorkspaceId}/assistant` : "/chat/new"); setInput(""); setImageInputs([]); setHistoryOpen(false); };
   const changeWorkspace = (workspaceId?: string) => {
     setSelectedWorkspaceId(workspaceId);
     if (workspaceId) navigate(`/workspaces/${workspaceId}/assistant`);
@@ -243,10 +246,11 @@ export default function ChatPage() {
     });
   };
 
-  const send = async (content: string) => {
+  const send = async (content: string, images: ChatImageInput[] = []) => {
     if (mode !== "chat") { await requestAgentStart(content); return; }
     let targetId = conversationId;
     setInput("");
+    setImageInputs([]);
     setSending(true);
     // P0.5-1: mark streaming BEFORE navigating so the [conversationId, streaming]
     // effect sees streaming=true on the new route and won't clobber the optimistic
@@ -261,12 +265,14 @@ export default function ChatPage() {
       } catch (error) {
         setStreaming(false);
         setSending(false);
+        setImageInputs(images);
         message.error(chatErrorMessage(error));
         return;
       }
     }
     const assistantKey = `local-stream-${Date.now()}`;
-    const optimisticUser = localMessage(targetId, "user", content, messages.length + 1);
+    const optimisticUserId = `local-user-${Date.now()}`;
+    const optimisticUser = { ...localMessage(targetId, "user", content, messages.length + 1, localImages(optimisticUserId, images)), id: optimisticUserId };
     const optimisticAssistant = { ...localMessage(targetId, "assistant", "", messages.length + 2), id: assistantKey };
     setMessages((current) => [...current, optimisticUser, optimisticAssistant]);
     // Browser paint is frame-driven: even per-token DOM updates collapse to a
@@ -292,7 +298,7 @@ export default function ChatPage() {
       }
     };
     try {
-      await streamAssistant(targetId, content, appendDelta);
+      await streamAssistant(targetId, content, images, appendDelta);
       // Let the throttled renderer flush any remaining buffered tokens before
       // the effect reload replaces the optimistic message with the full one.
       await new Promise<void>((resolve) => {
@@ -309,6 +315,7 @@ export default function ChatPage() {
       void loadHistory();
     } catch (error) {
       setStreaming(false);
+      setImageInputs(images);
       const rawDiagnosticCode = error && typeof error === "object" && "diagnostic_code" in error
         ? String((error as { diagnostic_code?: unknown }).diagnostic_code || "") || null
         : null;
@@ -328,11 +335,12 @@ export default function ChatPage() {
     } finally { setSending(false); }
   };
 
-  const streamAssistant = async (conversationId: string, content: string, appendDelta: (d: string) => void) => {
+  const streamAssistant = async (conversationId: string, content: string, images: ChatImageInput[], appendDelta: (d: string) => void) => {
     console.debug("[chat-stream] enter", { conversationId, at: new Date().toISOString() });
     const resp = await chatApi.streamSend(conversationId, content, {
       researchPlanId: workspaceEnabled ? researchPlanId : undefined,
       sourceArtifactIds: workspaceEnabled ? sourceArtifactIds : [],
+      images,
     });
     if (!resp.ok || !resp.body) throw new Error("流式响应不可用");
     const reader = resp.body.getReader();
@@ -455,5 +463,5 @@ export default function ChatPage() {
   const sourceOptions = contextArtifacts
     .filter((artifact) => artifact.plan_id === researchPlanId)
     .map((artifact) => ({ value: artifact.id, label: `${artifact.label}：${artifact.title}`, title: artifact.status }));
-  return <div className="gm-chat-page"><div className="gm-chat-layout">{!isMobile && <aside className="gm-chat-sidebar">{historyPanel}</aside>}<main className="gm-chat-main"><ChatHeader title={conversation?.title ?? "新对话"} workspaces={workspaces} workspaceId={activeWorkspaceId} independent={independentMode} scopeLocked={Boolean(conversation)} onWorkspaceChange={changeWorkspace} onOpenHistory={() => setHistoryOpen(true)} /><ChatNoticeBar independent={independentMode} activeWorkspaceId={activeWorkspaceId} activeWorkspaceName={activeWorkspaceName} hasConversation={Boolean(conversation)} /><div className="gm-chat-scroll" ref={messagesRef}>{conversationError ? <Result status="404" title="找不到这段对话" subTitle={conversationError} extra={<Button type="primary" onClick={newConversation}>开始新对话</Button>} /> : loadingConversation ? <div className="gm-chat-loading"><Spin /></div> : messages.length === 0 ? <ChatEmptyState onExample={setInput} workspaceName={workspaceEnabled ? activeWorkspaceName : undefined} independent={independentMode} /> : <ChatMessages conversationId={conversationId} messages={messages} agentRuns={agentRuns} onRetry={retry} retryingId={retryingId} agentActionId={agentActionId} onRefreshAgent={(run) => void refreshAgent(run)} onConfirmAgent={(run) => void confirmAgent(run)} onCancelAgent={(run) => void cancelAgent(run)} onRepairCode={(run) => requestCodeRepair(run)} onDownloadAgent={(run) => activeWorkspaceId ? void agentApi.downloadBundle(activeWorkspaceId, run.id) : undefined} onDownloadArtifact={(run, artifactId) => void downloadArtifact(run, artifactId)} />}</div>{sending && <div className="gm-chat-sending-note">{mode === "chat" ? "正在检索并组织回答，请稍候…" : "正在执行已确认的 Agent 操作，请稍候…"}</div>}<ChatComposer value={input} onChange={setInput} onSend={(value) => void send(value)} loading={sending || Boolean(retryingId)} workspaceEnabled={workspaceEnabled} mode={mode} onModeChange={setMode} planOptions={planOptions} researchPlanId={researchPlanId} onResearchPlanChange={setResearchPlanId} sourceOptions={sourceOptions} sourceArtifactIds={sourceArtifactIds} onSourceArtifactChange={setSourceArtifactIds} /></main></div><Drawer title="历史对话" placement="left" open={isMobile && historyOpen} onClose={() => setHistoryOpen(false)} width={300}>{historyPanel}</Drawer></div>;
+  return <div className="gm-chat-page"><div className="gm-chat-layout">{!isMobile && <aside className="gm-chat-sidebar">{historyPanel}</aside>}<main className="gm-chat-main"><ChatHeader title={conversation?.title ?? "新对话"} workspaces={workspaces} workspaceId={activeWorkspaceId} independent={independentMode} scopeLocked={Boolean(conversation)} onWorkspaceChange={changeWorkspace} onOpenHistory={() => setHistoryOpen(true)} /><ChatNoticeBar independent={independentMode} activeWorkspaceId={activeWorkspaceId} activeWorkspaceName={activeWorkspaceName} hasConversation={Boolean(conversation)} /><div className="gm-chat-scroll" ref={messagesRef}>{conversationError ? <Result status="404" title="找不到这段对话" subTitle={conversationError} extra={<Button type="primary" onClick={newConversation}>开始新对话</Button>} /> : loadingConversation ? <div className="gm-chat-loading"><Spin /></div> : messages.length === 0 ? <ChatEmptyState onExample={setInput} workspaceName={workspaceEnabled ? activeWorkspaceName : undefined} independent={independentMode} /> : <ChatMessages conversationId={conversationId} messages={messages} agentRuns={agentRuns} onRetry={retry} retryingId={retryingId} agentActionId={agentActionId} onRefreshAgent={(run) => void refreshAgent(run)} onConfirmAgent={(run) => void confirmAgent(run)} onCancelAgent={(run) => void cancelAgent(run)} onRepairCode={(run) => requestCodeRepair(run)} onDownloadAgent={(run) => activeWorkspaceId ? void agentApi.downloadBundle(activeWorkspaceId, run.id) : undefined} onDownloadArtifact={(run, artifactId) => void downloadArtifact(run, artifactId)} />}</div>{sending && <div className="gm-chat-sending-note">{mode === "chat" ? "正在检索并组织回答，请稍候…" : "正在执行已确认的 Agent 操作，请稍候…"}</div>}<ChatComposer value={input} onChange={setInput} onSend={(value, images) => void send(value, images)} loading={sending || Boolean(retryingId)} workspaceEnabled={workspaceEnabled} mode={mode} onModeChange={setMode} planOptions={planOptions} researchPlanId={researchPlanId} onResearchPlanChange={setResearchPlanId} sourceOptions={sourceOptions} sourceArtifactIds={sourceArtifactIds} onSourceArtifactChange={setSourceArtifactIds} imageInputs={imageInputs} onImageInputsChange={setImageInputs} /></main></div><Drawer title="历史对话" placement="left" open={isMobile && historyOpen} onClose={() => setHistoryOpen(false)} width={300}>{historyPanel}</Drawer></div>;
 }

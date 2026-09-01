@@ -109,6 +109,7 @@ GapMind can use a fine-tuned Qwen3 Schema 3.0 extractor through Ollama to build 
 A single `.env` at the repo root is shared by all three runtimes — copy `.env.example` (repo root) to `.env` and fill in:
 
 - `DEEPSEEK_API_KEY` - Deepseek API key
+- `DEEPSEEK_VISION_MODEL` - image-capable model used only for chat messages with images (defaults to `deepseek-v4-flash-vision-exp`)
 - `SILICONFLOW_API_KEY` - SiliconFlow API key (for BGE-m3 embedding)
 - `SEMANTIC_SCHOLAR_API_KEY` - (optional) for higher rate limits
 - `DEEPSEEK_BACKUP_*` - (optional) backup OpenAI-compatible endpoint; automatic failover when the primary LLM fails (all three fields must be set)

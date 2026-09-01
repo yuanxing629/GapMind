@@ -35,11 +35,20 @@ class ChatConversationUpdate(BaseModel):
         return value
 
 
+class ChatImageInput(BaseModel):
+    """A browser image encoded as a data URL for the current request."""
+
+    filename: str = Field(default="image", min_length=1, max_length=512)
+    mime_type: str = Field(..., min_length=1, max_length=128)
+    data_url: str = Field(..., min_length=1)
+
+
 class ChatMessageCreate(BaseModel):
     content: str = Field(..., min_length=1)
     workspace_id: str | None = None
     research_plan_id: str | None = None
     source_artifact_ids: list[str] = Field(default_factory=list, max_length=4)
+    images: list[ChatImageInput] = Field(default_factory=list, max_length=3)
 
     @field_validator("content")
     @classmethod
@@ -83,6 +92,18 @@ class ChatMessageEvidenceRead(BaseModel):
     end_char: int | None = None
     score: float
     rank: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class ChatMessageImageRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    message_id: str
+    filename: str
+    mime_type: str
+    size_bytes: int
     created_at: datetime
     updated_at: datetime
 
@@ -188,6 +209,7 @@ class ChatMessageRead(BaseModel):
     citation_quality: CitationQualityRead = Field(default_factory=CitationQualityRead)
     retrieval_audit: RetrievalAuditRead = Field(default_factory=RetrievalAuditRead)
     citations: list[ChatMessageEvidenceRead] = Field(default_factory=list)
+    images: list[ChatMessageImageRead] = Field(default_factory=list)
     citation_check: CitationCheckRead | None = None
     sources: list[ChatMessageSourceRead] = Field(default_factory=list)
     source_check: SourceCheckRead | None = None

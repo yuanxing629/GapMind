@@ -23,6 +23,7 @@ from app.domains.chat.models import (  # noqa: F401
     ChatConversation,
     ChatMessage,
     ChatMessageEvidence,
+    ChatMessageImage,
 )
 from app.domains.discover.models import (  # noqa: F401
     DiscoverExternalCandidate,
