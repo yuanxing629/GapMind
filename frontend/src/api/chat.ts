@@ -1,4 +1,4 @@
-import apiClient from "./client";
+import apiClient, { apiBaseURL, getCsrfToken } from "./client";
 
 export interface ChatConversation {
   id: string;
@@ -198,11 +198,16 @@ export const chatApi = {
     return data;
   },
   async streamSend(conversationId: string, content: string, context: { researchPlanId?: string; sourceArtifactIds?: string[] } = {}): Promise<Response> {
-    // P0.5-1: SSE streaming via fetch. Use a same-origin relative path so the
-    // dev Vite proxy forwards it (avoids cross-origin buffering of SSE).
-    return fetch(`/api/v1/chat/conversations/${conversationId}/messages/stream`, {
+    // SSE uses the same API base as Axios so a separately hosted frontend can
+    // carry the session cookie with an explicit CORS configuration.
+    const csrf = getCsrfToken();
+    return fetch(`${apiBaseURL.replace(/\/$/, "")}/chat/conversations/${conversationId}/messages/stream`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+        ...(csrf ? { "X-CSRF-Token": csrf } : {}),
+      },
       body: JSON.stringify({
         content,
         research_plan_id: context.researchPlanId ?? null,

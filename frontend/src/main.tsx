@@ -5,6 +5,7 @@ import { App as AntdApp, ConfigProvider, theme as antdTheme } from "antd";
 import App from "./App";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider, useTheme } from "./state/theme";
+import { AuthProvider } from "./state/auth";
 import "./index.css";
 import "katex/dist/katex.min.css";
 
@@ -31,7 +32,9 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     <ErrorBoundary>
       <BrowserRouter>
         <ThemeProvider>
-          <Root />
+          <AuthProvider>
+            <Root />
+          </AuthProvider>
         </ThemeProvider>
       </BrowserRouter>
     </ErrorBoundary>

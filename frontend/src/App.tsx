@@ -1,5 +1,5 @@
 import { lazy, Suspense, type ReactNode } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import AppLayout from "./components/AppLayout";
 import WorkspaceLayout from "./components/layout/WorkspaceLayout";
 import DashboardPage from "./pages/DashboardPage";
@@ -13,6 +13,12 @@ import ResearchPlansPage from "./pages/ResearchPlansPage";
 import NotFoundPage from "./pages/NotFoundPage";
 import ReadingPage from "./pages/ReadingPage";
 import ReadingPaperPage from "./pages/ReadingPaperPage";
+import LoginPage from "./pages/LoginPage";
+import InviteAcceptPage from "./pages/InviteAcceptPage";
+import ForgotPasswordPage from "./pages/ForgotPasswordPage";
+import ResetPasswordPage from "./pages/ResetPasswordPage";
+import AdminPage from "./pages/AdminPage";
+import { useAuth } from "./state/auth";
 
 const KnowledgePage = lazy(() => import("./pages/KnowledgePage"));
 const DiscoverPage = lazy(() => import("./pages/DiscoverPage"));
@@ -27,8 +33,13 @@ function LazyPage({ children, label }: { children: ReactNode; label: string }) {
 export default function App() {
   return (
     <Routes>
-      <Route element={<AppLayout />}>
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/invite/accept" element={<InviteAcceptPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
+      <Route element={<ProtectedLayout />}>
         <Route path="/" element={<DashboardPage />} />
+        <Route path="/admin" element={<AdminPage />} />
         <Route path="/search" element={<SearchPage />} />
         <Route path="/chat" element={<LazyPage label="AI 助手"><ChatHubPage /></LazyPage>} />
         <Route path="/chat/new" element={<LazyPage label="通用对话"><ChatPage /></LazyPage>} />
@@ -56,4 +67,14 @@ export default function App() {
       </Route>
     </Routes>
   );
+}
+
+function ProtectedLayout() {
+  const { isAuthenticated, loading } = useAuth();
+  const location = useLocation();
+  if (loading) return <div className="gm-loading">正在恢复登录状态…</div>;
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace state={{ from: `${location.pathname}${location.search}` }} />;
+  }
+  return <AppLayout />;
 }

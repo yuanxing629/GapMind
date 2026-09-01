@@ -70,6 +70,262 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Login */
+        post: operations["login_api_v1_auth_login_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Logout */
+        post: operations["logout_api_v1_auth_logout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/logout-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Logout All */
+        post: operations["logout_all_api_v1_auth_logout_all_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Me */
+        get: operations["me_api_v1_auth_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/invites/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Validate Invite */
+        get: operations["validate_invite_api_v1_auth_invites_validate_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/invites/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Accept Invite */
+        post: operations["accept_invite_api_v1_auth_invites_accept_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/forgot-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Forgot Password */
+        post: operations["forgot_password_api_v1_auth_forgot_password_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/reset-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reset Password */
+        post: operations["reset_password_api_v1_auth_reset_password_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/change-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Change Password */
+        post: operations["change_password_api_v1_auth_change_password_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/invites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Invites */
+        get: operations["list_invites_api_v1_admin_invites_get"];
+        put?: never;
+        /** Create Invite */
+        post: operations["create_invite_api_v1_admin_invites_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/invites/{invite_id}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Revoke Invite */
+        post: operations["revoke_invite_api_v1_admin_invites__invite_id__revoke_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Users */
+        get: operations["list_users_api_v1_admin_users_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users/{user_id}/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Disable User */
+        post: operations["disable_user_api_v1_admin_users__user_id__disable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users/{user_id}/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Enable User */
+        post: operations["enable_user_api_v1_admin_users__user_id__enable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Audit Events */
+        get: operations["list_audit_events_api_v1_admin_audit_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces": {
         parameters: {
             query?: never;
@@ -1795,6 +2051,40 @@ export interface components {
              */
             updated_at: string;
         };
+        /** AuditEventRead */
+        AuditEventRead: {
+            /** Id */
+            id: string;
+            /** User Id */
+            user_id?: string | null;
+            /** Event Type */
+            event_type: string;
+            /** Target Id */
+            target_id?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** AuthUserRead */
+        AuthUserRead: {
+            /** Id */
+            id: string;
+            /** Email */
+            email?: string | null;
+            /** Display Name */
+            display_name?: string | null;
+            /** Status */
+            status: string;
+            /** Roles */
+            roles?: string[];
+            /**
+             * Is Platform Admin
+             * @default false
+             */
+            is_platform_admin: boolean;
+        };
         /** Body_attach_pdf_to_paper_api_v1_workspaces__workspace_id__papers__paper_id__upload_pdf_post */
         Body_attach_pdf_to_paper_api_v1_workspaces__workspace_id__papers__paper_id__upload_pdf_post: {
             /**
@@ -1822,6 +2112,13 @@ export interface components {
             doi?: string | null;
             /** Arxiv Id */
             arxiv_id?: string | null;
+        };
+        /** ChangePasswordRequest */
+        ChangePasswordRequest: {
+            /** Current Password */
+            current_password: string;
+            /** New Password */
+            new_password: string;
         };
         /** ChatContextArtifactOption */
         ChatContextArtifactOption: {
@@ -2683,6 +2980,18 @@ export interface components {
              */
             created_at: string;
         };
+        /** ForgotPasswordRequest */
+        ForgotPasswordRequest: {
+            /** Email */
+            email: string;
+        };
+        /** ForgotPasswordResponse */
+        ForgotPasswordResponse: {
+            /** Message */
+            message: string;
+            /** Debug Token */
+            debug_token?: string | null;
+        };
         /** GapAnnotationListResponse */
         GapAnnotationListResponse: {
             /** Items */
@@ -2914,6 +3223,61 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+        };
+        /** InviteAcceptRequest */
+        InviteAcceptRequest: {
+            /** Token */
+            token: string;
+            /** Password */
+            password: string;
+            /** Display Name */
+            display_name?: string | null;
+        };
+        /** InviteCreateRequest */
+        InviteCreateRequest: {
+            /** Email */
+            email: string;
+        };
+        /** InviteCreatedResponse */
+        InviteCreatedResponse: {
+            /** Id */
+            id: string;
+            /** Email */
+            email: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Token */
+            token: string;
+        };
+        /** InviteListRead */
+        InviteListRead: {
+            /** Id */
+            id: string;
+            /** Email */
+            email: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Accepted At */
+            accepted_at?: string | null;
+            /** Revoked At */
+            revoked_at?: string | null;
+        };
+        /** InviteValidateResponse */
+        InviteValidateResponse: {
+            /** Valid */
+            valid: boolean;
+            /** Email */
+            email?: string | null;
+            /** Expires At */
+            expires_at?: string | null;
+            /** Message */
+            message?: string | null;
         };
         /**
          * KnowledgeGraphEdgeRead
@@ -3237,6 +3601,22 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /** LoginRequest */
+        LoginRequest: {
+            /** Email */
+            email: string;
+            /** Password */
+            password: string;
+        };
+        /** LoginResponse */
+        LoginResponse: {
+            user: components["schemas"]["AuthUserRead"];
+        };
+        /** MessageResponse */
+        MessageResponse: {
+            /** Message */
+            message: string;
         };
         /** OpportunityDetail */
         OpportunityDetail: {
@@ -3921,6 +4301,13 @@ export interface components {
              */
             updated_at: string;
         };
+        /** ResetPasswordRequest */
+        ResetPasswordRequest: {
+            /** Token */
+            token: string;
+            /** Password */
+            password: string;
+        };
         /** ResumeBody */
         ResumeBody: {
             /** Decision */
@@ -4369,6 +4756,23 @@ export interface components {
             /** Offset */
             offset: number;
         };
+        /** UserListRead */
+        UserListRead: {
+            /** Id */
+            id: string;
+            /** Email */
+            email: string;
+            /** Display Name */
+            display_name?: string | null;
+            /** Status */
+            status: string;
+            /** Account Type */
+            account_type: string;
+            /** Roles */
+            roles?: string[];
+            /** Last Login At */
+            last_login_at?: string | null;
+        };
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -4438,6 +4842,11 @@ export interface components {
              * @default false
              */
             is_archived: boolean;
+            /**
+             * Is Demo
+             * @default false
+             */
+            is_demo: boolean;
             /**
              * Is Deleted
              * @default false
@@ -4639,6 +5048,523 @@ export interface operations {
             };
         };
     };
+    login_api_v1_auth_login_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    logout_api_v1_auth_logout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageResponse"];
+                };
+            };
+        };
+    };
+    logout_all_api_v1_auth_logout_all_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    me_api_v1_auth_me_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthUserRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    validate_invite_api_v1_auth_invites_validate_get: {
+        parameters: {
+            query: {
+                token: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InviteValidateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    accept_invite_api_v1_auth_invites_accept_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InviteAcceptRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    forgot_password_api_v1_auth_forgot_password_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ForgotPasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ForgotPasswordResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reset_password_api_v1_auth_reset_password_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResetPasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    change_password_api_v1_auth_change_password_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangePasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_invites_api_v1_admin_invites_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InviteListRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_invite_api_v1_admin_invites_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InviteCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InviteCreatedResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_invite_api_v1_admin_invites__invite_id__revoke_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
+            path: {
+                invite_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_users_api_v1_admin_users_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserListRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    disable_user_api_v1_admin_users__user_id__disable_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    enable_user_api_v1_admin_users__user_id__enable_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_audit_events_api_v1_admin_audit_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditEventRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_workspaces_api_v1_workspaces_get: {
         parameters: {
             query?: {
@@ -4746,7 +5672,10 @@ export interface operations {
     get_workspace_api_v1_workspaces__workspace_id__get: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
             path: {
                 workspace_id: string;
             };
@@ -4777,7 +5706,10 @@ export interface operations {
     delete_workspace_api_v1_workspaces__workspace_id__delete: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
             path: {
                 workspace_id: string;
             };
@@ -4810,7 +5742,10 @@ export interface operations {
     update_workspace_api_v1_workspaces__workspace_id__patch: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
             path: {
                 workspace_id: string;
             };
@@ -4845,7 +5780,10 @@ export interface operations {
     get_workspace_readiness_api_v1_workspaces__workspace_id__readiness_get: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
             path: {
                 workspace_id: string;
             };
@@ -4876,7 +5814,10 @@ export interface operations {
     archive_workspace_api_v1_workspaces__workspace_id__archive_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
             path: {
                 workspace_id: string;
             };
@@ -4907,7 +5848,10 @@ export interface operations {
     unarchive_workspace_api_v1_workspaces__workspace_id__unarchive_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
             path: {
                 workspace_id: string;
             };
@@ -5161,7 +6105,10 @@ export interface operations {
     import_external_paper_api_v1_workspaces__workspace_id__papers_import_from_s2_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
             path: {
                 workspace_id: string;
             };
@@ -5196,7 +6143,10 @@ export interface operations {
     upload_paper_api_v1_workspaces__workspace_id__papers_upload_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
             path: {
                 workspace_id: string;
             };
@@ -5231,7 +6181,10 @@ export interface operations {
     attach_pdf_to_paper_api_v1_workspaces__workspace_id__papers__paper_id__upload_pdf_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
             path: {
                 workspace_id: string;
                 paper_id: string;
@@ -5270,7 +6223,10 @@ export interface operations {
                 limit?: number;
                 offset?: number;
             };
-            header?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
             path: {
                 workspace_id: string;
             };
@@ -5301,7 +6257,10 @@ export interface operations {
     create_paper_api_v1_workspaces__workspace_id__papers_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
             path: {
                 workspace_id: string;
             };
@@ -5336,7 +6295,10 @@ export interface operations {
     trigger_paper_extraction_api_v1_workspaces__workspace_id__papers__paper_id__extract_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
             path: {
                 workspace_id: string;
                 paper_id: string;
@@ -5370,7 +6332,10 @@ export interface operations {
     get_paper_api_v1_workspaces__workspace_id__papers__paper_id__get: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
             path: {
                 workspace_id: string;
                 paper_id: string;
@@ -5402,7 +6367,10 @@ export interface operations {
     delete_paper_api_v1_workspaces__workspace_id__papers__paper_id__delete: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
             path: {
                 workspace_id: string;
                 paper_id: string;
@@ -5436,7 +6404,10 @@ export interface operations {
     update_paper_api_v1_workspaces__workspace_id__papers__paper_id__patch: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
             path: {
                 workspace_id: string;
                 paper_id: string;
@@ -5474,7 +6445,10 @@ export interface operations {
             query?: {
                 kind?: string | null;
             };
-            header?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
             path: {
                 workspace_id: string;
             };
@@ -5505,7 +6479,10 @@ export interface operations {
     get_artifact_api_v1_workspaces__workspace_id__artifacts__artifact_id__get: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
             path: {
                 workspace_id: string;
                 artifact_id: string;
@@ -5537,7 +6514,10 @@ export interface operations {
     download_artifact_api_v1_workspaces__workspace_id__artifacts__artifact_id__download_get: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
             path: {
                 workspace_id: string;
                 artifact_id: string;
@@ -5569,7 +6549,10 @@ export interface operations {
     view_artifact_api_v1_workspaces__workspace_id__artifacts__artifact_id__view_get: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
             path: {
                 workspace_id: string;
                 artifact_id: string;
@@ -6206,7 +7189,10 @@ export interface operations {
     api_semantic_search_api_v1_workspaces__workspace_id__retrieval_search_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
             path: {
                 workspace_id: string;
             };
@@ -6241,7 +7227,10 @@ export interface operations {
     api_similar_work_api_v1_workspaces__workspace_id__retrieval_similar_work_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
             path: {
                 workspace_id: string;
             };
@@ -6276,7 +7265,10 @@ export interface operations {
     api_counter_evidence_api_v1_workspaces__workspace_id__retrieval_counter_evidence_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
             path: {
                 workspace_id: string;
             };
@@ -6636,7 +7628,10 @@ export interface operations {
     list_recommendations_api_v1_workspaces__workspace_id__recommendations_get: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
             path: {
                 workspace_id: string;
             };
@@ -6667,7 +7662,10 @@ export interface operations {
     refresh_recommendations_api_v1_workspaces__workspace_id__recommendations_refresh_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
             path: {
                 workspace_id: string;
             };
@@ -6698,7 +7696,10 @@ export interface operations {
     recommendation_feedback_api_v1_workspaces__workspace_id__recommendations__external_paper_id__feedback_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
             path: {
                 workspace_id: string;
                 external_paper_id: string;
@@ -6738,7 +7739,10 @@ export interface operations {
                 limit?: number;
                 offset?: number;
             };
-            header?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
             path: {
                 workspace_id: string;
             };
@@ -6807,7 +7811,10 @@ export interface operations {
     get_run_api_v1_workspaces__workspace_id__discover_runs__run_id__get: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
             path: {
                 workspace_id: string;
                 run_id: string;
@@ -6872,7 +7879,10 @@ export interface operations {
     select_external_api_v1_workspaces__workspace_id__discover_runs__run_id__external_selection_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
             path: {
                 workspace_id: string;
                 run_id: string;
@@ -6943,7 +7953,10 @@ export interface operations {
     cancel_run_api_v1_workspaces__workspace_id__discover_runs__run_id__cancel_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
             path: {
                 workspace_id: string;
                 run_id: string;
@@ -6982,7 +7995,10 @@ export interface operations {
                 limit?: number;
                 offset?: number;
             };
-            header?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
             path: {
                 workspace_id: string;
             };
@@ -7016,7 +8032,10 @@ export interface operations {
                 limit?: number;
                 offset?: number;
             };
-            header?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
             path: {
                 workspace_id: string;
             };
@@ -7051,7 +8070,10 @@ export interface operations {
                 limit?: number;
                 offset?: number;
             };
-            header?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
             path: {
                 workspace_id: string;
             };
@@ -7082,7 +8104,10 @@ export interface operations {
     get_opportunity_api_v1_workspaces__workspace_id__discover_opportunities__opportunity_id__get: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
             path: {
                 workspace_id: string;
                 opportunity_id: string;
@@ -7153,7 +8178,10 @@ export interface operations {
     list_versions_api_v1_workspaces__workspace_id__discover_opportunities__opportunity_id__versions_get: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
             path: {
                 workspace_id: string;
                 opportunity_id: string;
@@ -7185,7 +8213,10 @@ export interface operations {
     get_evidence_context_api_v1_workspaces__workspace_id__discover_evidence__evidence_id__context_get: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
             path: {
                 workspace_id: string;
                 evidence_id: string;
@@ -7804,7 +8835,10 @@ export interface operations {
                 limit?: number;
                 offset?: number;
             };
-            header?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
             path: {
                 workspace_id: string;
             };
@@ -7835,7 +8869,10 @@ export interface operations {
     start_agent_api_v1_workspaces__workspace_id__agent_runs_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
             path: {
                 workspace_id: string;
             };
@@ -7870,7 +8907,10 @@ export interface operations {
     get_agent_api_v1_workspaces__workspace_id__agent_runs__run_id__get: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
             path: {
                 workspace_id: string;
                 run_id: string;
@@ -7902,7 +8942,10 @@ export interface operations {
     cancel_agent_api_v1_workspaces__workspace_id__agent_runs__run_id__cancel_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
             path: {
                 workspace_id: string;
                 run_id: string;
@@ -7934,7 +8977,10 @@ export interface operations {
     confirm_agent_api_v1_workspaces__workspace_id__agent_runs__run_id__confirm_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
             path: {
                 workspace_id: string;
                 run_id: string;
@@ -7966,7 +9012,10 @@ export interface operations {
     download_artifact_api_v1_workspaces__workspace_id__agent_runs__run_id__artifacts__artifact_id__get: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
             path: {
                 workspace_id: string;
                 run_id: string;
@@ -7999,7 +9048,10 @@ export interface operations {
     download_bundle_api_v1_workspaces__workspace_id__agent_runs__run_id__bundle_get: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
             path: {
                 workspace_id: string;
                 run_id: string;
@@ -8031,7 +9083,10 @@ export interface operations {
     extract_papers_api_v1_workspaces__workspace_id__gap_extractions_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
             path: {
                 workspace_id: string;
             };
@@ -8068,7 +9123,10 @@ export interface operations {
             query?: {
                 status?: string | null;
             };
-            header?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
             path: {
                 workspace_id: string;
             };
@@ -8099,7 +9157,10 @@ export interface operations {
     rebuild_board_api_v1_workspaces__workspace_id__gap_board_rebuild_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
             path: {
                 workspace_id: string;
             };
@@ -8134,7 +9195,10 @@ export interface operations {
     get_board_api_v1_workspaces__workspace_id__gap_board_get: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
             path: {
                 workspace_id: string;
             };

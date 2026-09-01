@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Generator
 
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, Request, status
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import settings
@@ -91,10 +91,34 @@ def resolve_user_id(
 
 
 def get_current_user(
+    request: Request,
     x_user_id: str | None = Header(default=None, alias="X-User-ID"),
     authorization: str | None = Header(default=None, alias="Authorization"),
+    db: Session = Depends(get_db),
 ) -> str:
     """Resolve the acting user identity for a route dependency."""
+    state_user_id = getattr(request.state, "user_id", None)
+    if state_user_id:
+        return state_user_id
+    raw_session = request.cookies.get(settings.auth_cookie_name)
+    if raw_session:
+        from app.domains.auth.service import AuthService
+
+        resolved = AuthService(db).resolve_session(raw_session)
+        if resolved is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail={
+                    "error": "invalid_session",
+                    "message": "登录状态已失效，请重新登录",
+                    "retryable": False,
+                },
+                headers={"WWW-Authenticate": "Session"},
+            )
+        user_id, session_id = resolved
+        request.state.user_id = user_id
+        request.state.session_id = session_id
+        return user_id
     return resolve_user_id(authorization=authorization, x_user_id=x_user_id)
 
 
@@ -106,9 +130,9 @@ def get_owned_workspace(
     """Resolve a Workspace only when it belongs to the acting user.
 
     Routers whose URL is uniformly ``/workspaces/{workspace_id}/...`` can use
-    this dependency as a defense-in-depth check.  The delivery middleware
-    performs the same check before routing, while this dependency also keeps
-    direct route tests and non-middleware callers honest.
+    this dependency as the canonical ownership check. The delivery middleware
+    repeats the same check when it can resolve a session before routing, while
+    this dependency keeps local development and direct route callers honest.
     """
     from app.domains.workspace.service import WorkspaceService
 
