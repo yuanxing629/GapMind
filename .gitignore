@@ -124,10 +124,6 @@ backend/.pytest-temp-run/
 .run/
 
 # ---- Internal-only docs (not for teammates) ----
-# code_guide.md: personal code-reading notes, not useful for others
-# progress_and_roadmap.md: internal planning with known-limitations self-critique
-docs/code_guide.md
-docs/progress_and_roadmap.md
 /CLAUDE.md
 /AGENTS.md
 
@@ -137,3 +133,4 @@ zwx_work.md
 
 /data/
 /submission/
+/docs/
