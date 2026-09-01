@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.core.deps import get_db
+from app.core.deps import get_db, get_owned_workspace
 from app.domains.recommendation.schemas import (
     PaperRecommendationFeedback,
     PaperRecommendationListRead,
@@ -17,7 +17,11 @@ from app.domains.recommendation.service import (
 )
 from app.gateway.semantic_scholar import SemanticScholarClient
 
-router = APIRouter(prefix="/workspaces", tags=["recommendation"])
+router = APIRouter(
+    prefix="/workspaces",
+    tags=["recommendation"],
+    dependencies=[Depends(get_owned_workspace)],
+)
 
 
 def _service(db: Session = Depends(get_db)) -> RecommendationService:  # noqa: B008

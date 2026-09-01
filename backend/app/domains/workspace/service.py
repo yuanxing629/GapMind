@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession  # noqa: F401  (type-only, kept 
 from sqlalchemy.orm import Session
 
 from app.core.logging import get_logger
+from app.domains.workspace.access import has_workspace_access
 from app.domains.workspace.models import Workspace
 from app.domains.workspace.schemas import (
     WorkspaceCreate,
@@ -54,6 +55,7 @@ class WorkspaceService:
             constraints=payload.constraints,
             active_questions=list(payload.active_questions),
             is_archived=False,
+            is_demo=False,
             is_deleted=False,
         )
         self.db.add(ws)
@@ -70,7 +72,9 @@ class WorkspaceService:
     def get(self, workspace_id: str, *, actor_id: str | None = None) -> Workspace:
         self._validate_uuid(workspace_id)
         ws = self.db.get(Workspace, workspace_id)
-        if ws is None or ws.is_deleted or (actor_id is not None and ws.owner_id != actor_id):
+        if ws is None or ws.is_deleted or (
+            actor_id is not None and not has_workspace_access(self.db, workspace_id, actor_id)
+        ):
             raise WorkspaceNotFoundError(workspace_id)
         return ws
 
@@ -100,8 +104,10 @@ class WorkspaceService:
         return items, total
 
     # ------------------------------------------------------------------ update
-    def update(self, workspace_id: str, payload: WorkspaceUpdate) -> Workspace:
-        ws = self.get(workspace_id)
+    def update(
+        self, workspace_id: str, payload: WorkspaceUpdate, *, actor_id: str | None = None
+    ) -> Workspace:
+        ws = self.get(workspace_id, actor_id=actor_id)
         data = payload.model_dump(exclude_unset=True)
 
         # Empty dict means no fields to update - return as-is.
@@ -119,14 +125,14 @@ class WorkspaceService:
         return ws
 
     # ------------------------------------------------------------------ delete
-    def soft_delete(self, workspace_id: str) -> None:
-        ws = self.get(workspace_id)
+    def soft_delete(self, workspace_id: str, *, actor_id: str | None = None) -> None:
+        ws = self.get(workspace_id, actor_id=actor_id)
         ws.is_deleted = True
         self.db.commit()
         logger.info("workspace.soft_deleted", workspace_id=ws.id)
 
-    def archive(self, workspace_id: str) -> Workspace:
-        ws = self.get(workspace_id)
+    def archive(self, workspace_id: str, *, actor_id: str | None = None) -> Workspace:
+        ws = self.get(workspace_id, actor_id=actor_id)
         ws.is_archived = True
         self.db.commit()
         self.db.refresh(ws)
@@ -155,6 +161,7 @@ class WorkspaceService:
             owner_id=owner_id,
             description="独立模式空间：供未选择课题空间的 W7 分析/写作/审稿使用",
             is_archived=False,
+            is_demo=False,
             is_deleted=False,
         )
         self.db.add(ws)
@@ -162,15 +169,14 @@ class WorkspaceService:
         self.db.refresh(ws)
         return ws
 
-    def unarchive(self, workspace_id: str) -> Workspace:
-        ws = self.get(workspace_id)
+    def unarchive(self, workspace_id: str, *, actor_id: str | None = None) -> Workspace:
+        ws = self.get(workspace_id, actor_id=actor_id)
         ws.is_archived = False
         self.db.commit()
         self.db.refresh(ws)
         logger.info("workspace.unarchived", workspace_id=ws.id)
         return ws
 
-    # ------------------------------------------------------------ helpers
     @staticmethod
     def _validate_uuid(workspace_id: str) -> None:
         try:

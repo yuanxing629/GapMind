@@ -8,6 +8,14 @@ from __future__ import annotations
 
 from app.db.base import Base  # noqa: F401
 from app.domains.agent.models import AgentArtifact, AgentRun, AgentStep  # noqa: F401
+from app.domains.auth.models import (  # noqa: F401
+    AuthAuditEvent,
+    PasswordResetToken,
+    User,
+    UserInvite,
+    UserRole,
+    UserSession,
+)
 
 # Phase 1b: Artifact, Paper, Task, Timeline, Knowledge
 from app.domains.artifact.models import Artifact  # noqa: F401
@@ -15,6 +23,7 @@ from app.domains.chat.models import (  # noqa: F401
     ChatConversation,
     ChatMessage,
     ChatMessageEvidence,
+    ChatMessageImage,
 )
 from app.domains.discover.models import (  # noqa: F401
     DiscoverExternalCandidate,

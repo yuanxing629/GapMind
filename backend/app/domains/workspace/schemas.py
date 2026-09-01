@@ -70,6 +70,7 @@ class WorkspaceRead(BaseModel):
     constraints: str | None = None
     active_questions: list[str] = Field(default_factory=list)
     is_archived: bool = False
+    is_demo: bool = False
     is_deleted: bool = False
     created_at: datetime
     updated_at: datetime

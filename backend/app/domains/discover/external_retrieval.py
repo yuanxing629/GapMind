@@ -13,8 +13,8 @@ place instead of being duplicated.
 
 from __future__ import annotations
 
-import json
 import re
+from collections import Counter
 from typing import Any
 from uuid import uuid4
 from urllib.parse import quote
@@ -36,12 +36,17 @@ from app.domains.paper.service import PaperService
 from app.domains.task.models import Task
 from app.domains.task.service import TaskService
 from app.gateway.llm import LLMGateway
-from app.gateway.semantic_scholar import SemanticScholarClient, SemanticScholarError
+from app.gateway.semantic_scholar import (
+    SemanticScholarClient,
+    SemanticScholarError,
+    semantic_scholar_failure_kind,
+)
 
 logger = get_logger(__name__)
 
 S2_FIELDS = "paperId,externalIds,title,abstract,year,authors,openAccessPdf,url,publicationDate,citationCount"
 PIPELINE_PENDING_STATUSES = {"queued", "running", "waiting_for_user"}
+RETRYABLE_EXTERNAL_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
 
 # LLM prompt for external candidate role judgement (Stage 3).
 EXTERNAL_ROLE_SYSTEM_PROMPT = """\
@@ -74,6 +79,12 @@ Output a JSON object, nothing else:
 # context so queries cross research axes with the workspace's named methods.
 EXTERNAL_QUERY_AXIS_SYSTEM_PROMPT = 'You write effective search queries to find EXTERNAL papers that challenge, overlap with, or foundationally support a research question. The papers must be relevant to the question but are NOT required to be in the user\'s workspace.\n\nRules:\n- Write CONCISE keyword-style queries (3-8 words), never full sentences\n- Prefer SPECIFIC method names and established concept terms over generic topic phrases (e.g. "graph information bottleneck" or "invariant risk minimization", not just "interpretable GNN")\n- Turn at least 2 of the workspace\'s abbreviated method names into concrete queries using their FULL names, so the search finds the method\'s paper plus its variants and critiques\n- Cover distinct angles: foundational methods, overlapping prior work, counter-evidence / critiques, evaluation benchmarks, and the domain axis (e.g. distribution shift) when present\n- Do not quote the workspace paper titles verbatim\n- Never repeat the same idea in two queries\n\nAlso choose up to 4 workspace method names whose papers you want surfaced PRECISELY (these are searched by exact title, so give the full descriptive name — expand abbreviations). Prefer methods that are foundational or likely to have counter-evidence / variants. Do not list the same method twice.\n\nExamples of good queries:\n- "graph information bottleneck"\n- "invariant risk minimization out-of-distribution"\n- "saliency maps sanity checks"\n- "explanation robustness adversarial perturbations"\n- "graph rationalization environment augmentation"\n\nOutput a JSON object, nothing else:\n{"queries": ["...", "...", "..."], "exact_lookups": ["Method Full Name", "...", "..."]}'
 
+# Keep the persisted prompt text and the enforced lookup budget aligned even
+# for deployments that still load this compact legacy prompt literal.
+EXTERNAL_QUERY_AXIS_SYSTEM_PROMPT = EXTERNAL_QUERY_AXIS_SYSTEM_PROMPT.replace(
+    "up to 4 workspace method names", "up to 2 workspace method names"
+)
+
 EXTERNAL_FULLTEXT_ROLE_SYSTEM_PROMPT = """\
 You classify whether an external research paper serves as counter-evidence for \
 a research question, based on its FULL TEXT.
@@ -102,9 +113,12 @@ Output a JSON object, nothing else:
 # calls and the LLM role-judge batches bounded. The LLM-decomposed axis
 # queries are the highest-value external-search keys, so they are prioritized
 # over raw workspace signals and generic keywords.
-EXTERNAL_QUERY_MAX_TOTAL = 12  # max external search queries per run
-EXTERNAL_QUERY_AXIS_COUNT = 8  # LLM-generated axis queries to request
-EXTERNAL_QUERY_MAX_EXACT_LOOKUPS = 4  # LLM-selected method names to look up by exact title
+# Keep the default request budget below the provider's introductory API-key
+# rate guidance while retaining dedicated primary/counter/evaluation axes.
+# Successful responses are cached, so a retry run does not repeat cached work.
+EXTERNAL_QUERY_MAX_TOTAL = 8  # max external search queries per run
+EXTERNAL_QUERY_AXIS_COUNT = 5  # LLM-generated axis queries to request
+EXTERNAL_QUERY_MAX_EXACT_LOOKUPS = 2  # LLM-selected method names to look up by exact title
 EXTERNAL_QUERY_SIGNAL_TYPES = ("method", "claim", "task", "limitation")
 EXTERNAL_QUERY_MIN_CONFIDENCE = 0.3  # skip low-confidence extracted signals
 EXTERNAL_QUERY_MAX_KEYWORDS = 2  # generic user keywords are lowest priority
@@ -166,7 +180,6 @@ def title_verified(name: str, title: str) -> bool:
     if len(query_words) < 2:
         return False
     return query_words.issubset(title_words)
-
 
 
 # --------------------------------------------------------------------- service
@@ -416,7 +429,7 @@ class ExternalRetrievalService:
         research question into concise keyword-style queries that target the
         foundational / overlapping / counter / evaluation literature, using
         the workspace's extracted methods and limitations as context. It also
-        picks up to 4 workspace method names to look up by exact title
+        picks up to 2 workspace method names to look up by exact title
         (``exact_lookups``). On LLM failure or a malformed response it returns
         ``([], [])`` so the caller falls back to workspace-signal queries.
         """
@@ -476,7 +489,7 @@ class ExternalRetrievalService:
         Returns ``(queries, exact_lookups)``. The primary query is the run's
         claim/topic (the research question itself). The LLM decomposes the
         research question into concise axis queries (foundational methods,
-        counter-evidence, evaluation/critique, domain axis) and picks up to 4
+        counter-evidence, evaluation/critique, domain axis) and picks up to 2
         method names to look up by exact title. On LLM failure, or to fill the
         remaining budget, workspace-derived signals are used: method names,
         then limitations/claims/tasks, then generic user keywords last.
@@ -559,7 +572,12 @@ class ExternalRetrievalService:
         return "method_overlap"
 
     # ---------------------------------------------------------------- verify
-    def _external_verify(self, run: DiscoverRun, queries: list[str], exact_lookups: list[str] | None = None) -> int:
+    def _external_verify(
+        self,
+        run: DiscoverRun,
+        queries: list[str],
+        exact_lookups: list[str] | None = None,
+    ) -> int:
         """Search Semantic Scholar across several queries and merge candidates.
 
         ``queries[0]`` is the run's research question (claim/topic); the rest
@@ -595,11 +613,12 @@ class ExternalRetrievalService:
             self._external_candidate_state(run)
             return existing
         queries = [q.strip() for q in queries if q and q.strip()]
-        if not queries:
+        exact_lookups = [q.strip() for q in exact_lookups or [] if q and q.strip()]
+        if not queries and not exact_lookups:
             run.verification_status = "incomplete"
             self.db.commit()
             return 0
-        primary = queries[0]
+        primary = queries[0] if queries else (run.input_topic or "")
         config = DiscoverConfig.model_validate(run.config or {})
         top_k = config.top_k
         scope = DiscoverScope.model_validate(run.scope or {})
@@ -648,7 +667,9 @@ class ExternalRetrievalService:
                     "status": "failed",
                     "error": str(exc),
                     "status_code": exc.status_code,
-                    "retryable": exc.status_code in {429, 502, 504},
+                    "failure_kind": getattr(exc, "failure_kind", None)
+                    or semantic_scholar_failure_kind(exc.status_code),
+                    "retryable": exc.status_code in {429, 500, 502, 503, 504},
                 }
                 query_failures.append(failure)
                 query_records.append(failure)
@@ -659,7 +680,7 @@ class ExternalRetrievalService:
                     error=str(exc),
                 )
 
-        if not per_query:
+        if queries and not per_query and not exact_lookups:
             last_failure = query_failures[-1] if query_failures else {}
             run.verification_status = "failed"
             run.stage_summaries = {
@@ -675,6 +696,7 @@ class ExternalRetrievalService:
                     "query_success_rate": 0.0,
                     "query_records": query_records,
                     "query_failures": query_failures,
+                    "failure_counts": dict(Counter(item.get("failure_kind", "request_error") for item in query_failures)),
                     "notice_level": "critical",
                     "impact": "all_queries_failed",
                     "message": "外部检索全部失败，未获得可用候选论文。",
@@ -717,7 +739,9 @@ class ExternalRetrievalService:
                         "status": "failed",
                         "error": str(exc),
                         "status_code": exc.status_code,
-                        "retryable": exc.status_code in {429, 502, 504},
+                        "failure_kind": getattr(exc, "failure_kind", None)
+                        or semantic_scholar_failure_kind(exc.status_code),
+                    "retryable": exc.status_code in RETRYABLE_EXTERNAL_STATUS_CODES,
                     }
                 )
                 exact_lookup_failures.append(lookup_record)
@@ -776,7 +800,8 @@ class ExternalRetrievalService:
         for rank, (pid, item, source_query) in enumerate(merged, start=1):
             authors = [a.get("name", "") for a in item.get("authors") or [] if isinstance(a, dict) and a.get("name")]
             row = DiscoverExternalCandidate(
-                id=str(uuid4()), discover_run_id=run.id, query=source_query, rank=rank,
+                id=str(uuid4()), discover_run_id=run.id, query=source_query,
+                rank=rank,
                 external_paper_id=pid, title=str(item["title"]), authors=authors,
                 year=item.get("year") if isinstance(item.get("year"), int) else None,
                 abstract=item.get("abstract") if isinstance(item.get("abstract"), str) else None,
@@ -786,6 +811,7 @@ class ExternalRetrievalService:
             )
             rows.append(row)
         self.db.add_all(rows)
+        candidate_count = len(rows)
         run.verification_status = "in_progress" if rows else "incomplete"
         query_total = len(queries)
         successful_query_count = len(per_query)
@@ -813,14 +839,27 @@ class ExternalRetrievalService:
             if query_failures or exact_lookup_failures
             else "none"
         )
-        message = (
-            f"外部检索成功 {successful_query_count}/{query_total} 条查询，"
-            f"{len(query_failures)} 条受限；已保留成功结果。"
-            if query_failures
-            else "外部检索完成，已获得候选论文。"
-        )
+        if query_failures:
+            failure_counts = Counter(item.get("failure_kind", "request_error") for item in query_failures)
+            failure_labels = {
+                "rate_limited": "频率限制",
+                "timeout": "请求超时",
+                "network_error": "网络/TLS异常",
+                "upstream_error": "外部服务异常",
+                "request_error": "请求异常",
+            }
+            reason_text = "、".join(
+                f"{failure_labels.get(kind, '请求异常')} {count} 条"
+                for kind, count in failure_counts.most_common()
+            )
+            message = (
+                f"已完成 {successful_query_count}/{query_total} 个检索方向，"
+                f"已保留 {candidate_count} 篇候选。未完成原因：{reason_text}。"
+            )
+        else:
+            message = "外部检索完成，已获得候选论文。"
         if exact_lookup_failures:
-            message += f"另有 {len(exact_lookup_failures)} 条精确查找受限。"
+            message += f"另有 {len(exact_lookup_failures)} 条方法精确查找未完成。"
         if insufficient_candidates and rows:
             message += "候选数量偏少，仍需谨慎核验。"
         run.stage_summaries = {
@@ -828,13 +867,14 @@ class ExternalRetrievalService:
             "external_search": {
                 "status": search_status,
                 "executed": True,
-                "candidate_count": len(rows),
+                "candidate_count": candidate_count,
                 "queries": [q[:120] for q in queries],
                 "successful_query_count": successful_query_count,
                 "failed_query_count": len(query_failures),
                 "query_success_rate": round(query_success_rate, 4),
                 "query_records": [*query_records, *exact_lookup_records],
                 "query_failures": query_failures,
+                "failure_counts": dict(Counter(item.get("failure_kind", "request_error") for item in query_failures)),
                 "exact_lookup_count": len(exact_lookup_records),
                 "exact_lookup_failure_count": len(exact_lookup_failures),
                 "exact_lookup_failures": exact_lookup_failures,
@@ -1020,6 +1060,38 @@ class ExternalRetrievalService:
             return ""
 
     # ----------------------------------------------------------------- import
+    def _candidate_pdf_urls(self, row: DiscoverExternalCandidate) -> list[tuple[str, str]]:
+        """Return ordered, deduplicated PDF sources for one candidate.
+
+        ``openAccessPdf`` is a provider hint, not a guarantee. arXiv is the
+        only deterministic fallback currently available from the persisted S2
+        identifiers; landing-page URLs are intentionally not treated as PDFs.
+        """
+        raw = row.snapshot_payload or {}
+        sources: list[tuple[str, str]] = []
+        pdf = row.open_access_pdf or {}
+        if isinstance(pdf, dict) and isinstance(pdf.get("url"), str):
+            sources.append(("semantic_scholar_open_access", pdf["url"]))
+
+        external_ids = raw.get("externalIds") if isinstance(raw.get("externalIds"), dict) else {}
+        arxiv_id = (
+            external_ids.get("ArXiv")
+            or external_ids.get("ARXIV")
+            or external_ids.get("arXiv")
+        )
+        if isinstance(arxiv_id, str) and arxiv_id.strip():
+            arxiv_id = arxiv_id.removeprefix("arXiv:").removesuffix(".pdf").strip()
+            sources.append(("arxiv", f"https://arxiv.org/pdf/{quote(arxiv_id, safe='/')}"))
+
+        unique: list[tuple[str, str]] = []
+        seen: set[str] = set()
+        for source, url in sources:
+            normalized = normalize_pdf_url(url)
+            if normalized and normalized not in seen:
+                seen.add(normalized)
+                unique.append((source, normalized))
+        return unique
+
     def _import_selected_candidates(self, run: DiscoverRun) -> None:
         """Best-effort import of user-selected OA PDFs.
 
@@ -1034,23 +1106,57 @@ class ExternalRetrievalService:
                 self._ensure_paper_pipeline(run.workspace_id, row.imported_paper_id)
                 continue
             raw = row.snapshot_payload or {}
-            pdf = row.open_access_pdf or {}
-            pdf_url = pdf.get("url") if isinstance(pdf, dict) else None
-            if not isinstance(pdf_url, str) or not pdf_url.strip():
-                external_ids = raw.get("externalIds") if isinstance(raw.get("externalIds"), dict) else {}
-                arxiv_id = external_ids.get("ArXiv") or external_ids.get("ARXIV")
-                if isinstance(arxiv_id, str) and arxiv_id.strip():
-                    arxiv_id = arxiv_id.removeprefix("arXiv:").removesuffix(".pdf").strip()
-                    pdf_url = f"https://arxiv.org/pdf/{quote(arxiv_id, safe='/')}"
-            if not isinstance(pdf_url, str):
+            pdf_sources = self._candidate_pdf_urls(row)
+            if not pdf_sources:
                 row.verification_status = "no_pdf"
+                row.snapshot_payload = {
+                    **raw,
+                    "pdf_acquisition": {
+                        "status": "no_pdf",
+                        "attempts": [],
+                        "message": "未找到可用的开放获取 PDF 地址。",
+                    },
+                }
                 continue
-            pdf_url = normalize_pdf_url(pdf_url)
-            if not pdf_url:
-                row.verification_status = "no_pdf"
+
+            content: bytes | None = None
+            attempts: list[dict[str, Any]] = []
+            last_error: SemanticScholarError | None = None
+            for source, pdf_url in pdf_sources:
+                try:
+                    content = client.download_pdf(pdf_url)
+                    attempts.append({"source": source, "url": pdf_url, "status": "succeeded"})
+                    break
+                except SemanticScholarError as exc:
+                    last_error = exc
+                    attempts.append(
+                        {
+                            "source": source,
+                            "url": pdf_url,
+                            "status": "failed",
+                            "status_code": exc.status_code,
+                            "failure_kind": getattr(exc, "failure_kind", None),
+                        "retryable": exc.status_code in RETRYABLE_EXTERNAL_STATUS_CODES,
+                            "error": str(exc)[:300],
+                        }
+                    )
+
+            if content is None:
+                error = str(last_error)[:500] if last_error else "没有可用 PDF"
+                retryable = any(item.get("retryable") for item in attempts)
+                row.verification_status = "import_failed"
+                row.snapshot_payload = {
+                    **raw,
+                    "import_error": error,
+                    "pdf_acquisition": {
+                        "status": "retryable_failure" if retryable else "unavailable",
+                        "attempts": attempts,
+                        "message": "PDF 下载暂时失败，可稍后重试。" if retryable else "未能从可用来源获取有效 PDF。",
+                    },
+                }
                 continue
+
             try:
-                content = client.download_pdf(pdf_url)
                 paper_service = PaperService(self.db)
                 paper = paper_service.find_by_external_paper_id(workspace_id=run.workspace_id, external_paper_id=row.external_paper_id)
                 if paper is None:
@@ -1063,7 +1169,14 @@ class ExternalRetrievalService:
                 row.evidence_level = "metadata_only"
             except (SemanticScholarError, ValueError) as exc:
                 row.verification_status = "import_failed"
-                row.snapshot_payload = {**raw, "import_error": str(exc)[:500]}
+                row.snapshot_payload = {
+                    **raw,
+                    "import_error": str(exc)[:500],
+                    "pdf_acquisition": {
+                        "status": "local_import_failed",
+                        "attempts": attempts,
+                    },
+                }
         self.db.commit()
 
     def _ensure_paper_pipeline(self, workspace_id: str, paper_id: str) -> None:

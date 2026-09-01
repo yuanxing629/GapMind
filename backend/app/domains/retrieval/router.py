@@ -8,9 +8,10 @@ Endpoints (per api_reference.md "Retrieval（计划）"):
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from app.core.deps import get_owned_workspace
 from app.domains.retrieval.schemas import RetrievalResponse
 from app.domains.retrieval.service import (
     find_counter_evidence,
@@ -18,7 +19,11 @@ from app.domains.retrieval.service import (
     semantic_search,
 )
 
-router = APIRouter(prefix="/workspaces/{workspace_id}/retrieval", tags=["retrieval"])
+router = APIRouter(
+    prefix="/workspaces/{workspace_id}/retrieval",
+    tags=["retrieval"],
+    dependencies=[Depends(get_owned_workspace)],
+)
 
 
 # ------------------------------------------------------------------

@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import re
+import secrets
 import time
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Iterable, Generator
 
 from sqlalchemy import func, select
@@ -16,7 +20,12 @@ from app.domains.agent.models import AgentArtifact, AgentRun
 from app.domains.artifact.models import Artifact
 from app.domains.artifact.service import ArtifactService
 from app.domains.chat.consistency import message_citation_check, source_marker_check
-from app.domains.chat.models import ChatConversation, ChatMessage, ChatMessageEvidence
+from app.domains.chat.models import (
+    ChatConversation,
+    ChatMessage,
+    ChatMessageEvidence,
+    ChatMessageImage,
+)
 from app.domains.discover.models import ResearchOpportunity, ResearchPlan
 from app.domains.paper.models import Paper
 from app.domains.retrieval.schemas import RetrievalResponse, RetrievalResultItem
@@ -41,11 +50,21 @@ CITATION_REPAIR_FALLBACK = (
     "当前回答未能通过工作区论文引用校验，因此不能把原回答中的结论视为有论文依据。"
     "请基于已列出的证据重新提问，或补充相关论文后重试。"
 )
+SUPPORTED_IMAGE_MIME_TYPES = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/gif": ".gif",
+    "image/webp": ".webp",
+}
+IMAGE_DATA_URL_PATTERN = re.compile(
+    r"^data:(image/(?:jpeg|png|gif|webp));base64,([A-Za-z0-9+/=\r\n]+)$",
+    re.IGNORECASE,
+)
 
 
 @dataclass
 class WorkspaceContext:
-    messages: list[dict[str, str]]
+    messages: list[dict[str, Any]]
     evidence: list[ChatMessageEvidence]
     sources: list[dict[str, Any]]
     plan: ResearchPlan | None = None
@@ -63,6 +82,14 @@ class ContextSelection:
 class CitationQualityResult:
     response: LLMResponse
     audit: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class PreparedImage:
+    filename: str
+    mime_type: str
+    content: bytes
+    data_url: str
 
 
 class ChatNotFoundError(LookupError):
@@ -227,10 +254,12 @@ class ChatService:
         workspace_id: str | None = None,
         research_plan_id: str | None = None,
         source_artifact_ids: list[str] | None = None,
+        images: list[dict[str, str]] | None = None,
         *,
         actor_id: str | None = None,
     ) -> tuple[ChatConversation, ChatMessage, ChatMessage]:
         content = self._validate_content(content)
+        prepared_images = self._prepare_images(images)
         if workspace_id:
             WorkspaceService(self.db).get(workspace_id, actor_id=actor_id)
         conversation = ChatConversation(
@@ -241,6 +270,7 @@ class ChatService:
         self.db.add(conversation)
         self.db.flush()
         user_message, assistant_message = self._create_pending_messages(conversation, content)
+        image_data_urls = self._persist_images(user_message, prepared_images)
         self.db.commit()
         return self._complete(
             conversation.id,
@@ -249,6 +279,7 @@ class ChatService:
             [{"role": "user", "content": content}],
             research_plan_id=research_plan_id,
             source_artifact_ids=source_artifact_ids,
+            image_data_urls=image_data_urls,
         )
 
     def send(
@@ -258,16 +289,19 @@ class ChatService:
         workspace_id: str | None = None,
         research_plan_id: str | None = None,
         source_artifact_ids: list[str] | None = None,
+        images: list[dict[str, str]] | None = None,
         *,
         actor_id: str | None = None,
     ) -> tuple[ChatConversation, ChatMessage, ChatMessage]:
         content = self._validate_content(content)
+        prepared_images = self._prepare_images(images)
         conversation = self.get_conversation(conversation_id, actor_id=actor_id)
         if workspace_id is not None and workspace_id != conversation.workspace_id:
             raise ChatConflictError("conversation workspace cannot be changed")
         self._ensure_not_generating(conversation.id)
         existing = self._completed_messages(conversation.id)
         user_message, assistant_message = self._create_pending_messages(conversation, content)
+        image_data_urls = self._persist_images(user_message, prepared_images)
         self.db.commit()
         context = self._build_context(existing, content)
         return self._complete(
@@ -277,6 +311,7 @@ class ChatService:
             context,
             research_plan_id=research_plan_id,
             source_artifact_ids=source_artifact_ids,
+            image_data_urls=image_data_urls,
         )
 
     def retry(
@@ -328,6 +363,7 @@ class ChatService:
             if source.get("source_type") in {"report", "code_draft"}
             and source.get("source_id")
         ]
+        image_data_urls = self._image_data_urls(user_message)
         return self._complete(
             conversation.id,
             user_message.id,
@@ -337,6 +373,7 @@ class ChatService:
             ),
             research_plan_id=plan_id,
             source_artifact_ids=artifact_ids,
+            image_data_urls=image_data_urls,
         )
 
     def _create_pending_messages(
@@ -363,6 +400,7 @@ class ChatService:
             sequence=sequence + 1,
         )
         self.db.add_all([user_message, assistant_message])
+        self.db.flush()
         return user_message, assistant_message
 
     @staticmethod
@@ -414,8 +452,8 @@ class ChatService:
             )
         )[::-1]
 
-    def _build_context(self, messages: Iterable[ChatMessage], content: str) -> list[dict[str, str]]:
-        context_reversed: list[dict[str, str]] = []
+    def _build_context(self, messages: Iterable[ChatMessage], content: str) -> list[dict[str, Any]]:
+        context_reversed: list[dict[str, Any]] = []
         total_chars = 0
         # ``_completed_messages`` already returns the latest N rows in
         # chronological order. Fill the history budget from the newest turn
@@ -433,19 +471,201 @@ class ChatService:
         context.append({"role": "user", "content": content})
         return context
 
+    def _prepare_images(
+        self, images: list[dict[str, str]] | None
+    ) -> list[PreparedImage]:
+        """Decode and validate browser data URLs before creating a message."""
+
+        if not images:
+            return []
+        if len(images) > settings.chat_max_image_count:
+            raise ChatInputError(
+                f"每次最多上传 {settings.chat_max_image_count} 张图片"
+            )
+
+        prepared: list[PreparedImage] = []
+        for image in images:
+            data_url = str(image.get("data_url") or "")
+            match = IMAGE_DATA_URL_PATTERN.fullmatch(data_url)
+            if match is None:
+                raise ChatInputError("图片格式无效，仅支持 JPEG、PNG、GIF 或 WebP")
+
+            mime_type = match.group(1).lower()
+            declared_mime = str(image.get("mime_type") or "").lower()
+            if declared_mime != mime_type:
+                raise ChatInputError("图片类型与内容不一致")
+            encoded = match.group(2).replace("\r", "").replace("\n", "")
+            estimated_bytes = max(0, (len(encoded) * 3) // 4 - encoded.count("="))
+            if estimated_bytes > settings.chat_max_image_bytes:
+                raise ChatInputError(
+                    f"单张图片不能超过 {settings.chat_max_image_bytes // (1024 * 1024)} MB"
+                )
+            try:
+                content = base64.b64decode(encoded, validate=True)
+            except (binascii.Error, ValueError) as exc:
+                raise ChatInputError("图片内容无法读取") from exc
+            if not content or len(content) > settings.chat_max_image_bytes:
+                raise ChatInputError("图片内容为空或超过大小限制")
+            if self._detect_image_mime(content) != mime_type:
+                raise ChatInputError("图片内容与声明格式不一致")
+
+            raw_filename = str(image.get("filename") or "image")
+            filename = re.split(r"[/\\]", raw_filename)[-1].strip()[:512] or "image"
+            normalized_data_url = (
+                f"data:{mime_type};base64,{base64.b64encode(content).decode('ascii')}"
+            )
+            prepared.append(
+                PreparedImage(
+                    filename=filename,
+                    mime_type=mime_type,
+                    content=content,
+                    data_url=normalized_data_url,
+                )
+            )
+        return prepared
+
+    def _persist_images(
+        self, message: ChatMessage, images: list[PreparedImage]
+    ) -> list[str]:
+        """Persist chat images and return normalized data URLs for this request."""
+
+        if not images:
+            return []
+        storage_root = Path(settings.app_storage_dir).resolve()
+        message_dir = storage_root / "chat" / message.conversation_id / message.id
+        try:
+            message_dir.mkdir(parents=True, exist_ok=True)
+            data_urls: list[str] = []
+            for image in images:
+                stored_path = message_dir / (
+                    f"{secrets.token_hex(16)}{SUPPORTED_IMAGE_MIME_TYPES[image.mime_type]}"
+                )
+                stored_path.write_bytes(image.content)
+                relative_path = str(stored_path.relative_to(storage_root)).replace("\\", "/")
+                self.db.add(
+                    ChatMessageImage(
+                        message_id=message.id,
+                        filename=image.filename,
+                        mime_type=image.mime_type,
+                        file_path=relative_path,
+                        size_bytes=len(image.content),
+                    )
+                )
+                data_urls.append(image.data_url)
+            return data_urls
+        except OSError as exc:
+            raise ChatInputError("图片保存失败，请稍后重试") from exc
+
+    def _image_data_urls(self, message: ChatMessage) -> list[str]:
+        """Read persisted images for retrying the message that originally used them."""
+
+        return [self._image_data_url(image) for image in message.images]
+
+    def _image_data_url(self, image: ChatMessageImage) -> str:
+        path = self._image_path(image)
+        try:
+            content = path.read_bytes()
+        except OSError as exc:
+            raise ChatInputError("历史图片材料不可用，请重新上传") from exc
+        if len(content) > settings.chat_max_image_bytes:
+            raise ChatInputError("历史图片超过当前大小限制，请重新上传")
+        if self._detect_image_mime(content) != image.mime_type:
+            raise ChatInputError("历史图片格式无法验证，请重新上传")
+        return f"data:{image.mime_type};base64,{base64.b64encode(content).decode('ascii')}"
+
+    def image_file(
+        self,
+        conversation_id: str,
+        message_id: str,
+        image_id: str,
+        *,
+        actor_id: str | None = None,
+    ) -> tuple[Path, ChatMessageImage]:
+        """Resolve one image only after checking conversation ownership."""
+
+        conversation = self.get_conversation(conversation_id, actor_id=actor_id)
+        image = self.db.scalar(
+            select(ChatMessageImage)
+            .join(ChatMessage, ChatMessage.id == ChatMessageImage.message_id)
+            .where(
+                ChatMessageImage.id == image_id,
+                ChatMessageImage.message_id == message_id,
+                ChatMessage.conversation_id == conversation.id,
+            )
+        )
+        if image is None:
+            raise ChatNotFoundError("chat image not found")
+        path = self._image_path(image)
+        if not path.is_file():
+            raise ChatNotFoundError("chat image file not found")
+        return path, image
+
+    def _image_path(self, image: ChatMessageImage) -> Path:
+        storage_root = Path(settings.app_storage_dir).resolve()
+        path = (storage_root / image.file_path).resolve()
+        try:
+            path.relative_to(storage_root)
+        except ValueError as exc:
+            raise ChatInputError("图片存储路径无效") from exc
+        return path
+
+    @staticmethod
+    def _detect_image_mime(content: bytes) -> str | None:
+        if content.startswith(b"\xff\xd8\xff"):
+            return "image/jpeg"
+        if content.startswith(b"\x89PNG\r\n\x1a\n"):
+            return "image/png"
+        if content.startswith((b"GIF87a", b"GIF89a")):
+            return "image/gif"
+        if content.startswith(b"RIFF") and content[8:12] == b"WEBP":
+            return "image/webp"
+        return None
+
+    @staticmethod
+    def _vision_model(gateway: Any, image_data_urls: list[str]) -> str | None:
+        if not image_data_urls:
+            return None
+        model = str(getattr(gateway, "vision_model", "") or "").strip()
+        if not model:
+            raise ChatConfigurationError("DeepSeek 视觉模型未配置")
+        return model
+
+    @staticmethod
+    def _attach_images(
+        context: list[dict[str, Any]], image_data_urls: list[str]
+    ) -> list[dict[str, Any]]:
+        if not image_data_urls:
+            return context
+        if not context or context[-1].get("role") != "user":
+            raise ChatInputError("图片必须附加在当前用户消息上")
+        text = context[-1].get("content")
+        if not isinstance(text, str):
+            raise ChatInputError("当前消息内容格式无效")
+        content: list[dict[str, Any]] = [{"type": "text", "text": text}]
+        content.extend(
+            {
+                "type": "image_url",
+                "image_url": {"url": data_url, "detail": "auto"},
+            }
+            for data_url in image_data_urls
+        )
+        return [*context[:-1], {"role": "user", "content": content}]
+
     def _complete(
         self,
         conversation_id: str,
         user_id: str,
         assistant_id: str,
-        context: list[dict[str, str]],
+        context: list[dict[str, Any]],
         *,
         research_plan_id: str | None = None,
         source_artifact_ids: list[str] | None = None,
+        image_data_urls: list[str] | None = None,
     ) -> tuple[ChatConversation, ChatMessage, ChatMessage]:
         assistant = self.db.get(ChatMessage, assistant_id)
         conversation = self.db.get(ChatConversation, conversation_id)
         user_message = self.db.get(ChatMessage, user_id)
+        image_data_urls = image_data_urls or []
         try:
             if (research_plan_id or source_artifact_ids) and not conversation.workspace_id:
                 raise ChatInputError("研究计划和补充来源必须绑定当前工作区")
@@ -468,7 +688,7 @@ class ChatService:
                 assistant.source_manifest = sources
                 assistant.retrieval_diagnostic_code = workspace_context.retrieval_diagnostic_code
                 assistant.retrieval_audit = workspace_context.retrieval_audit
-                if not evidence and not sources:
+                if not evidence and not sources and not image_data_urls:
                     return self._complete_without_evidence(
                         conversation,
                         user_message,
@@ -477,12 +697,16 @@ class ChatService:
             gateway = self.gateway or get_llm_gateway()
             if not getattr(gateway, "api_key", None):
                 raise ChatConfigurationError("DeepSeek API key is not configured")
+            vision_model = self._vision_model(gateway, image_data_urls)
+            if image_data_urls:
+                context = self._attach_images(context, image_data_urls)
             generation_started = time.perf_counter()
             prompt_chars = self._prompt_char_count(context)
             response = gateway.chat_completion(
                 context,
                 temperature=0.2,
                 disable_thinking=True,
+                **({"model_override": vision_model} if vision_model else {}),
             )
             quality = self._apply_citation_quality_gate(
                 gateway,
@@ -490,6 +714,7 @@ class ChatService:
                 response,
                 evidence,
                 sources,
+                model_override=vision_model,
             )
             response = quality.response
             assistant.citation_quality = quality.audit
@@ -550,11 +775,13 @@ class ChatService:
         workspace_id: str | None = None,
         research_plan_id: str | None = None,
         source_artifact_ids: list[str] | None = None,
+        images: list[dict[str, str]] | None = None,
         *,
         actor_id: str | None = None,
     ) -> Generator[dict[str, Any], None, None]:
         """Stream a new-conversation message. Yields event dicts (see _stream_complete)."""
         content = self._validate_content(content)
+        prepared_images = self._prepare_images(images)
         if workspace_id:
             WorkspaceService(self.db).get(workspace_id, actor_id=actor_id)
         conversation = ChatConversation(
@@ -565,12 +792,14 @@ class ChatService:
         self.db.add(conversation)
         self.db.flush()
         user_message, assistant_message = self._create_pending_messages(conversation, content)
+        image_data_urls = self._persist_images(user_message, prepared_images)
         self.db.commit()
         yield from self._stream_complete(
             conversation.id, user_message.id, assistant_message.id,
             [{"role": "user", "content": content}],
             research_plan_id=research_plan_id,
             source_artifact_ids=source_artifact_ids,
+            image_data_urls=image_data_urls,
         )
 
     def stream_send(
@@ -580,17 +809,20 @@ class ChatService:
         workspace_id: str | None = None,
         research_plan_id: str | None = None,
         source_artifact_ids: list[str] | None = None,
+        images: list[dict[str, str]] | None = None,
         *,
         actor_id: str | None = None,
     ) -> Generator[dict[str, Any], None, None]:
         """Stream a message into an existing conversation. Yields event dicts."""
         content = self._validate_content(content)
+        prepared_images = self._prepare_images(images)
         conversation = self.get_conversation(conversation_id, actor_id=actor_id)
         if workspace_id is not None and workspace_id != conversation.workspace_id:
             raise ChatConflictError("conversation workspace cannot be changed")
         self._ensure_not_generating(conversation.id)
         existing = self._completed_messages(conversation.id)
         user_message, assistant_message = self._create_pending_messages(conversation, content)
+        image_data_urls = self._persist_images(user_message, prepared_images)
         self.db.commit()
         context = self._build_context(existing, content)
         yield from self._stream_complete(
@@ -600,6 +832,7 @@ class ChatService:
             context,
             research_plan_id=research_plan_id,
             source_artifact_ids=source_artifact_ids,
+            image_data_urls=image_data_urls,
         )
 
     def _stream_complete(
@@ -607,10 +840,11 @@ class ChatService:
         conversation_id: str,
         user_id: str,
         assistant_id: str,
-        context: list[dict[str, str]],
+        context: list[dict[str, Any]],
         *,
         research_plan_id: str | None = None,
         source_artifact_ids: list[str] | None = None,
+        image_data_urls: list[str] | None = None,
     ) -> Generator[dict[str, Any], None, None]:
         """Stream LLM tokens for a message, persisting on completion.
 
@@ -621,6 +855,7 @@ class ChatService:
         assistant = self.db.get(ChatMessage, assistant_id)
         conversation = self.db.get(ChatConversation, conversation_id)
         user_message = self.db.get(ChatMessage, user_id)
+        image_data_urls = image_data_urls or []
         evidence: list[ChatMessageEvidence] = []
         sources: list[dict[str, Any]] = []
         try:
@@ -668,7 +903,7 @@ class ChatService:
             yield {"type": "error", "message": str(exc)}
             return
 
-        if conversation.workspace_id and not evidence and not sources:
+        if conversation.workspace_id and not evidence and not sources and not image_data_urls:
             self._complete_without_evidence(conversation, user_message, assistant)
             yield {"type": "done", "content": assistant.content}
             return
@@ -693,12 +928,16 @@ class ChatService:
             chunks: list[str] = []
             generation_started = time.perf_counter()
             first_token_latency_ms: float | None = None
+            vision_model = self._vision_model(gateway, image_data_urls)
+            if image_data_urls:
+                context = self._attach_images(context, image_data_urls)
             prompt_chars = self._prompt_char_count(context)
             try:
                 for delta in gateway.stream_chat_completion(
                     context,
                     temperature=0.2,
                     disable_thinking=True,
+                    **({"model_override": vision_model} if vision_model else {}),
                 ):
                     if delta and first_token_latency_ms is None:
                         first_token_latency_ms = (time.perf_counter() - generation_started) * 1000
@@ -723,6 +962,7 @@ class ChatService:
                 ),
                 evidence,
                 sources,
+                model_override=vision_model,
             )
             content = quality.response.content
             assistant.citation_quality = quality.audit
@@ -759,10 +999,12 @@ class ChatService:
     def _apply_citation_quality_gate(
         self,
         gateway: Any,
-        context: list[dict[str, str]],
+        context: list[dict[str, Any]],
         response: LLMResponse,
         evidence: list[ChatMessageEvidence],
         sources: list[dict[str, Any]],
+        *,
+        model_override: str | None = None,
     ) -> CitationQualityResult:
         """Validate one answer and allow at most one bounded marker repair.
 
@@ -803,6 +1045,7 @@ class ChatService:
                 temperature=0.0,
                 max_tokens=CITATION_REPAIR_MAX_TOKENS,
                 disable_thinking=True,
+                **({"model_override": model_override} if model_override else {}),
             )
         except Exception:
             repair_response = None
@@ -865,13 +1108,13 @@ class ChatService:
 
     @staticmethod
     def _citation_repair_context(
-        context: list[dict[str, str]],
+        context: list[dict[str, Any]],
         content: str,
         evidence: list[ChatMessageEvidence],
         sources: list[dict[str, Any]],
         citation_check: Any,
         source_check: Any,
-    ) -> list[dict[str, str]]:
+    ) -> list[dict[str, Any]]:
         allowed_papers = ", ".join(f"[E{item.rank}]" for item in evidence) or "无"
         allowed_sources = ", ".join(
             f"[{source['marker']}]"
@@ -901,7 +1144,7 @@ class ChatService:
         self,
         conversation: ChatConversation,
         question: str,
-        context: list[dict[str, str]],
+        context: list[dict[str, Any]],
         assistant_id: str,
         *,
         research_plan_id: str | None = None,
@@ -1308,10 +1551,21 @@ class ChatService:
         return evidence
 
     @staticmethod
-    def _prompt_char_count(context: list[dict[str, str]]) -> int:
+    def _prompt_char_count(context: list[dict[str, Any]]) -> int:
         """Count prompt characters without persisting the prompt contents."""
 
-        return sum(len(str(message.get("content") or "")) for message in context)
+        total = 0
+        for message in context:
+            content = message.get("content")
+            if isinstance(content, str):
+                total += len(content)
+            elif isinstance(content, list):
+                total += sum(
+                    len(str(part.get("text") or ""))
+                    for part in content
+                    if isinstance(part, dict)
+                )
+        return total
 
     @staticmethod
     def _set_generation_observability(
@@ -1386,9 +1640,9 @@ class ChatService:
 
     @staticmethod
     def _budget_prompt_messages(
-        system_message: dict[str, str],
-        context: list[dict[str, str]],
-    ) -> list[dict[str, str]]:
+        system_message: dict[str, Any],
+        context: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
         """Apply one total prompt budget while preserving the current question.
 
         Source blocks are independently capped before this function. The
@@ -1406,7 +1660,7 @@ class ChatService:
             - len(system_message["content"])
             - len(current_message["content"]),
         )
-        selected_reversed: list[dict[str, str]] = []
+        selected_reversed: list[dict[str, Any]] = []
         for message in reversed(history):
             if len(message["content"]) > remaining:
                 continue

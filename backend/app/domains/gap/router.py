@@ -7,7 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from app.core.deps import get_current_user, get_db
+from app.core.deps import get_current_user, get_db, get_owned_workspace
 from app.domains.discover.schemas import (
     DiscoverConfig,
     DiscoverInput,
@@ -31,7 +31,6 @@ from app.domains.gap.service import (
     GapService,
 )
 from app.domains.task.service import TaskService
-from app.domains.workspace.service import WorkspaceService
 from app.workers.tasks.extract_gap_annotation import spawn_gap_extraction
 from app.workers.tasks.run_discover import spawn_discover_task
 
@@ -43,14 +42,10 @@ def _service(db: DbSession) -> GapService:
     return GapService(db)
 
 
-def _workspace_dependency(workspace_id: str, db: DbSession) -> None:
-    WorkspaceService(db).get(workspace_id)
-
-
 router = APIRouter(
     prefix="/workspaces/{workspace_id}/gap",
     tags=["gap-board"],
-    dependencies=[Depends(_workspace_dependency)],
+    dependencies=[Depends(get_owned_workspace)],
 )
 
 

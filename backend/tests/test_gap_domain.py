@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 from uuid import uuid4
+from unittest.mock import patch
 
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.domains.artifact.models import Artifact
@@ -19,6 +21,7 @@ from app.domains.gap.validation import validate_annotation
 from app.domains.paper.models import Paper
 from app.domains.task.schemas import TaskCreate
 from app.domains.task.service import TaskService
+from app.domains.timeline.models import TimelineEvent
 from app.domains.workspace.models import Workspace
 from app.gateway.gap_extractor import (
     GapExtractionResult,
@@ -680,9 +683,11 @@ def test_board_collapses_taxonomy_and_suppresses_cartesian_only_cells(
     db_session: Session,
     client: TestClient,
 ) -> None:
+    actor_id = str(uuid4())
     workspace = Workspace(
         id=str(uuid4()),
         name="Taxonomy WS",
+        owner_id=actor_id,
         keywords=[],
         active_questions=[],
         is_archived=False,
@@ -761,9 +766,35 @@ def test_board_collapses_taxonomy_and_suppresses_cartesian_only_cells(
             "problem_concept_id": low_evidence[0]["problem_concept_id"],
             "max_opportunities": 3,
         },
+        headers={"X-User-ID": actor_id},
     )
     assert rejected.status_code == 409
     assert "low-evidence" in rejected.json()["detail"]
+
+    with patch(
+        "app.domains.gap.router.spawn_discover_task",
+        return_value="celery-gap-discover-test",
+    ):
+        launched = client.post(
+            f"/api/v1/workspaces/{workspace.id}/gap/candidates/discover",
+            json={
+                "method_concept_id": low_evidence[0]["method_concept_id"],
+                "problem_concept_id": low_evidence[0]["problem_concept_id"],
+                "max_opportunities": 3,
+                "exploratory": True,
+            },
+            headers={"X-User-ID": actor_id},
+        )
+    assert launched.status_code == 202, launched.text
+    timeline_event = db_session.scalar(
+        select(TimelineEvent).where(
+            TimelineEvent.workspace_id == workspace.id,
+            TimelineEvent.event_type == "discover.run_created",
+        )
+    )
+    assert timeline_event is not None
+    assert timeline_event.actor == actor_id
+
     exploratory = GapCandidateDiscoverRequest(
         method_concept_id=low_evidence[0]["method_concept_id"],
         problem_concept_id=low_evidence[0]["problem_concept_id"],

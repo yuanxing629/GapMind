@@ -16,6 +16,7 @@ from app.domains.reading.schemas import (
     PaperAnnotationUpdate,
     ReadingProgressUpdate,
 )
+from app.domains.workspace.access import has_workspace_access
 from app.domains.workspace.models import Workspace
 
 
@@ -101,7 +102,10 @@ class ReadingService:
         if paper is None or paper.is_deleted:
             raise ReadingPaperNotFoundError(paper_id)
         workspace = self.db.get(Workspace, paper.workspace_id)
-        if actor_id is not None and (workspace is None or workspace.owner_id != actor_id):
+        if actor_id is not None and (
+            workspace is None
+            or not has_workspace_access(self.db, workspace.id, actor_id)
+        ):
             raise ReadingPaperNotFoundError(paper_id)
         item = self.db.execute(
             select(ReadingItem).where(ReadingItem.paper_id == paper_id)

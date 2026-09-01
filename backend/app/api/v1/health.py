@@ -144,8 +144,10 @@ def _readiness_checks() -> dict[str, dict[str, str]]:
             missing="semantic_scholar_base_url_missing",
         ),
         "auth": _check_configured(
-            lambda: (not authentication_required()) or bool(settings.auth_tokens.strip()),
-            missing="auth_tokens_missing",
+            lambda: (not authentication_required())
+            or settings.auth_is_configured
+            or bool(settings.auth_tokens.strip()),
+            missing="auth_session_secret_missing",
         ),
     }
 

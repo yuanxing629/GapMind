@@ -42,6 +42,22 @@ class Settings(BaseSettings):
     auth_required: bool = False
     auth_tokens: str = ""
 
+    # ---- Invitation + session authentication ----
+    # In production this must be a random secret stored outside the repo.
+    auth_session_secret: str = "development-only-change-me"
+    auth_cookie_name: str = "gm_session"
+    auth_csrf_cookie_name: str = "gm_csrf"
+    auth_cookie_secure: bool = False
+    auth_session_idle_hours: int = 12
+    auth_session_max_days: int = 30
+    auth_invite_ttl_hours: int = 72
+    auth_password_reset_ttl_minutes: int = 30
+    # 0 means no product-level password length limit. Deployments may set a
+    # defensive request-size ceiling if their threat model requires it.
+    auth_max_password_bytes: int = 0
+    auth_login_rate_limit: int = 10
+    auth_login_rate_window_seconds: int = 300
+
     # ---- PostgreSQL ----
     postgres_user: str = "gapmind"
     postgres_password: str = "gapmind"
@@ -69,6 +85,9 @@ class Settings(BaseSettings):
     deepseek_api_key: str = ""
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-v4-flash"
+    # Only chat requests carrying images use this model. Keep text chat on the
+    # regular model so the existing retrieval and cost profile is unchanged.
+    deepseek_vision_model: str = "deepseek-v4-flash-vision-exp"
     # demo-day fuse: fall over to a backup OpenAI-compatible endpoint when the
     # primary fails; enabled only when all three backup fields are set
     deepseek_backup_api_key: str = ""
@@ -100,6 +119,8 @@ class Settings(BaseSettings):
     chat_history_message_limit: int = 20
     chat_history_char_limit: int = 60000
     chat_max_input_chars: int = 12000
+    chat_max_image_count: int = 3
+    chat_max_image_bytes: int = 8 * 1024 * 1024
     chat_prompt_max_context_chars: int = 48000
     chat_rag_top_k: int = 6
     chat_rag_max_context_chars: int = 18000
@@ -151,6 +172,23 @@ class Settings(BaseSettings):
     @property
     def is_dev(self) -> bool:
         return self.app_env == "development"
+
+    @property
+    def auth_is_configured(self) -> bool:
+        """Whether the session flow has a usable non-empty secret."""
+        secret = self.auth_session_secret.strip()
+        if self.app_env == "development":
+            return bool(secret)
+        return len(secret) >= 32 and secret != "development-only-change-me" and self.auth_cookie_secure
+
+    def validate_runtime_security(self) -> None:
+        """Fail closed when a deployment has not supplied cookie secrets."""
+        if self.app_env == "development":
+            return
+        if not self.auth_is_configured:
+            raise RuntimeError(
+                "Production/staging requires AUTH_SESSION_SECRET (32+ chars) and AUTH_COOKIE_SECURE=true"
+            )
 
 
 @lru_cache(maxsize=1)

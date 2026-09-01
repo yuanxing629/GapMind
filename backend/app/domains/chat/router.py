@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 
 from fastapi import APIRouter, Depends, Query, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user, get_db
@@ -134,6 +134,7 @@ def send_new(
             payload.workspace_id,
             payload.research_plan_id,
             payload.source_artifact_ids,
+            [image.model_dump() for image in payload.images],
             actor_id=user_id,
         )
     )
@@ -209,6 +210,7 @@ def stream_message(
             workspace_id=payload.workspace_id,
             research_plan_id=payload.research_plan_id,
             source_artifact_ids=payload.source_artifact_ids,
+            images=[image.model_dump() for image in payload.images],
             actor_id=user_id,
         ):
             yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
@@ -227,9 +229,29 @@ def send_message(
             payload.workspace_id,
             payload.research_plan_id,
             payload.source_artifact_ids,
+            [image.model_dump() for image in payload.images],
             actor_id=user_id,
         )
     )
+
+
+@router.get(
+    "/conversations/{conversation_id}/messages/{message_id}/images/{image_id}"
+)
+def get_chat_image(
+    conversation_id: str,
+    message_id: str,
+    image_id: str,
+    service: ChatService = Depends(_service),
+    user_id: str = Depends(get_current_user),
+) -> FileResponse:
+    path, image = service.image_file(
+        conversation_id,
+        message_id,
+        image_id,
+        actor_id=user_id,
+    )
+    return FileResponse(path, media_type=image.mime_type)
 
 
 @router.post("/conversations/{conversation_id}/messages/{assistant_message_id}/retry", response_model=ChatSendResponse)

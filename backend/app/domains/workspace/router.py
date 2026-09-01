@@ -95,8 +95,9 @@ def get_independent_workspace(
 def get_workspace(
     workspace_id: str,
     service: WorkspaceService = Depends(_get_service),
+    user_id: str = Depends(get_current_user),
 ) -> WorkspaceRead:
-    return WorkspaceRead.model_validate(service.get(workspace_id))
+    return WorkspaceRead.model_validate(service.get(workspace_id, actor_id=user_id))
 
 
 @router.get(
@@ -108,13 +109,14 @@ def get_workspace_readiness(
     workspace_id: str,
     workspace_service: WorkspaceService = Depends(_get_service),
     db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user),
 ) -> WorkspaceReadiness:
     """Research readiness for one workspace (W0): five dimensions + next action.
 
     Single source of truth for the overview progress bar and "why not /
     where to go" explanations. Raises 404 if the workspace is missing.
     """
-    workspace = workspace_service.get(workspace_id)
+    workspace = workspace_service.get(workspace_id, actor_id=user_id)
     return WorkspaceReadiness.model_validate(
         WorkspaceReadinessService(db).get_readiness(workspace)
     )
@@ -129,8 +131,9 @@ def update_workspace(
     workspace_id: str,
     payload: WorkspaceUpdate,
     service: WorkspaceService = Depends(_get_service),
+    user_id: str = Depends(get_current_user),
 ) -> WorkspaceRead:
-    return WorkspaceRead.model_validate(service.update(workspace_id, payload))
+    return WorkspaceRead.model_validate(service.update(workspace_id, payload, actor_id=user_id))
 
 
 @router.post(
@@ -141,8 +144,9 @@ def update_workspace(
 def archive_workspace(
     workspace_id: str,
     service: WorkspaceService = Depends(_get_service),
+    user_id: str = Depends(get_current_user),
 ) -> WorkspaceRead:
-    return WorkspaceRead.model_validate(service.archive(workspace_id))
+    return WorkspaceRead.model_validate(service.archive(workspace_id, actor_id=user_id))
 
 
 @router.post(
@@ -153,8 +157,9 @@ def archive_workspace(
 def unarchive_workspace(
     workspace_id: str,
     service: WorkspaceService = Depends(_get_service),
+    user_id: str = Depends(get_current_user),
 ) -> WorkspaceRead:
-    return WorkspaceRead.model_validate(service.unarchive(workspace_id))
+    return WorkspaceRead.model_validate(service.unarchive(workspace_id, actor_id=user_id))
 
 
 @router.delete(
@@ -164,6 +169,7 @@ def unarchive_workspace(
 def delete_workspace(
     workspace_id: str,
     service: WorkspaceService = Depends(_get_service),
+    user_id: str = Depends(get_current_user),
 ) -> dict[str, str | bool]:
-    service.soft_delete(workspace_id)
+    service.soft_delete(workspace_id, actor_id=user_id)
     return {"id": workspace_id, "deleted": True}
