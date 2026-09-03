@@ -8,7 +8,7 @@ for SubgraphX so its body text is chunked and extracted properly.
 Steps (mirrors workers/tasks/parse_pdf._run_parse_pdf + rebuild_paper_chunks):
   1. re-parse the PDF with the fixed parser
   2. save a NEW parsed_markdown artifact, update paper pointer
-  3. re-chunk + export JSONL + update chunk_count
+  3. re-chunk + create a new chunk_index Artifact + update chunk_count
   4. force-reindex Milvus (drop old vectors, insert new)
   5. soft-delete the OLD knowledge_items / evidence_spans (they anchor to the
      old 1-section markdown)
@@ -17,6 +17,7 @@ Steps (mirrors workers/tasks/parse_pdf._run_parse_pdf + rebuild_paper_chunks):
 
 from __future__ import annotations
 
+import json
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -38,7 +39,7 @@ from app.domains.task.models import Task  # noqa: E402
 from app.domains.task.schemas import TaskCreate  # noqa: E402
 from app.domains.task.service import TaskService  # noqa: E402
 from app.workers.tasks.extract_knowledge import _run_extract  # noqa: E402
-from app.workers.tasks.parse_pdf import _chunk_to_dict, _export_chunks_jsonl  # noqa: E402
+from app.workers.tasks.parse_pdf import _chunk_to_dict  # noqa: E402
 
 PAPER_ID = "ef64903b-96af-4cda-a751-e85786e1d813"  # SubgraphX
 
@@ -72,7 +73,7 @@ def main() -> int:
         )
         paper.parsed_markdown_artifact_id = md_artifact.id
 
-        # 3. Re-chunk + export JSONL + update chunk_count.
+        # 3. Re-chunk + create the canonical chunk_index Artifact.
         chunks = chunk_parsed_pdf(
             parsed,
             workspace_id=paper.workspace_id,
@@ -80,13 +81,29 @@ def main() -> int:
             created_at=datetime.now(UTC).isoformat(),
             source_artifact_id=paper.parsed_text_artifact_id,
         )
-        _export_chunks_jsonl(paper.workspace_id, paper.id, chunks)
+        chunk_payload = "\n".join(
+            json.dumps(_chunk_to_dict(chunk), ensure_ascii=False)
+            for chunk in chunks
+        )
+        chunk_artifact = artifacts.save_upload(
+            workspace_id=paper.workspace_id,
+            filename=f"{paper.id}_chunks_rebuilt.jsonl",
+            content=chunk_payload.encode("utf-8"),
+            mime_type="application/jsonl",
+            kind="chunk_index",
+        )
+        paper.chunk_index_artifact_id = chunk_artifact.id
         paper.chunk_count = len(chunks)
         db.commit()
         print(f"chunks: {len(chunks)}")
 
         # 4. Force-reindex Milvus.
-        result = index_paper_chunks(paper.workspace_id, paper.id, force_reindex=True)
+        result = index_paper_chunks(
+            paper.workspace_id,
+            paper.id,
+            db=db,
+            force_reindex=True,
+        )
         print(f"index: total={result.total_chunks} indexed={result.indexed_count} skipped={result.skipped_count}")
 
         # 5. Soft-delete OLD knowledge items / evidence (anchored to old md).

@@ -1,7 +1,7 @@
 """embed_chunks Celery task (Phase 3, Step ④).
 
-Reads a paper's chunks JSONL (Contract B), embeds via BGE-M3, and inserts
-vectors into Milvus. Triggered automatically after parse_pdf succeeds.
+Reads a paper's chunk_index Artifact (Contract B), embeds via BGE-M3, and
+inserts vectors into Milvus. Triggered automatically after parse_pdf succeeds.
 
 State flow:
     Task row: queued -> running -> succeeded / failed
@@ -81,7 +81,7 @@ def _run_embed(db: Session, task_id: str) -> dict:
     task_service.update_progress(task_id, 0.2)
 
     try:
-        result = index_paper_chunks(workspace_id, paper_id)
+        result = index_paper_chunks(workspace_id, paper_id, db=db)
     except Exception as e:
         logger.error(
             "embed_chunks.index_failed",

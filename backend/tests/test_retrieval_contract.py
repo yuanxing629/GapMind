@@ -14,10 +14,15 @@ wiring, not vector search itself.
 
 from __future__ import annotations
 
+import json
 from typing import Any
+from uuid import uuid4
 
+from app.domains.artifact.service import ArtifactService
+from app.domains.paper.models import Paper
 from app.domains.retrieval import milvus_client, service
 from app.domains.retrieval.schemas import RetrievalResponse
+from app.domains.workspace.models import Workspace
 
 
 # ==================================================================
@@ -171,7 +176,9 @@ def test_counter_evidence_never_returns_excluded_paper(monkeypatch) -> None:
     assert resp.items[0].paper_id == "p-other"
 
 
-def test_similar_work_always_excludes_source_paper(monkeypatch, tmp_path) -> None:
+def test_similar_work_always_excludes_source_paper(
+    db_session, monkeypatch, tmp_path
+) -> None:
     """find_similar_work must put the source paper in the exclusion set
     even when the caller passes no exclusions."""
     fake = _patch_service_deps(
@@ -179,32 +186,57 @@ def test_similar_work_always_excludes_source_paper(monkeypatch, tmp_path) -> Non
         hits=[{"chunk_id": "c1", "workspace_id": "ws-1", "paper_id": "p-src",
                "section": "M", "text": "t", "score": 0.9, "source_artifact_id": "a1", "chunk_index": 1}],
     )
-    # find_similar_work loads the source paper's chunks JSONL first.
-    import json
-
-    chunk_dir = tmp_path / "ws-1"
-    chunk_dir.mkdir(parents=True, exist_ok=True)
-    (chunk_dir / "p-src.jsonl").write_text(
-        "\n".join(
-            json.dumps({
-                "chunk_id": f"src-{i}",
-                "workspace_id": "ws-1",
-                "paper_id": "p-src",
-                "source_artifact_id": "art-1",
-                "chunk_index": i,
-                "text": "source chunk",
-                "start_char": 0,
-                "end_char": 10,
-            })
-            for i in range(3)
-        ),
-        encoding="utf-8",
+    monkeypatch.setattr(
+        "app.core.config.settings.app_storage_dir",
+        str(tmp_path / "storage"),
     )
-    monkeypatch.setattr(service, "DATA_ROOT", tmp_path)
+    workspace_id = str(uuid4())
+    paper_id = str(uuid4())
+    db_session.add(
+        Workspace(id=workspace_id, name="Retrieval Contract", is_deleted=False)
+    )
+    paper = Paper(
+        id=paper_id,
+        workspace_id=workspace_id,
+        title="Source paper",
+        authors=[],
+        source="manual",
+        is_deleted=False,
+    )
+    db_session.add(paper)
+    db_session.flush()
+    payload = "\n".join(
+        json.dumps({
+            "chunk_id": f"src-{i}",
+            "workspace_id": workspace_id,
+            "paper_id": paper_id,
+            "source_artifact_id": "art-1",
+            "chunk_index": i,
+            "text": "source chunk",
+            "start_char": 0,
+            "end_char": 10,
+        })
+        for i in range(3)
+    )
+    artifact = ArtifactService(db_session).save_upload(
+        workspace_id=workspace_id,
+        filename=f"{paper_id}_chunks.jsonl",
+        content=payload.encode("utf-8"),
+        mime_type="application/jsonl",
+        kind="chunk_index",
+    )
+    paper.chunk_index_artifact_id = artifact.id
+    db_session.commit()
 
-    resp = service.find_similar_work("ws-1", "p-src", top_k=5, use_reranker=False)
-    assert "p-src" in (fake.calls[0]["exclude_paper_ids"] or set())
-    assert resp.filters_applied["excluded_paper_ids"] == ["p-src"]
+    resp = service.find_similar_work(
+        workspace_id,
+        paper_id,
+        top_k=5,
+        db=db_session,
+        use_reranker=False,
+    )
+    assert paper_id in (fake.calls[0]["exclude_paper_ids"] or set())
+    assert resp.filters_applied["excluded_paper_ids"] == [paper_id]
 
 
 def test_semantic_search_forwards_exclude(monkeypatch) -> None:

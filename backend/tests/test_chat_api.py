@@ -410,7 +410,7 @@ def test_workspace_chat_retrieves_persists_citations_and_opens_source(
     monkeypatch.setattr("app.domains.chat.service.semantic_search", fake_search)
     monkeypatch.setattr(
         "app.domains.chat.service.find_chunk_record",
-        lambda *_: SimpleNamespace(
+        lambda *_, **__: SimpleNamespace(
             source_artifact_id=artifact.id,
             start_char=6,
             end_char=source_text.index(".") + 1,
@@ -528,7 +528,7 @@ def test_workspace_chat_keeps_reranker_degraded_as_a_diagnostic_state(
     )
     monkeypatch.setattr(
         "app.domains.chat.service.find_chunk_record",
-        lambda *_: SimpleNamespace(source_artifact_id=artifact.id, start_char=0, end_char=52),
+        lambda *_, **__: SimpleNamespace(source_artifact_id=artifact.id, start_char=0, end_char=52),
     )
     fake_gateway.content = "降级时仍有论文证据。[E1]"
 
@@ -662,7 +662,7 @@ def test_workspace_chat_repairs_invalid_citation_once_and_persists_audit(
     )
     monkeypatch.setattr(
         "app.domains.chat.service.find_chunk_record",
-        lambda *_: SimpleNamespace(
+        lambda *_, **__: SimpleNamespace(
             source_artifact_id=artifact.id,
             start_char=0,
             end_char=35,
@@ -736,7 +736,7 @@ def test_workspace_chat_rejects_answer_when_citation_repair_still_invalid(
     )
     monkeypatch.setattr(
         "app.domains.chat.service.find_chunk_record",
-        lambda *_: SimpleNamespace(source_artifact_id=artifact.id, start_char=0, end_char=14),
+        lambda *_, **__: SimpleNamespace(source_artifact_id=artifact.id, start_char=0, end_char=14),
     )
     fake_gateway.chat_contents = ["初始回答 [E9]", "修复仍然错误 [E8]"]
 
@@ -1019,7 +1019,7 @@ def test_stream_message_repairs_invalid_citation_before_persisting(
     )
     monkeypatch.setattr(
         "app.domains.chat.service.find_chunk_record",
-        lambda *_: SimpleNamespace(source_artifact_id=artifact.id, start_char=0, end_char=16),
+        lambda *_, **__: SimpleNamespace(source_artifact_id=artifact.id, start_char=0, end_char=16),
     )
     fake_gateway.stream_deltas = ["流式回答 [E9]"]
     fake_gateway.chat_contents = ["流式修复回答 [E1]"]
@@ -1085,7 +1085,7 @@ def test_stream_rejects_invalid_citation_after_one_failed_repair(
     )
     monkeypatch.setattr(
         "app.domains.chat.service.find_chunk_record",
-        lambda *_: SimpleNamespace(source_artifact_id=artifact.id, start_char=0, end_char=25),
+        lambda *_, **__: SimpleNamespace(source_artifact_id=artifact.id, start_char=0, end_char=25),
     )
     fake_gateway.stream_deltas = ["初始回答 [E9]"]
     fake_gateway.chat_contents = ["修复仍然错误 [E8]"]

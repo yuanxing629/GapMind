@@ -20,12 +20,14 @@ and asserting it gets called on paper soft_delete.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from unittest.mock import MagicMock
+from uuid import uuid4
 
 import pytest
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
+from app.domains.artifact.service import ArtifactService
 from app.domains.paper.models import Paper
 from app.domains.paper.service import PaperService
 from app.domains.retrieval import milvus_client, service as retrieval_service
@@ -95,28 +97,67 @@ def _paper(
     return paper
 
 
-def _write_chunks_jsonl(tmp_path: Path, workspace_id: str, paper_id: str, n: int) -> Path:
-    """Write n synthetic chunks for index_paper_chunks to load."""
-    chunk_dir = tmp_path / workspace_id
-    chunk_dir.mkdir(parents=True, exist_ok=True)
-    path = chunk_dir / f"{paper_id}.jsonl"
-    path.write_text(
-        "\n".join(
-            json.dumps({
-                "chunk_id": f"{paper_id}-c{i}",
-                "workspace_id": workspace_id,
-                "paper_id": paper_id,
-                "source_artifact_id": "art-1",
-                "chunk_index": i,
-                "text": f"chunk {i}",
-                "start_char": 0,
-                "end_char": 10,
-            })
-            for i in range(n)
-        ),
-        encoding="utf-8",
+def _write_chunks_jsonl(db: Session, paper: Paper, n: int):
+    """Create the canonical chunk_index Artifact for a synthetic paper."""
+    payload = "\n".join(
+        json.dumps({
+            "chunk_id": f"{paper.id}-c{i}",
+            "workspace_id": paper.workspace_id,
+            "paper_id": paper.id,
+            "source_artifact_id": "art-1",
+            "chunk_index": i,
+            "text": f"chunk {i}",
+            "start_char": 0,
+            "end_char": 10,
+        })
+        for i in range(n)
     )
-    return path
+    artifact = ArtifactService(db).save_upload(
+        workspace_id=paper.workspace_id,
+        filename=f"{paper.id}_chunks.jsonl",
+        content=payload.encode("utf-8"),
+        mime_type="application/jsonl",
+        kind="chunk_index",
+    )
+    paper.chunk_index_artifact_id = artifact.id
+    db.commit()
+    return artifact
+
+
+def test_chunk_records_resolve_from_storage_artifact(
+    db_session, tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setattr(settings, "app_storage_dir", str(tmp_path / "storage"))
+    ws = _workspace(db_session)
+    paper = _paper(db_session, ws.id)
+    _write_chunks_jsonl(db_session, paper, n=2)
+
+    chunk = retrieval_service.find_chunk_record(
+        ws.id,
+        paper.id,
+        f"{paper.id}-c1",
+        db=db_session,
+    )
+    assert chunk is not None
+    assert chunk.start_char == 0
+    assert chunk.end_char == 10
+
+    # Historical rows without the pointer can still resolve the exact
+    # workspace-scoped chunk_index filename through the DB metadata.
+    paper.chunk_index_artifact_id = None
+    db_session.commit()
+    assert retrieval_service.find_chunk_record(
+        ws.id,
+        paper.id,
+        f"{paper.id}-c1",
+        db=db_session,
+    ) is not None
+    assert retrieval_service.find_chunk_record(
+        str(uuid4()),
+        paper.id,
+        f"{paper.id}-c1",
+        db=db_session,
+    ) is None
 
 
 # ==================================================================
@@ -129,17 +170,17 @@ def test_index_paper_chunks_idempotent_skips_existing(
 ) -> None:
     """Same paper indexed twice without force_reindex — second call
     invokes get_existing_chunk_ids and inserts zero new chunks."""
-    monkeypatch.setattr(retrieval_service, "DATA_ROOT", tmp_path)
+    monkeypatch.setattr(settings, "app_storage_dir", str(tmp_path / "storage"))
     # Conftest's stub returns insert_chunks=0 by default; simulate a real
     # Milvus by returning the batch size.
     fake_milvus.insert_chunks.side_effect = lambda batch: len(batch)
     ws = _workspace(db_session)
     paper = _paper(db_session, ws.id)
-    _write_chunks_jsonl(tmp_path, ws.id, paper.id, n=3)
+    _write_chunks_jsonl(db_session, paper, n=3)
 
     # First index: nothing exists yet → insert all 3
     fake_milvus.get_existing_chunk_ids.return_value = set()
-    r1 = retrieval_service.index_paper_chunks(ws.id, paper.id)
+    r1 = retrieval_service.index_paper_chunks(ws.id, paper.id, db=db_session)
     assert r1.indexed_count == 3
     assert r1.skipped_count == 0
 
@@ -147,7 +188,7 @@ def test_index_paper_chunks_idempotent_skips_existing(
     fake_milvus.get_existing_chunk_ids.return_value = {
         f"{paper.id}-c0", f"{paper.id}-c1", f"{paper.id}-c2",
     }
-    r2 = retrieval_service.index_paper_chunks(ws.id, paper.id)
+    r2 = retrieval_service.index_paper_chunks(ws.id, paper.id, db=db_session)
     assert r2.indexed_count == 0
     assert r2.skipped_count == 3
     assert r2.error is None
@@ -164,12 +205,12 @@ def test_index_force_reindex_calls_delete_by_paper_first(
     """force_reindex=True must call delete_by_paper so stale chunks from a
     previous parse don't linger. If a chunk_id survives across parses, it
     gets re-inserted (chunk_version change implies new content)."""
-    monkeypatch.setattr(retrieval_service, "DATA_ROOT", tmp_path)
+    monkeypatch.setattr(settings, "app_storage_dir", str(tmp_path / "storage"))
     ws = _workspace(db_session)
     paper = _paper(db_session, ws.id)
-    _write_chunks_jsonl(tmp_path, ws.id, paper.id, n=3)
+    _write_chunks_jsonl(db_session, paper, n=3)
 
-    retrieval_service.index_paper_chunks(ws.id, paper.id, force_reindex=True)
+    retrieval_service.index_paper_chunks(ws.id, paper.id, db=db_session, force_reindex=True)
 
     fake_milvus.delete_by_paper.assert_called_once_with(paper.id)
     # delete happens before insert; verify call ordering.
@@ -217,14 +258,14 @@ def test_soft_deleted_paper_excluded_from_retrieval_via_milvus_deletion(
     a function-scoped autouse fixture, and `fake_milvus` re-imports it for
     the test's convenience). So we just assert on the shared fake.
     """
-    monkeypatch.setattr(retrieval_service, "DATA_ROOT", tmp_path)
+    monkeypatch.setattr(settings, "app_storage_dir", str(tmp_path / "storage"))
     ws = _workspace(db_session)
     paper = _paper(db_session, ws.id)
-    _write_chunks_jsonl(tmp_path, ws.id, paper.id, n=2)
+    _write_chunks_jsonl(db_session, paper, n=2)
 
     # Index.
     fake_milvus.get_existing_chunk_ids.return_value = set()
-    retrieval_service.index_paper_chunks(ws.id, paper.id)
+    retrieval_service.index_paper_chunks(ws.id, paper.id, db=db_session)
     assert fake_milvus.insert_chunks.call_count >= 1
 
     # Soft-delete → should propagate to Milvus.
@@ -443,16 +484,16 @@ def test_paper_chunk_count_matches_indexed_chunks(
     layer that updates paper.chunk_count from index_paper_chunks is
     verified separately by the end-to-end integration test in
     test_parse_pipeline.py — here we lock down the indexer's contract."""
-    monkeypatch.setattr(retrieval_service, "DATA_ROOT", tmp_path)
+    monkeypatch.setattr(settings, "app_storage_dir", str(tmp_path / "storage"))
     ws = _workspace(db_session)
     paper = _paper(db_session, ws.id)
-    _write_chunks_jsonl(tmp_path, ws.id, paper.id, n=4)
+    _write_chunks_jsonl(db_session, paper, n=4)
 
     fake_milvus.get_existing_chunk_ids.return_value = set()
     fake_milvus.insert_chunks.return_value = 4  # batch returns count
 
-    result = retrieval_service.index_paper_chunks(ws.id, paper.id)
-    assert result.total_chunks == 4  # JSONL read
+    result = retrieval_service.index_paper_chunks(ws.id, paper.id, db=db_session)
+    assert result.total_chunks == 4  # chunk_index Artifact read
     assert result.indexed_count == 4  # Milvus insert returned count
     assert result.skipped_count == 0
 
@@ -463,16 +504,16 @@ def test_partial_insertion_reported_as_partial(
     """If Milvus insert_chunks returns fewer than the batch size, the
     indexer must report it honestly. This is the foundation for the
     Task row's accuracy (Task reports partial completion, not 100%)."""
-    monkeypatch.setattr(retrieval_service, "DATA_ROOT", tmp_path)
+    monkeypatch.setattr(settings, "app_storage_dir", str(tmp_path / "storage"))
     ws = _workspace(db_session)
     paper = _paper(db_session, ws.id)
-    _write_chunks_jsonl(tmp_path, ws.id, paper.id, n=10)
+    _write_chunks_jsonl(db_session, paper, n=10)
 
     fake_milvus.get_existing_chunk_ids.return_value = set()
     # Single batch (10 chunks < batch_size=100): 8 of 10 inserted.
     fake_milvus.insert_chunks.side_effect = lambda batch: 8
 
-    result = retrieval_service.index_paper_chunks(ws.id, paper.id)
+    result = retrieval_service.index_paper_chunks(ws.id, paper.id, db=db_session)
     assert result.total_chunks == 10
     assert result.indexed_count == 8  # honest count
     # Caller can compare indexed_count vs total_chunks to detect partial.
@@ -490,13 +531,13 @@ def test_indexer_writes_consistent_records_to_milvus(
     Milvus must carry workspace_id, paper_id, chunk_id, section,
     text, embedding. The pipeline that calls this depends on every
     field landing in the vector store correctly."""
-    monkeypatch.setattr(retrieval_service, "DATA_ROOT", tmp_path)
+    monkeypatch.setattr(settings, "app_storage_dir", str(tmp_path / "storage"))
     ws = _workspace(db_session)
     paper = _paper(db_session, ws.id)
-    _write_chunks_jsonl(tmp_path, ws.id, paper.id, n=2)
+    _write_chunks_jsonl(db_session, paper, n=2)
 
     fake_milvus.get_existing_chunk_ids.return_value = set()
-    retrieval_service.index_paper_chunks(ws.id, paper.id)
+    retrieval_service.index_paper_chunks(ws.id, paper.id, db=db_session)
 
     # Collect all records passed to insert_chunks across batches.
     all_records: list[dict] = []

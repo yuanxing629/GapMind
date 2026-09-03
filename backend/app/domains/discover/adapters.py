@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from sqlalchemy.orm import Session
+
 from app.core.logging import get_logger
 from app.domains.discover.ports import ExternalSearchPort, LLMGatewayPort, RetrievalPort
 from app.domains.retrieval.schemas import RetrievalResponse
@@ -26,6 +28,14 @@ logger = get_logger(__name__)
 
 class RetrievalAdapter:
     """Forward Discover's retrieval calls to the retrieval service."""
+
+    def __init__(self, db: Session | None = None) -> None:
+        self.db = db
+
+    def _require_db(self) -> Session:
+        if self.db is None:
+            raise RuntimeError("RetrievalAdapter requires a database session for paper chunks")
+        return self.db
 
     def semantic_search(
         self,
@@ -52,6 +62,7 @@ class RetrievalAdapter:
             workspace_id,
             paper_id,
             top_k,
+            db=self._require_db(),
             use_reranker=use_reranker,
             exclude_paper_ids=exclude_paper_ids,
         )

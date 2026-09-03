@@ -198,7 +198,7 @@ class DiscoverService(OpportunityWorkflow):
         # Bind the cross-domain collaborators through Protocol ports (see
         # ``ports.py``). Tests can inject Protocol-compatible fakes to
         # exercise the orchestration without Milvus / DeepSeek / S2.
-        self.retrieval: RetrievalPort = retrieval or RetrievalAdapter()
+        self.retrieval: RetrievalPort = retrieval or RetrievalAdapter(db)
         self.external_search: ExternalSearchPort = external_search or ExternalSearchAdapter()
         self.llm: LLMGatewayPort = llm or LLMGatewayAdapter()
 

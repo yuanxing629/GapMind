@@ -105,11 +105,16 @@ def _merge_items(responses: list[RetrievalResponse], top_k: int) -> list[Retriev
     return diversified[:top_k]
 
 
-def _item_snapshot(workspace_id: str, item: RetrievalResultItem) -> dict[str, Any]:
+def _item_snapshot(db, workspace_id: str, item: RetrievalResultItem) -> dict[str, Any]:
     """Return provenance and offsets without copying retrieved text."""
 
     record = (
-        find_chunk_record(workspace_id, item.paper_id, item.chunk_id)
+        find_chunk_record(
+            workspace_id,
+            item.paper_id,
+            item.chunk_id,
+            db=db,
+        )
         if item.paper_id and item.chunk_id
         else None
     )
@@ -198,7 +203,7 @@ def run_experiment(
                         "paper_ids": _paper_ids(primary.items),
                         "paper_count": len(_paper_ids(primary.items)),
                         "paper_titles": [item.paper_title for item in primary.items if item.paper_title],
-                        "items": [_item_snapshot(workspace_id, item) for item in primary.items],
+                        "items": [_item_snapshot(db, workspace_id, item) for item in primary.items],
                         "required_paper_coverage": (
                             _coverage(required_ids, primary.items)
                             if primary.status != "failed"
@@ -229,7 +234,7 @@ def run_experiment(
                         "paper_ids": _paper_ids(merged),
                         "paper_count": len(_paper_ids(merged)),
                         "paper_titles": [item.paper_title for item in merged if item.paper_title],
-                        "items": [_item_snapshot(workspace_id, item) for item in merged],
+                        "items": [_item_snapshot(db, workspace_id, item) for item in merged],
                         "required_paper_coverage": (
                             _coverage(required_ids, merged)
                             if faceted_status != "failed"

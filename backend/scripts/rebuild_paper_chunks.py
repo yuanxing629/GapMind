@@ -1,8 +1,8 @@
 """Rebuild exact-source chunks without rerunning knowledge extraction.
 
 This repair utility is intended for papers parsed before the exact chunk
-slice fix. It creates a new immutable chunk_index artifact, replaces the
-exported JSONL, updates the Paper pointer, and force-reindexes Milvus.
+slice fix. It creates a new immutable chunk_index artifact, updates the
+Paper pointer, and force-reindexes Milvus.
 
 Run from backend/:
 
@@ -29,10 +29,7 @@ from app.domains.artifact.pdf_parser import parse_pdf  # noqa: E402
 from app.domains.artifact.service import ArtifactService  # noqa: E402
 from app.domains.paper.models import Paper  # noqa: E402
 from app.domains.retrieval.service import index_paper_chunks  # noqa: E402
-from app.workers.tasks.parse_pdf import (  # noqa: E402
-    _chunk_to_dict,
-    _export_chunks_jsonl,
-)
+from app.workers.tasks.parse_pdf import _chunk_to_dict  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -103,8 +100,6 @@ def rebuild_paper(paper_id: str, *, skip_milvus: bool) -> None:
             mime_type="application/jsonl",
             kind="chunk_index",
         )
-        _export_chunks_jsonl(paper.workspace_id, paper.id, chunks)
-
         paper = db.get(Paper, paper.id)
         paper.chunk_index_artifact_id = chunk_artifact.id
         paper.chunk_count = len(chunks)
@@ -118,6 +113,7 @@ def rebuild_paper(paper_id: str, *, skip_milvus: bool) -> None:
             result = index_paper_chunks(
                 paper.workspace_id,
                 paper.id,
+                db=db,
                 force_reindex=True,
             )
             if result.error:

@@ -1521,7 +1521,14 @@ class ChatService:
             if paper is None or paper.is_deleted or paper.workspace_id != workspace.id:
                 continue
             chunk = (
-                find_chunk_record(workspace.id, paper.id, item.chunk_id) if item.chunk_id else None
+                find_chunk_record(
+                    workspace.id,
+                    paper.id,
+                    item.chunk_id,
+                    db=self.db,
+                )
+                if item.chunk_id
+                else None
             )
             artifact_id = chunk.source_artifact_id if chunk else item.artifact_id
             artifact = self.db.get(Artifact, artifact_id) if artifact_id else None

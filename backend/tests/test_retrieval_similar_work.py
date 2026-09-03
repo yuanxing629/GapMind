@@ -12,9 +12,13 @@ without needing a live Milvus instance.
 from __future__ import annotations
 
 import json
+from uuid import uuid4
 
 import pytest
 
+from app.core.config import settings
+from app.domains.artifact.service import ArtifactService
+from app.domains.paper.models import Paper
 from app.domains.retrieval import service
 from app.domains.retrieval.service import (
     LOW_VALUE_SECTIONS,
@@ -198,25 +202,46 @@ def _patch(monkeypatch, hits: list[dict]) -> None:
     monkeypatch.setattr(service, "get_reranker_gateway", lambda: _NoopReranker())
 
 
-def _write_source_chunks(tmp_path, workspace_id: str, paper_id: str, n: int = 3) -> None:
-    chunk_dir = tmp_path / workspace_id
-    chunk_dir.mkdir(parents=True, exist_ok=True)
-    (chunk_dir / f"{paper_id}.jsonl").write_text(
-        "\n".join(
-            json.dumps({
-                "chunk_id": f"src-{i}",
-                "workspace_id": workspace_id,
-                "paper_id": paper_id,
-                "source_artifact_id": "art-1",
-                "chunk_index": i,
-                "text": f"source chunk {i}",
-                "start_char": 0,
-                "end_char": 10,
-            })
-            for i in range(n)
-        ),
-        encoding="utf-8",
+@pytest.fixture
+def source_paper(db_session, tmp_path, monkeypatch):
+    """Create a real paper whose source chunks live in a storage Artifact."""
+    monkeypatch.setattr(settings, "app_storage_dir", str(tmp_path / "storage"))
+    from app.domains.workspace.models import Workspace
+
+    workspace = Workspace(id=str(uuid4()), name="Similar Work", is_deleted=False)
+    paper = Paper(
+        id=str(uuid4()),
+        workspace_id=workspace.id,
+        title="Source paper",
+        authors=[],
+        source="manual",
+        is_deleted=False,
     )
+    db_session.add_all([workspace, paper])
+    db_session.flush()
+    payload = "\n".join(
+        json.dumps({
+            "chunk_id": f"src-{i}",
+            "workspace_id": workspace.id,
+            "paper_id": paper.id,
+            "source_artifact_id": "art-1",
+            "chunk_index": i,
+            "text": f"source chunk {i}",
+            "start_char": 0,
+            "end_char": 10,
+        })
+        for i in range(3)
+    )
+    artifact = ArtifactService(db_session).save_upload(
+        workspace_id=workspace.id,
+        filename=f"{paper.id}_chunks.jsonl",
+        content=payload.encode("utf-8"),
+        mime_type="application/jsonl",
+        kind="chunk_index",
+    )
+    paper.chunk_index_artifact_id = artifact.id
+    db_session.commit()
+    return workspace, paper
 
 
 def _hit(chunk_id: str, paper_id: str, *, section: str | None = "Method", score: float = 0.5) -> dict:
@@ -232,9 +257,8 @@ def _hit(chunk_id: str, paper_id: str, *, section: str | None = "Method", score:
     }
 
 
-def test_similar_work_drops_low_value_sections(monkeypatch, tmp_path) -> None:
-    _write_source_chunks(tmp_path, "ws-1", "p-src")
-    monkeypatch.setattr(service, "DATA_ROOT", tmp_path)
+def test_similar_work_drops_low_value_sections(monkeypatch, db_session, source_paper) -> None:
+    workspace, paper = source_paper
     hits = [
         _hit("c1", "p-other", section="Method", score=0.9),
         _hit("c2", "p-other", section="References", score=0.95),  # should drop
@@ -242,22 +266,33 @@ def test_similar_work_drops_low_value_sections(monkeypatch, tmp_path) -> None:
     ]
     _patch(monkeypatch, hits)
 
-    resp = service.find_similar_work("ws-1", "p-src", top_k=10, use_reranker=True)
+    resp = service.find_similar_work(
+        workspace.id,
+        paper.id,
+        top_k=10,
+        db=db_session,
+        use_reranker=True,
+    )
     assert len(resp.items) == 1
     assert resp.items[0].chunk_id == "c1"
     assert resp.filters_applied["low_value_section_filter"] is True
 
 
-def test_similar_work_caps_chunks_per_paper(monkeypatch, tmp_path) -> None:
-    _write_source_chunks(tmp_path, "ws-1", "p-src")
-    monkeypatch.setattr(service, "DATA_ROOT", tmp_path)
+def test_similar_work_caps_chunks_per_paper(monkeypatch, db_session, source_paper) -> None:
+    workspace, paper = source_paper
     # p-A has 4 high-quality hits, p-B has 1. Without cap, p-A dominates.
     hits = [
         _hit(f"a{i}", "p-A", score=0.9 - i * 0.05) for i in range(4)
     ] + [_hit("b1", "p-B", score=0.7)]
     _patch(monkeypatch, hits)
 
-    resp = service.find_similar_work("ws-1", "p-src", top_k=10, use_reranker=True)
+    resp = service.find_similar_work(
+        workspace.id,
+        paper.id,
+        top_k=10,
+        db=db_session,
+        use_reranker=True,
+    )
     # With cap=2: 2 from p-A + 1 from p-B = 3
     by_paper: dict[str, int] = {}
     for item in resp.items:
@@ -267,29 +302,33 @@ def test_similar_work_caps_chunks_per_paper(monkeypatch, tmp_path) -> None:
     assert resp.filters_applied["max_chunks_per_paper"] == SIMILAR_WORK_MAX_CHUNKS_PER_PAPER
 
 
-def test_similar_work_falls_back_when_all_low_value(monkeypatch, tmp_path) -> None:
+def test_similar_work_falls_back_when_all_low_value(monkeypatch, db_session, source_paper) -> None:
     """If every candidate is a low-value section chunk, return them anyway
     rather than an empty Top-K (the section classifier can fail)."""
-    _write_source_chunks(tmp_path, "ws-1", "p-src")
-    monkeypatch.setattr(service, "DATA_ROOT", tmp_path)
+    workspace, paper = source_paper
     hits = [
         _hit("r1", "p-A", section="References", score=0.9),
         _hit("r2", "p-A", section="References", score=0.8),
     ]
     _patch(monkeypatch, hits)
 
-    resp = service.find_similar_work("ws-1", "p-src", top_k=10, use_reranker=True)
+    resp = service.find_similar_work(
+        workspace.id,
+        paper.id,
+        top_k=10,
+        db=db_session,
+        use_reranker=True,
+    )
     # Both chunks come from the same paper → paper-level dedup keeps one result
     # (the fallback guarantees a NON-empty Top-K, not per-chunk results).
     assert len(resp.items) == 1
     assert resp.items[0].paper_id == "p-A"
 
 
-def test_similar_work_paper_diversity(monkeypatch, tmp_path) -> None:
+def test_similar_work_paper_diversity(monkeypatch, db_session, source_paper) -> None:
     """Over-fetch + per-paper cap should keep Top-10 paper-diverse when the
     corpus supports it (no single paper can occupy >50% of Top-10)."""
-    _write_source_chunks(tmp_path, "ws-1", "p-src")
-    monkeypatch.setattr(service, "DATA_ROOT", tmp_path)
+    workspace, paper = source_paper
     # 10 distinct papers, 3 chunks each → after cap (2/paper), each contributes 2.
     hits = []
     for p_idx in range(10):
@@ -297,27 +336,38 @@ def test_similar_work_paper_diversity(monkeypatch, tmp_path) -> None:
             hits.append(_hit(f"p{p_idx}-c{c_idx}", f"p-{p_idx}", score=0.9 - p_idx * 0.05 - c_idx * 0.01))
     _patch(monkeypatch, hits)
 
-    resp = service.find_similar_work("ws-1", "p-src", top_k=10, use_reranker=True)
+    resp = service.find_similar_work(
+        workspace.id,
+        paper.id,
+        top_k=10,
+        db=db_session,
+        use_reranker=True,
+    )
     assert len(resp.items) == 10
     distinct_papers = len({item.paper_id for item in resp.items})
     # Without cap, the highest-scoring paper alone could fill Top-10.
     assert distinct_papers >= 5  # at least half the Top-10 are distinct papers
     # Source paper must not appear.
-    assert "p-src" not in {item.paper_id for item in resp.items}
+    assert paper.id not in {item.paper_id for item in resp.items}
 
 
-def test_similar_work_source_paper_still_excluded(monkeypatch, tmp_path) -> None:
-    _write_source_chunks(tmp_path, "ws-1", "p-src")
-    monkeypatch.setattr(service, "DATA_ROOT", tmp_path)
+def test_similar_work_source_paper_still_excluded(monkeypatch, db_session, source_paper) -> None:
+    workspace, paper = source_paper
     # Even if Milvus returned the source's chunks somehow, the source is
     # excluded by the service contract.
     hits = [
-        _hit("src1", "p-src", score=0.99),  # MUST NOT appear
+        _hit("src1", paper.id, score=0.99),  # MUST NOT appear
         _hit("o1", "p-other", score=0.5),
     ]
     _patch(monkeypatch, hits)
 
-    resp = service.find_similar_work("ws-1", "p-src", top_k=10, use_reranker=True)
-    assert all(item.paper_id != "p-src" for item in resp.items)
+    resp = service.find_similar_work(
+        workspace.id,
+        paper.id,
+        top_k=10,
+        db=db_session,
+        use_reranker=True,
+    )
+    assert all(item.paper_id != paper.id for item in resp.items)
     assert any(item.paper_id == "p-other" for item in resp.items)
-    assert "p-src" in resp.filters_applied["excluded_paper_ids"]
+    assert paper.id in resp.filters_applied["excluded_paper_ids"]

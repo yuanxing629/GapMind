@@ -11,13 +11,17 @@ from __future__ import annotations
 
 import json
 import time
-from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 from pydantic import ValidationError
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.core.logging import get_logger
+from app.domains.artifact.models import Artifact
+from app.domains.artifact.service import ArtifactService
+from app.domains.paper.models import Paper
 from app.domains.retrieval import milvus_client
 from app.domains.retrieval.schemas import (
     ChunkRecord,
@@ -30,9 +34,6 @@ from app.gateway.judge import get_judgement_gateway
 from app.gateway.reranker import get_reranker_gateway
 
 logger = get_logger(__name__)
-
-# Chunks JSONL root: backend/data/chunks/{workspace_id}/{paper_id}.jsonl
-DATA_ROOT = Path(__file__).resolve().parents[3] / "data" / "chunks"
 
 # Similar Work aggregation: at most this many chunks per paper inside the top-K.
 # The pipeline over-fetches from Milvus, so this is a cap on the *post-aggregation*
@@ -146,9 +147,10 @@ def index_paper_chunks(
     workspace_id: str,
     paper_id: str,
     *,
+    db: Session,
     force_reindex: bool = False,
 ) -> IndexChunksResult:
-    """Main entry: load chunks JSONL → embed → insert into Milvus.
+    """Main entry: load the chunk_index Artifact → embed → insert into Milvus.
 
     Idempotent: skips chunks already indexed unless force_reindex=True.
     """
@@ -163,7 +165,7 @@ def index_paper_chunks(
     )
 
     # 1. Load chunks from JSONL
-    chunks = _load_chunks_jsonl(workspace_id, paper_id)
+    chunks = _load_chunks_jsonl(db, workspace_id, paper_id)
     if not chunks:
         result.error = f"No chunks found for paper {paper_id}"
         logger.warning("index.no_chunks", workspace_id=workspace_id, paper_id=paper_id)
@@ -239,11 +241,80 @@ def index_paper_chunks(
     return result
 
 
-def _load_chunks_jsonl(workspace_id: str, paper_id: str) -> list[ChunkRecord]:
-    """Read and validate chunks from the JSONL file (Contract B)."""
-    jsonl_path = DATA_ROOT / workspace_id / f"{paper_id}.jsonl"
-    if not jsonl_path.exists():
-        logger.warning("index.jsonl_not_found", path=str(jsonl_path))
+def _find_chunk_index_artifact(
+    db: Session,
+    workspace_id: str,
+    paper_id: str,
+) -> Artifact | None:
+    """Resolve a paper's canonical chunk_index Artifact inside its workspace."""
+    paper = db.get(Paper, paper_id)
+    if paper is None or paper.is_deleted or paper.workspace_id != workspace_id:
+        logger.warning(
+            "index.paper_not_found_or_wrong_workspace",
+            paper_id=paper_id,
+            workspace_id=workspace_id,
+        )
+        return None
+
+    if paper.chunk_index_artifact_id:
+        artifact = db.get(Artifact, paper.chunk_index_artifact_id)
+        if (
+            artifact is not None
+            and not artifact.is_deleted
+            and artifact.workspace_id == workspace_id
+            and artifact.kind == "chunk_index"
+        ):
+            return artifact
+        logger.warning(
+            "index.chunk_index_artifact_invalid",
+            paper_id=paper_id,
+            artifact_id=paper.chunk_index_artifact_id,
+        )
+
+    # Compatibility for historical rows created before the Paper pointer was
+    # populated. Only search the same workspace and the immutable chunk-index
+    # kind; never fall back to an unscoped filesystem path.
+    filenames = {
+        f"{paper_id}_chunks.jsonl",
+        f"{paper_id}_chunks_rebuilt.jsonl",
+    }
+    candidates = db.execute(
+        select(Artifact)
+        .where(
+            Artifact.workspace_id == workspace_id,
+            Artifact.kind == "chunk_index",
+            Artifact.is_deleted.is_(False),
+            Artifact.original_filename.in_(filenames),
+        )
+        .order_by(Artifact.created_at.desc())
+    ).scalars()
+    return next(iter(candidates), None)
+
+
+def _load_chunks_jsonl(
+    db: Session,
+    workspace_id: str,
+    paper_id: str,
+) -> list[ChunkRecord]:
+    """Read and validate chunks from the paper's storage Artifact (Contract B)."""
+    artifact = _find_chunk_index_artifact(db, workspace_id, paper_id)
+    if artifact is None:
+        logger.warning(
+            "index.chunk_index_artifact_not_found",
+            paper_id=paper_id,
+            workspace_id=workspace_id,
+        )
+        return []
+
+    jsonl_path = ArtifactService(db).resolve_abs_path(artifact)
+    if not jsonl_path.exists() or not jsonl_path.is_file():
+        logger.warning(
+            "index.chunk_index_file_not_found",
+            paper_id=paper_id,
+            workspace_id=workspace_id,
+            artifact_id=artifact.id,
+            path=str(jsonl_path),
+        )
         return []
 
     chunks: list[ChunkRecord] = []
@@ -255,6 +326,17 @@ def _load_chunks_jsonl(workspace_id: str, paper_id: str) -> list[ChunkRecord]:
             try:
                 raw = json.loads(line)
                 chunk = ChunkRecord.model_validate(raw)
+                if chunk.workspace_id != workspace_id or chunk.paper_id != paper_id:
+                    logger.warning(
+                        "index.chunk_scope_mismatch",
+                        artifact_id=artifact.id,
+                        line=line_num,
+                        expected_workspace_id=workspace_id,
+                        expected_paper_id=paper_id,
+                        actual_workspace_id=chunk.workspace_id,
+                        actual_paper_id=chunk.paper_id,
+                    )
+                    continue
                 chunks.append(chunk)
             except (json.JSONDecodeError, ValidationError) as e:
                 logger.warning(
@@ -270,12 +352,14 @@ def find_chunk_record(
     workspace_id: str,
     paper_id: str,
     chunk_id: str,
+    *,
+    db: Session,
 ) -> ChunkRecord | None:
-    """Resolve a retrieved Milvus hit back to its immutable chunk offsets."""
+    """Resolve a retrieved Milvus hit to immutable offsets in storage."""
     return next(
         (
             chunk
-            for chunk in _load_chunks_jsonl(workspace_id, paper_id)
+            for chunk in _load_chunks_jsonl(db, workspace_id, paper_id)
             if chunk.chunk_id == chunk_id
         ),
         None,
@@ -410,6 +494,7 @@ def find_similar_work(
     paper_id: str,
     top_k: int = 10,
     *,
+    db: Session,
     use_reranker: bool = True,
     exclude_paper_ids: set[str] | None = None,
 ) -> RetrievalResponse:
@@ -426,7 +511,7 @@ def find_similar_work(
         gateway = get_embedding_gateway()
         stage = "data"
         # Load representative chunks from the target paper as queries
-        chunks = _load_chunks_jsonl(workspace_id, paper_id)
+        chunks = _load_chunks_jsonl(db, workspace_id, paper_id)
         if not chunks:
             return _failed_response(
                 request_id=request_id,

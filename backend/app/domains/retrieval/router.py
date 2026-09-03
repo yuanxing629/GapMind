@@ -10,8 +10,9 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
-from app.core.deps import get_owned_workspace
+from app.core.deps import get_db, get_owned_workspace
 from app.domains.retrieval.schemas import RetrievalResponse
 from app.domains.retrieval.service import (
     find_counter_evidence,
@@ -89,12 +90,17 @@ def api_semantic_search(workspace_id: str, body: SearchRequest) -> RetrievalResp
 
 
 @router.post("/similar-work", response_model=RetrievalResponse)
-def api_similar_work(workspace_id: str, body: SimilarWorkRequest) -> RetrievalResponse:
+def api_similar_work(
+    workspace_id: str,
+    body: SimilarWorkRequest,
+    db: Session = Depends(get_db),
+) -> RetrievalResponse:
     """Find similar work from other papers in the workspace."""
     result = find_similar_work(
         workspace_id=workspace_id,
         paper_id=body.paper_id,
         top_k=body.top_k,
+        db=db,
         exclude_paper_ids=set(body.exclude_paper_ids) or None,
         use_reranker=body.use_reranker,
     )

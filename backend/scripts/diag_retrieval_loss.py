@@ -44,7 +44,7 @@ def paper_title(db, pid: str | None) -> str:
 
 def diagnose_similar(db, workspace_id: str, source_id: str, golds: list[str]) -> None:
     gateway = get_embedding_gateway()
-    chunks = _load_chunks_jsonl(workspace_id, source_id)
+    chunks = _load_chunks_jsonl(db, workspace_id, source_id)
     idx = _spread_sample_indices(len(chunks), max_samples=5)
     query_texts = [chunks[i].text for i in idx]
     vecs = gateway.embed_texts(query_texts).embeddings

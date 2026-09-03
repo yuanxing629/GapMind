@@ -57,7 +57,7 @@ def test_eval_item_snapshot_preserves_offsets_without_exporting_text(monkeypatch
     monkeypatch.setattr(
         run_chat_facet_ab,
         "find_chunk_record",
-        lambda workspace_id, paper_id, chunk_id: SimpleNamespace(
+        lambda workspace_id, paper_id, chunk_id, *, db: SimpleNamespace(
             workspace_id=workspace_id,
             paper_id=paper_id,
             section="Method",
@@ -75,7 +75,7 @@ def test_eval_item_snapshot_preserves_offsets_without_exporting_text(monkeypatch
         score=0.81234567,
     )
 
-    snapshot = run_chat_facet_ab._item_snapshot("workspace-1", item)
+    snapshot = run_chat_facet_ab._item_snapshot(None, "workspace-1", item)
 
     assert snapshot["section"] == "Method"
     assert snapshot["chunk_index"] == 4

@@ -163,13 +163,22 @@ def validate_paper(
     parsed_text = read_artifact_text(artifact_service, text_artifact)
     report.check(bool(parsed_text), f"{paper_id}: parsed_text is readable")
 
-    jsonl_path = Path("data") / "chunks" / workspace_id / f"{paper_id}.jsonl"
-    report.check(jsonl_path.exists(), f"{paper_id}: chunk JSONL exists")
+    chunk_artifact = (
+        db.get(Artifact, paper.chunk_index_artifact_id)
+        if paper.chunk_index_artifact_id
+        else None
+    )
+    chunk_jsonl = read_artifact_text(artifact_service, chunk_artifact)
+    report.check(
+        chunk_artifact is not None,
+        f"{paper_id}: chunk_index Artifact exists",
+    )
+    report.check(bool(chunk_jsonl), f"{paper_id}: chunk_index Artifact is readable")
     chunks: list[dict[str, Any]] = []
-    if jsonl_path.exists():
+    if chunk_jsonl:
         chunks = [
             json.loads(line)
-            for line in jsonl_path.read_text(encoding="utf-8").splitlines()
+            for line in chunk_jsonl.splitlines()
             if line.strip()
         ]
     report.check(
@@ -198,7 +207,7 @@ def validate_paper(
         }
         report.check(
             indexed_ids == current_chunk_ids,
-            f"{paper_id}: live Milvus chunk IDs match current JSONL",
+            f"{paper_id}: live Milvus chunk IDs match current chunk_index Artifact",
         )
     except Exception as exc:
         report.check(False, f"{paper_id}: Milvus verification failed: {exc}")

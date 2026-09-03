@@ -44,7 +44,7 @@ RetrievalDiagnosticCode = Literal[
 
 
 class ChunkRecord(BaseModel):
-    """A single chunk from data/chunks/{workspace_id}/{paper_id}.jsonl.
+    """A single record from a paper's canonical chunk_index Artifact.
 
     Validates against Contract B (data_contracts_v1.md §3).
     """
