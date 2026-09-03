@@ -3072,6 +3072,26 @@ export interface components {
             task_id?: string | null;
             /** Input Sha256 */
             input_sha256: string;
+            /** Knowledge Extraction Run Id */
+            knowledge_extraction_run_id?: string | null;
+            /** Knowledge Context Sha256 */
+            knowledge_context_sha256?: string | null;
+            /**
+             * Input Mode
+             * @default core_markdown_legacy_v1
+             */
+            input_mode: string;
+            /** Source Knowledge Item Ids */
+            source_knowledge_item_ids?: string[];
+            /** Source Evidence Span Ids */
+            source_evidence_span_ids?: string[];
+            /**
+             * Context Char Count
+             * @default 0
+             */
+            context_char_count: number;
+            /** Context Fallback Reason */
+            context_fallback_reason?: string | null;
             /** Schema Version */
             schema_version: string;
             /** Prompt Version */
@@ -3094,6 +3114,11 @@ export interface components {
             validation_errors?: string[];
             /** Fallback Reason */
             fallback_reason?: string | null;
+            /**
+             * Stale
+             * @default false
+             */
+            stale: boolean;
             /**
              * Created At
              * Format: date-time
@@ -3253,6 +3278,15 @@ export interface components {
              * @default false
              */
             skipped: boolean;
+            /** Input Mode */
+            input_mode?: string | null;
+            /** Knowledge Extraction Run Id */
+            knowledge_extraction_run_id?: string | null;
+            /**
+             * Dependency Status
+             * @default not_checked
+             */
+            dependency_status: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -6503,6 +6537,7 @@ export interface operations {
         parameters: {
             query?: {
                 kind?: string | null;
+                paper_id?: string | null;
             };
             header?: {
                 "X-User-ID"?: string | null;

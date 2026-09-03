@@ -2,7 +2,17 @@
 
 from __future__ import annotations
 
-from sqlalchemy import JSON, Boolean, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin, UUIDPKMixin
@@ -11,12 +21,28 @@ from app.db.base import Base, TimestampMixin, UUIDPKMixin
 class PaperGapAnnotation(Base, UUIDPKMixin, TimestampMixin):
     __tablename__ = "paper_gap_annotations"
     __table_args__ = (
-        UniqueConstraint(
+        Index(
+            "uq_paper_gap_annotation_legacy_version",
             "paper_id",
             "input_sha256",
             "model_name",
             "prompt_version",
-            name="uq_paper_gap_annotation_version",
+            "input_mode",
+            unique=True,
+            postgresql_where=text("knowledge_extraction_run_id IS NULL"),
+            sqlite_where=text("knowledge_extraction_run_id IS NULL"),
+        ),
+        Index(
+            "uq_paper_gap_annotation_knowledge_version",
+            "paper_id",
+            "input_sha256",
+            "model_name",
+            "prompt_version",
+            "input_mode",
+            "knowledge_extraction_run_id",
+            unique=True,
+            postgresql_where=text("knowledge_extraction_run_id IS NOT NULL"),
+            sqlite_where=text("knowledge_extraction_run_id IS NOT NULL"),
         ),
     )
 
@@ -33,6 +59,19 @@ class PaperGapAnnotation(Base, UUIDPKMixin, TimestampMixin):
         ForeignKey("tasks.id", ondelete="SET NULL"), nullable=True, index=True
     )
     input_sha256: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    knowledge_extraction_run_id: Mapped[str | None] = mapped_column(
+        ForeignKey("extraction_runs.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    knowledge_context_sha256: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=True
+    )
+    input_mode: Mapped[str] = mapped_column(
+        String(64), default="core_markdown_legacy_v1", nullable=False
+    )
+    source_knowledge_item_ids: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    source_evidence_span_ids: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    context_char_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    context_fallback_reason: Mapped[str | None] = mapped_column(String(128), nullable=True)
     schema_version: Mapped[str] = mapped_column(String(16), default="3.0", nullable=False)
     prompt_version: Mapped[str] = mapped_column(String(64), nullable=False)
     model_provider: Mapped[str] = mapped_column(String(64), nullable=False)

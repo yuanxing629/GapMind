@@ -11,6 +11,8 @@ from uuid import uuid4
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
+from app.domains.gap.context import get_gap_context_identity
 from app.domains.gap.models import (
     GapBoardSnapshot,
     GapCanonicalConcept,
@@ -19,6 +21,8 @@ from app.domains.gap.models import (
 )
 from app.domains.gap.normalization import canonical_axis_label
 from app.domains.gap.schemas import GapAnnotationOutput
+from app.domains.knowledge.models import ExtractionRun
+from app.domains.paper.models import Paper
 
 NORMALIZE_PUNCTUATION = re.compile(r"[\s\-_—–·,，。；;：:（）()\[\]【】/]+")
 
@@ -59,6 +63,18 @@ class GapService:
         if row is None or row.workspace_id != workspace_id or row.is_deleted:
             raise GapAnnotationNotFoundError(annotation_id)
         return row
+
+    def annotation_is_stale(self, annotation: PaperGapAnnotation) -> bool:
+        """Whether a newer knowledge context exists for this annotation's paper."""
+        paper = self.db.get(Paper, annotation.paper_id)
+        if paper is None or paper.is_deleted:
+            return False
+        identity = get_gap_context_identity(self.db, paper)
+        return (
+            identity.knowledge_extraction_run_id is not None
+            and annotation.knowledge_extraction_run_id
+            != identity.knowledge_extraction_run_id
+        )
 
     def assign_annotation(self, annotation: PaperGapAnnotation) -> None:
         if annotation.status != "valid" or not annotation.output:
@@ -460,7 +476,39 @@ class GapService:
         if paper_ids:
             query = query.where(PaperGapAnnotation.paper_id.in_(paper_ids))
         rows = list(self.db.execute(query).scalars())
+        scoped_paper_ids = {row.paper_id for row in rows}
+        papers = {
+            item.id: item
+            for item in self.db.execute(
+                select(Paper).where(
+                    Paper.workspace_id == workspace_id,
+                    Paper.id.in_(scoped_paper_ids),
+                    Paper.is_deleted.is_(False),
+                )
+            ).scalars()
+        } if scoped_paper_ids else {}
+        current_run_ids: dict[str, str] = {}
+        if scoped_paper_ids and settings.gap_extraction_context_mode != "core_markdown_legacy_v1":
+            runs = self.db.execute(
+                select(ExtractionRun)
+                .where(
+                    ExtractionRun.workspace_id == workspace_id,
+                    ExtractionRun.paper_id.in_(scoped_paper_ids),
+                    ExtractionRun.status == "succeeded",
+                )
+                .order_by(ExtractionRun.finished_at.desc(), ExtractionRun.updated_at.desc())
+            ).scalars()
+            for run in runs:
+                paper = papers.get(run.paper_id)
+                if paper is None or run.artifact_id != paper.parsed_markdown_artifact_id:
+                    continue
+                current_run_ids.setdefault(run.paper_id, run.id)
         latest: dict[str, PaperGapAnnotation] = {}
         for row in rows:
+            current_run_id = current_run_ids.get(row.paper_id)
+            if current_run_id is not None and row.knowledge_extraction_run_id != current_run_id:
+                # A successful knowledge run supersedes legacy or older gap
+                # output until the specialized extractor is run again.
+                continue
             latest.setdefault(row.paper_id, row)
         return list(latest.values())

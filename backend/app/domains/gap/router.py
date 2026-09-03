@@ -14,6 +14,10 @@ from app.domains.discover.schemas import (
     DiscoverRunCreateRequest,
 )
 from app.domains.discover.service import DiscoverService
+from app.domains.gap.context import (
+    GapKnowledgeExtractionPendingError,
+    get_gap_context_identity,
+)
 from app.domains.gap.schemas import (
     GapAnnotationListResponse,
     GapAnnotationRead,
@@ -30,6 +34,7 @@ from app.domains.gap.service import (
     GapCellNotFoundError,
     GapService,
 )
+from app.domains.paper.models import Paper
 from app.domains.task.service import TaskService
 from app.workers.tasks.extract_gap_annotation import spawn_gap_extraction
 from app.workers.tasks.run_discover import spawn_discover_task
@@ -68,13 +73,53 @@ def extract_papers(
                 workspace_id,
                 force=payload.force,
             )
+        except GapKnowledgeExtractionPendingError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "error": "knowledge_extraction_pending",
+                    "message": "请等待知识抽取完成后再生成研究空白标注。",
+                    "retryable": True,
+                },
+            ) from exc
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+        paper = db.get(Paper, paper_id)
+        identity = get_gap_context_identity(db, paper) if paper is not None else None
+        if paper is not None and paper.extract_status in {"pending", "extracting"}:
+            dependency_status = "knowledge_extraction_pending"
+        elif identity is not None and identity.input_mode == "knowledge_context_v1":
+            dependency_status = "ready"
+        else:
+            dependency_status = "legacy_fallback"
         if skipped:
-            tasks.append(GapExtractionTask(paper_id=paper_id, task_id="", status="succeeded", skipped=True))
+            tasks.append(
+                GapExtractionTask(
+                    paper_id=paper_id,
+                    task_id="",
+                    status="succeeded",
+                    skipped=True,
+                    input_mode=identity.input_mode if identity else None,
+                    knowledge_extraction_run_id=(
+                        identity.knowledge_extraction_run_id if identity else None
+                    ),
+                    dependency_status=dependency_status,
+                )
+            )
             continue
         task = TaskService(db).get(task_id)
-        tasks.append(GapExtractionTask(paper_id=paper_id, task_id=task_id, status=task.status))
+        tasks.append(
+            GapExtractionTask(
+                paper_id=paper_id,
+                task_id=task_id,
+                status=task.status,
+                input_mode=identity.input_mode if identity else None,
+                knowledge_extraction_run_id=(
+                    identity.knowledge_extraction_run_id if identity else None
+                ),
+                dependency_status=dependency_status,
+            )
+        )
     return GapExtractionResponse(tasks=tasks)
 
 
@@ -85,10 +130,12 @@ def list_annotations(
     status_filter: str | None = Query(None, alias="status"),
 ) -> GapAnnotationListResponse:
     items = service.list_annotations(workspace_id, status=status_filter)
-    return GapAnnotationListResponse(
-        items=[GapAnnotationRead.model_validate(item) for item in items],
-        total=len(items),
-    )
+    reads: list[GapAnnotationRead] = []
+    for item in items:
+        read = GapAnnotationRead.model_validate(item)
+        read.stale = service.annotation_is_stale(item)
+        reads.append(read)
+    return GapAnnotationListResponse(items=reads, total=len(reads))
 
 
 @router.post("/board/rebuild", response_model=GapBoardRead)

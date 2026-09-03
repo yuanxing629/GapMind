@@ -112,13 +112,25 @@ export default function GapBoardPage() {
       }
       const eligible = allPapers
         .filter((paper) => paper.parse_status === "parsed" && paper.parsed_markdown_artifact_id)
+        .filter((paper) => !["pending", "extracting"].includes(paper.extract_status))
         .map((paper) => paper.id);
+      const waitingForKnowledge = allPapers.filter(
+        (paper) =>
+          paper.parse_status === "parsed" &&
+          paper.parsed_markdown_artifact_id &&
+          ["pending", "extracting"].includes(paper.extract_status),
+      ).length;
       if (!eligible.length) {
-        message.warning("当前没有已完成 Markdown 解析的论文。");
+        message.warning(
+          waitingForKnowledge
+            ? `有 ${waitingForKnowledge} 篇论文正在完成知识抽取，请完成后再运行研究空白抽取。`
+            : "当前没有已完成 Markdown 解析的论文。",
+        );
         return;
       }
       let submitted = 0;
       let skipped = 0;
+      let legacyFallback = 0;
       for (let index = 0; index < eligible.length; index += 200) {
         const response = await gapApi.extract(
           workspaceId,
@@ -128,14 +140,27 @@ export default function GapBoardPage() {
         for (const task of response.tasks) {
           if (task.skipped) skipped += 1;
           else submitted += 1;
+          if (task.dependency_status === "legacy_fallback") legacyFallback += 1;
         }
       }
       if (submitted === 0) {
-        message.info(`全部 ${skipped} 篇论文已完成专项标注，无需重复抽取。`);
+        message.info(
+          waitingForKnowledge
+            ? `已跳过 ${waitingForKnowledge} 篇知识抽取中的论文；其余 ${skipped} 篇无需重复抽取。`
+            : `全部 ${skipped} 篇论文已完成专项标注，无需重复抽取。`,
+        );
       } else if (skipped > 0) {
-        message.success(`已提交 ${submitted} 篇论文抽取，跳过 ${skipped} 篇已完成标注；可在“课题活动 → 处理中心”查看进度或失败原因。`);
+        message.success(
+          `已提交 ${submitted} 篇论文抽取，跳过 ${skipped} 篇已完成标注${
+            legacyFallback ? `，其中 ${legacyFallback} 篇将使用兼容 Markdown 降级` : ""
+          }；可在“课题活动 → 处理中心”查看进度或失败原因。`,
+        );
       } else {
-        message.success(`已提交 ${submitted} 篇论文；可在“课题活动 → 处理中心”查看进度，完成后刷新并重建棋盘。`);
+        message.success(
+          `已提交 ${submitted} 篇论文${
+            legacyFallback ? `，其中 ${legacyFallback} 篇将使用兼容 Markdown 降级` : ""
+          }；可在“课题活动 → 处理中心”查看进度，完成后刷新并重建棋盘。`,
+        );
       }
     } catch (error) {
       message.error(`提交专项抽取失败：${errorMessage(error)}`);
@@ -315,6 +340,10 @@ export default function GapBoardPage() {
   const validCount = annotations.filter((item) => item.status === "valid").length;
   const invalidCount = annotations.filter((item) => item.status === "invalid").length;
   const remoteFallbackCount = annotations.filter(isRemoteGapFallback).length;
+  const legacyContextCount = annotations.filter(
+    (item) => item.input_mode === "core_markdown_legacy_v1",
+  ).length;
+  const staleAnnotationCount = annotations.filter((item) => item.stale).length;
   const uncoveredCount = board?.cells.filter((item) => !item.addressed).length || 0;
   const explicitLimitationCount = board?.cells.filter(
     (item) => !item.addressed && item.candidate_tier === "explicit_limitation",
@@ -371,6 +400,8 @@ export default function GapBoardPage() {
               : invalidCount
                 ? `${invalidCount} 篇无效标注已隔离`
                 : "当前标注均已通过校验"}
+            {legacyContextCount ? `；${legacyContextCount} 篇使用兼容 Markdown 上下文` : ""}
+            {staleAnnotationCount ? `；${staleAnnotationCount} 篇待按最新知识结果重跑` : ""}
           </span>
         </Card>
       </div>
