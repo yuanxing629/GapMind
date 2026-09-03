@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Alert, Button, Card, Col, Empty, List, Row, Space, Statistic, Tag, Typography } from "antd";
-import { ArrowRightOutlined, BulbOutlined, FileSearchOutlined, SettingOutlined, UploadOutlined } from "@ant-design/icons";
+import { ArrowRightOutlined, BulbOutlined, FileSearchOutlined, ReadOutlined, SettingOutlined, UploadOutlined } from "@ant-design/icons";
 import { Link, useNavigate } from "react-router-dom";
 import paperApi from "../api/paper";
 import taskApi from "../api/task";
@@ -18,6 +18,7 @@ import PageHeader from "../components/common/PageHeader";
 import StatusBadge from "../components/common/StatusBadge";
 import ResearchRecommendations from "../components/ResearchRecommendations";
 import { isTaskNeedingAttention } from "../state/taskAttention";
+import { readingLibraryPath } from "../components/layout/navigation";
 
 function formatDate(value: string) {
   return new Date(value).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
@@ -66,6 +67,7 @@ export default function WorkspaceOverviewPage() {
   const waitingRuns = runs?.filter((run) => ["waiting_for_user", "waiting_for_fulltext"].includes(run.status)) ?? [];
   const reviewOpportunities = opportunities ?? [];
   const counts = readiness?.counts;
+  const hasPapers = (counts?.papers ?? papers?.length ?? 0) > 0;
 
   const nextAction = readiness?.recommended_next_action
     ? {
@@ -112,7 +114,7 @@ export default function WorkspaceOverviewPage() {
       {failedTasks.length > 0 && <Alert type="error" showIcon message={`${failedTasks.length} 个近期后台任务处理失败`} description={<Link to={`/workspaces/${workspace.id}/activity`}>打开处理中心查看原因并重试；历史失败记录仍保留在处理中心。</Link>} style={{ marginBottom: 20 }} />}
 
       <Row gutter={[16, 16]}>
-        <Col xs={12} md={6}><Card className="gm-section-card"><Statistic title="课题文献" value={counts?.papers ?? papers?.length ?? "—"} suffix={counts || papers ? "篇" : undefined} /><Typography.Text type="secondary">{counts ? `${counts.papers_with_pdf} 篇已有 PDF` : papers ? `${papers.filter((paper) => Boolean(paper.primary_artifact_id)).length} 篇已有 PDF` : "数据暂不可用"}</Typography.Text></Card></Col>
+        <Col xs={12} md={6}><Card className="gm-section-card" extra={<Link to={readingLibraryPath(workspace.id)}>{hasPapers ? "继续阅读" : "进入阅读"}</Link>}><Statistic title={<span><ReadOutlined /> 课题文献</span>} value={counts?.papers ?? papers?.length ?? "—"} suffix={counts || papers ? "篇" : undefined} /><Typography.Text type="secondary">{counts ? `${counts.papers_with_pdf} 篇已有 PDF` : papers ? `${papers.filter((paper) => Boolean(paper.primary_artifact_id)).length} 篇已有 PDF` : "数据暂不可用"}</Typography.Text></Card></Col>
         <Col xs={12} md={6}><Card className="gm-section-card"><Statistic title="待审核知识" value={counts?.pending_knowledge ?? (knowledge ? reviewItems.length : "—")} suffix={counts || knowledge ? "条" : undefined} /><Typography.Text type="secondary">{counts || knowledge ? "优先处理候选内容" : "数据暂不可用"}</Typography.Text></Card></Col>
         <Col xs={12} md={6}><Card className="gm-section-card"><Statistic title="处理中" value={counts?.active_tasks ?? (tasks ? activeTasks.length : "—")} suffix={counts || tasks ? "项" : undefined} /><Typography.Text type="secondary">{counts || tasks ? "解析、提取或发现任务" : "数据暂不可用"}</Typography.Text></Card></Col>
         <Col xs={12} md={6}><Card className="gm-section-card"><Statistic title="待处理机会" value={counts?.pending_opportunities ?? pendingOpportunityCount ?? "—"} suffix={counts || pendingOpportunityCount !== null ? "项" : undefined} /><Typography.Text type="secondary">{counts || pendingOpportunityCount !== null ? "等待人工判断" : "数据暂不可用"}</Typography.Text></Card></Col>

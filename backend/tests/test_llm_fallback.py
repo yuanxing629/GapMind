@@ -84,26 +84,24 @@ def test_primary_failure_falls_over_to_backup():
     assert response.content == "backup ok"
     assert backup is not None
     assert backup.calls[0]["model"] == "backup-model"
-    # backup attempt keeps the same payload (incl. thinking extra_body) first
-    assert backup.calls[0]["extra_body"] == {"thinking": {"type": "disabled"}}
+    # The backup receives the same standard Chat Completions payload.
+    assert "extra_body" not in backup.calls[0]
 
 
-def test_backup_retry_strips_deepseek_extra_body_when_rejected():
-    # backup rejects the thinking field once, accepts without it
+def test_generic_chat_completion_does_not_send_provider_specific_thinking_fields():
+    # A standard OpenAI-compatible endpoint should receive only standard fields.
     gateway, _, backup = _gateway(
         [RuntimeError("primary down")],
         [
-            RuntimeError("unknown field thinking"),
-            _resp("backup without thinking", "backup-model"),
+            _resp("backup ok", "backup-model"),
         ],
     )
     response = gateway.chat_completion(
         [{"role": "user", "content": "hi"}], disable_thinking=True
     )
-    assert response.content == "backup without thinking"
+    assert response.content == "backup ok"
     assert backup is not None
-    assert "extra_body" in backup.calls[0]
-    assert "extra_body" not in backup.calls[1]
+    assert "extra_body" not in backup.calls[0]
 
 
 def test_failure_without_backup_configured_raises_primary_error():
@@ -154,3 +152,31 @@ def test_backup_requires_all_three_fields():
         backup_api_key="bk", backup_base_url="bu",  # missing backup_model
     )
     assert partial.backup_enabled is False
+
+
+def test_vision_requests_use_the_dedicated_client_without_text_backup():
+    gateway = LLMGateway(
+        api_key="remote-key",
+        base_url="https://remote.example/v1",
+        model="text-model",
+        vision_api_key="vision-key",
+        vision_base_url="https://vision.example/v1",
+        vision_model="vision-model",
+        backup_api_key="backup-key",
+        backup_base_url="https://backup.example/v1",
+        backup_model="backup-model",
+    )
+    vision = FakeCompletions([_resp("vision ok", "vision-model")])
+    gateway._vision_client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=vision.create))
+    )
+
+    response = gateway.chat_completion(
+        [{"role": "user", "content": [{"type": "text", "text": "describe"}]}],
+        model_override="vision-model",
+        disable_thinking=True,
+    )
+
+    assert response.content == "vision ok"
+    assert vision.calls[0]["model"] == "vision-model"
+    assert "extra_body" not in vision.calls[0]

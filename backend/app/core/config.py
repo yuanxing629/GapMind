@@ -175,18 +175,18 @@ class Settings(BaseSettings):
     milvus_port: int = 19530
     milvus_collection_prefix: str = "gapmind_"
 
-    # ---- LLM (Deepseek) ----
-    deepseek_api_key: str = ""
-    deepseek_base_url: str = "https://api.deepseek.com"
-    deepseek_model: str = "deepseek-v4-flash"
-    # Only chat requests carrying images use this model. Keep text chat on the
-    # regular model so the existing retrieval and cost profile is unchanged.
-    deepseek_vision_model: str = "deepseek-v4-flash-vision-exp"
-    # demo-day fuse: fall over to a backup OpenAI-compatible endpoint when the
-    # primary fails; enabled only when all three backup fields are set
-    deepseek_backup_api_key: str = ""
-    deepseek_backup_base_url: str = ""
-    deepseek_backup_model: str = ""
+    # ---- OpenAI Chat Completions-compatible LLMs ----
+    # The remote, vision, and backup endpoints may be supplied by different
+    # providers. Secrets belong in .env/.env.local, not in the YAML defaults.
+    remote_api_key: str = ""
+    remote_base_url: str = "https://api.openai.com/v1"
+    remote_model: str = ""
+    vision_api_key: str = ""
+    vision_base_url: str = ""
+    vision_model: str = ""
+    backup_api_key: str = ""
+    backup_base_url: str = ""
+    backup_model: str = ""
 
     # ---- Fine-tuned gap extractor (Ollama) ----
     gap_extractor_base_url: str = "http://127.0.0.1:11434"

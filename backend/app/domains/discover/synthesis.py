@@ -169,7 +169,7 @@ class SynthesisService:
                 raw_items = [raw_items]
             if isinstance(raw_items, list):
                 normalized = [
-                    normalize_candidate(item, gate, provider="deepseek")
+                    normalize_candidate(item, gate, provider="remote")
                     for item in raw_items
                     if isinstance(item, dict)
                 ]

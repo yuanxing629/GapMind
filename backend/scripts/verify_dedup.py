@@ -17,7 +17,7 @@ Usage (from backend/):
         --workspace-id 533c89cd-625f-45e7-8a44-cc737244273c \
         --paper-id 8eb9634d-36fc-4a0a-b4c8-d61659740330
 
-Requires a configured Deepseek API key (the extraction makes a real LLM
+Requires a configured REMOTE API key (the extraction makes a real LLM
 call). The old items are left untouched; a NEW extraction_run is created
 alongside them for comparison.
 """
@@ -174,7 +174,7 @@ def main() -> int:
 
         if result.get("status") != "succeeded":
             print(f"extraction FAILED: {result.get('error') or result.get('status')}")
-            print("  (check Deepseek API key / network)")
+            print("  (check REMOTE_API_KEY / network)")
             return 1
 
         new_stats = run_stats(db, new_run_id) if new_run_id else {"total": 0, "same_span_collisions": 0, "exact_dups": 0, "near_dups": 0, "samples": []}

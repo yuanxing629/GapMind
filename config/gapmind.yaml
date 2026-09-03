@@ -49,12 +49,20 @@ milvus:
   port: 19530
   collection_prefix: gapmind_
 
-llm:
+# .env 的配置高于 gapmind.yaml。
+# 这里用于提供非敏感默认值，记录配置结构，不保存 API KEY
+# 当 .env 缺少配置时作为兜底
+remote:
   base_url: https://api.deepseek.com
   model: deepseek-v4-flash
-  vision_model: deepseek-v4-flash-vision-exp
-  backup_base_url: ""
-  backup_model: ""
+
+vision:
+  base_url: ""
+  model: ""
+
+backup:
+  base_url: ""
+  model: ""
 
 gap_extractor:
   base_url: http://127.0.0.1:11434

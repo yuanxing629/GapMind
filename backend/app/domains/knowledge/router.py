@@ -176,9 +176,11 @@ def get_knowledge_graph(
     min_confidence: float | None = Query(None, ge=0.0, le=1.0),
     relation_type: str | None = Query(None),
     status: str | None = Query(None),
-    projection_mode: str = Query("all", pattern="^(all|landscape|claims|evidence)$"),
+    projection_mode: str = Query("all", pattern="^(all|workspace|landscape|claims|evidence)$"),
     limit: int = Query(100, ge=1, le=200),
     offset: int = Query(0, ge=0),
+    edge_limit: int = Query(160, ge=1, le=400),
+    include_related_papers: bool = Query(False),
     service: KnowledgeService = Depends(_get_knowledge_service),
     workspace_service: WorkspaceService = Depends(_get_workspace_service),
 ) -> KnowledgeGraphResponse:
@@ -196,6 +198,8 @@ def get_knowledge_graph(
         projection_mode=projection_mode,
         limit=limit,
         offset=offset,
+        edge_limit=edge_limit,
+        include_related_papers=include_related_papers,
     )
     return KnowledgeGraphResponse(
         workspace_id=workspace_id,
@@ -203,7 +207,7 @@ def get_knowledge_graph(
         edges=projection.edges,
         total_nodes=projection.total_nodes,
         total_edges=projection.total_edges,
-        truncated=projection.has_more,
+        truncated=projection.truncated,
         limit=limit,
         offset=offset,
         projection_mode=projection_mode,
@@ -213,6 +217,7 @@ def get_knowledge_graph(
         node_counts=projection.node_counts,
         relation_counts=projection.relation_counts,
         workspace_counts=projection.workspace_counts,
+        truncation_reason=projection.truncation_reason,
     )
 
 
@@ -223,7 +228,7 @@ def get_knowledge_graph(
 def search_knowledge_graph_nodes(
     workspace_id: str,
     q: str = Query(..., min_length=1, max_length=255),
-    projection_mode: str = Query("all", pattern="^(all|landscape|claims|evidence)$"),
+    projection_mode: str = Query("all", pattern="^(all|workspace|landscape|claims|evidence)$"),
     limit: int = Query(12, ge=1, le=50),
     service: KnowledgeService = Depends(_get_knowledge_service),
     workspace_service: WorkspaceService = Depends(_get_workspace_service),
@@ -250,10 +255,41 @@ def get_knowledge_graph_neighbors(
     depth: int = Query(1, ge=1, le=2),
     limit: int = Query(100, ge=1, le=200),
     relation_type: str | None = Query(None),
+    projection_mode: str = Query("all", pattern="^(all|workspace|landscape|claims|evidence)$"),
     service: KnowledgeService = Depends(_get_knowledge_service),
     workspace_service: WorkspaceService = Depends(_get_workspace_service),
 ) -> KnowledgeGraphResponse:
     workspace_service.get(workspace_id)
+    if projection_mode == "workspace":
+        projection = service.workspace_graph_projection(
+            workspace_id=workspace_id,
+            relation_type=relation_type,
+            node_limit=limit,
+            edge_limit=min(400, limit * 2),
+            focus_node_id=node_id,
+            focus_depth=depth,
+        )
+        return KnowledgeGraphResponse(
+            workspace_id=workspace_id,
+            nodes=projection.nodes,
+            edges=projection.edges,
+            total_nodes=projection.total_nodes,
+            total_edges=projection.total_edges,
+            truncated=projection.truncated,
+            limit=limit,
+            offset=0,
+            projection_mode="workspace",
+            loaded_nodes=len(projection.nodes),
+            loaded_edges=len(projection.edges),
+            has_more=projection.has_more,
+            node_counts=projection.node_counts,
+            relation_counts=projection.relation_counts,
+            workspace_counts=projection.workspace_counts,
+            seed_node_id=node_id,
+            depth=depth,
+            truncation_reason=projection.truncation_reason,
+        )
+
     nodes, edges = service.graph_neighbors(
         workspace_id=workspace_id,
         node_id=node_id,

@@ -32,7 +32,9 @@ class Freeze(BaseModel):
     chunk_version: str = "v1"
     embedding_model: str = "BAAI/bge-m3"
     reranker_model: str = "BAAI/bge-reranker-v2-m3"
-    judge_model: str = "deepseek-v4-flash"
+    # A concrete model is recorded by each frozen manifest. Keep new manifests
+    # provider-neutral instead of baking in one deployment's model name.
+    judge_model: str = ""
 
 
 class SemanticSearchQuery(BaseModel):

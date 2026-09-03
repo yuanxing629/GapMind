@@ -3,7 +3,7 @@ import type {
   KnowledgeGraphNode,
 } from "../../api/types/knowledge";
 
-export type GraphViewMode = "landscape" | "claims" | "evidence";
+export type GraphViewMode = "workspace" | "landscape" | "claims" | "evidence";
 
 export interface GraphData {
   nodes: KnowledgeGraphNode[];
@@ -16,6 +16,12 @@ export const VIEW_CONFIG: Record<GraphViewMode, {
   description: string;
   layout: "concentric" | "cose" | "breadthfirst";
 }> = {
+  workspace: {
+    label: "Workspace 总览",
+    eyebrow: "Workspace Map",
+    description: "以论文和跨论文共享实体呈现研究空间，点击节点后逐层下钻到来源与证据。",
+    layout: "cose",
+  },
   landscape: {
     label: "研究全景",
     eyebrow: "Research Landscape",
@@ -49,6 +55,7 @@ export const RELATION_LABELS: Record<string, string> = {
   mentioned_in: "包含原文提及",
   refers_to: "指向实体",
   evidences: "提供证据",
+  paper_entity: "涉及实体",
 };
 
 export const TYPE_LABELS: Record<string, string> = {
@@ -71,6 +78,9 @@ export function resolvedNodeType(node: KnowledgeGraphNode): string {
 
 function nodeAllowed(node: KnowledgeGraphNode, mode: GraphViewMode): boolean {
   const type = resolvedNodeType(node);
+  if (mode === "workspace") {
+    return node.node_kind === "paper" || node.node_kind === "canonical_entity";
+  }
   if (mode === "landscape") {
     return node.node_kind === "paper"
       || node.node_kind === "canonical_entity"

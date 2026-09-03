@@ -17,12 +17,13 @@ import {
   MenuUnfoldOutlined,
   MoonOutlined,
   ProjectOutlined,
+  ReadOutlined,
   ThunderboltOutlined,
   UserOutlined,
 } from "@ant-design/icons";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAppStore } from "../store/appStore";
-import { selectedGlobalKey } from "./layout/navigation";
+import { readingLibraryPath, selectedGlobalKey } from "./layout/navigation";
 import { useTheme } from "../state/theme";
 import { useAuth } from "../state/auth";
 
@@ -31,6 +32,7 @@ const { Header, Sider, Content } = Layout;
 const primaryNavigation = [
   { key: "/", icon: <HomeOutlined />, label: "首页" },
   { key: "/workspaces", icon: <ProjectOutlined />, label: "课题空间" },
+  { key: "/reading", icon: <ReadOutlined />, label: "论文阅读" },
   { key: "/knowledge", icon: <FolderOpenOutlined />, label: "知识库" },
 ];
 
@@ -79,7 +81,9 @@ export default function AppLayout() {
                 ? workspaceRoute ? `${workspaceRoute}/assistant?mode=write` : "/chat/new?mode=write"
                 : key === "/respond"
                   ? workspaceRoute ? `${workspaceRoute}/assistant?mode=respond` : "/chat/new?mode=respond"
-                  : key;
+                  : key === "/reading"
+                    ? readingLibraryPath(workspaceId)
+                    : key;
     navigate(target);
     if (mobile) setCollapsed(true);
   };

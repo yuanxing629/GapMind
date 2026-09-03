@@ -1,7 +1,8 @@
 """Judgement Gateway - LLM-based NLI for counter-evidence detection.
 
-Uses Deepseek to classify the relationship between a claim and retrieved
-passages: supports / overlaps / qualifies / contradicts / unknown.
+Uses the configured OpenAI Chat Completions-compatible provider to classify the
+relationship between a claim and retrieved passages: supports / overlaps /
+qualifies / contradicts / unknown.
 
 Required by Contract D: counter_evidence results must pass through
 rerank or LLM/NLI judgement before being returned.
@@ -64,7 +65,7 @@ class JudgementResult:
 
 
 class JudgementGateway:
-    """LLM-based NLI judgement using Deepseek.
+    """LLM-based NLI judgement using the configured remote provider.
 
     Classifies claim-passage relationships for counter-evidence detection.
     """
@@ -74,21 +75,47 @@ class JudgementGateway:
         api_key: str | None = None,
         base_url: str | None = None,
         model: str | None = None,
+        backup_api_key: str | None = None,
+        backup_base_url: str | None = None,
+        backup_model: str | None = None,
     ) -> None:
-        self.api_key = api_key if api_key is not None else settings.deepseek_api_key
-        self.base_url = base_url if base_url is not None else settings.deepseek_base_url
-        self.model = model if model is not None else settings.deepseek_model
+        self.api_key = api_key if api_key is not None else settings.remote_api_key
+        self.base_url = base_url if base_url is not None else settings.remote_base_url
+        self.model = model if model is not None else settings.remote_model
+        self.backup_api_key = (
+            backup_api_key if backup_api_key is not None else settings.backup_api_key
+        )
+        self.backup_base_url = (
+            backup_base_url if backup_base_url is not None else settings.backup_base_url
+        )
+        self.backup_model = (
+            backup_model if backup_model is not None else settings.backup_model
+        )
         self._client: OpenAI | None = None
+        self._backup_client: OpenAI | None = None
 
     @property
     def client(self) -> OpenAI:
         if self._client is None:
             if not self.api_key:
                 raise RuntimeError(
-                    "DEEPSEEK_API_KEY is not set. Configure the repo-root .env."
+                    "REMOTE_API_KEY is not set. Configure the repo-root .env."
                 )
             self._client = OpenAI(api_key=self.api_key, base_url=self.base_url)
         return self._client
+
+    @property
+    def backup_enabled(self) -> bool:
+        return bool(self.backup_api_key and self.backup_base_url and self.backup_model)
+
+    @property
+    def backup_client(self) -> OpenAI:
+        if self._backup_client is None:
+            self._backup_client = OpenAI(
+                api_key=self.backup_api_key,
+                base_url=self.backup_base_url,
+            )
+        return self._backup_client
 
     def judge_batch(
         self,
@@ -137,19 +164,29 @@ class JudgementGateway:
 
         try:
             max_tokens = max(1024, len(passages) * 256)
-            resp = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
+            request = {
+                "model": self.model,
+                "messages": [
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {"role": "user", "content": user_prompt},
                 ],
-                temperature=0.0,
-                max_tokens=max_tokens,
-                # Structured JSON classification: disable CoT so the reasoning
-                # model doesn't burn max_tokens on reasoning (see plan §八).
-                extra_body={"thinking": {"type": "disabled"}},
-            )
+                "temperature": 0.0,
+                "max_tokens": max_tokens,
+            }
+            try:
+                resp = self.client.chat.completions.create(**request)
+            except Exception:
+                if not self.backup_enabled:
+                    raise
+                logger.warning(
+                    "judge.fallback",
+                    primary_model=self.model,
+                    backup_model=self.backup_model,
+                )
+                request["model"] = self.backup_model
+                resp = self.backup_client.chat.completions.create(**request)
 
+            response_model = getattr(resp, "model", None) or request["model"]
             choice = resp.choices[0]
             content = choice.message.content or ""
             if not content.strip():
@@ -164,13 +201,13 @@ class JudgementGateway:
 
             logger.info(
                 "judge.response",
-                model=self.model,
+                model=response_model,
                 hit_count=len(hits),
                 finish_reason=choice.finish_reason,
                 latency_ms=round(latency, 1),
             )
 
-            return JudgementResult(hits=hits, model=self.model, latency_ms=latency)
+            return JudgementResult(hits=hits, model=response_model, latency_ms=latency)
 
         except Exception as e:
             latency = (time.perf_counter() - start) * 1000
@@ -225,7 +262,7 @@ class JudgementGateway:
 
     def ping(self) -> bool:
         """Check if API key is configured."""
-        return bool(self.api_key)
+        return bool(self.api_key and self.base_url and self.model)
 
 
 _gateway: JudgementGateway | None = None

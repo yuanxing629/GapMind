@@ -4,7 +4,7 @@ Executes the multi-agent orchestration (AgentStep handoff + CriticAgent +
 narrowing loop) on real PostgreSQL + Milvus + LLM, then dumps the resulting
 AgentRun/AgentStep sequence and opportunity critic reviews for inspection.
 
-Run from backend/ (needs .env for DEEPSEEK / SILICONFLOW keys).
+Run from backend/ (needs .env for REMOTE / SILICONFLOW keys).
 """
 
 from __future__ import annotations

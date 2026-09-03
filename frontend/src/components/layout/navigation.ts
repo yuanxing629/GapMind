@@ -27,6 +27,31 @@ export function selectedGlobalKey(pathname: string, search = ""): string {
   return "/";
 }
 
+export function readingLibraryPath(workspaceId?: string | null): string {
+  if (!workspaceId) return "/reading";
+  return `/reading?workspace_id=${encodeURIComponent(workspaceId)}`;
+}
+
+export function readingPaperPath(paperId: string): string {
+  return `/reading/${encodeURIComponent(paperId)}`;
+}
+
+export function resolveReadingWorkspace(
+  requestedWorkspaceId: string | null | undefined,
+  currentWorkspaceId: string | null | undefined,
+  availableWorkspaceIds: readonly string[],
+): { workspaceId?: string; invalidRequested: boolean } {
+  if (requestedWorkspaceId) {
+    return availableWorkspaceIds.includes(requestedWorkspaceId)
+      ? { workspaceId: requestedWorkspaceId, invalidRequested: false }
+      : { invalidRequested: true };
+  }
+  if (currentWorkspaceId && availableWorkspaceIds.includes(currentWorkspaceId)) {
+    return { workspaceId: currentWorkspaceId, invalidRequested: false };
+  }
+  return { workspaceId: availableWorkspaceIds[0], invalidRequested: false };
+}
+
 export function workspaceNavigationPath(workspaceId: string, key: string): string {
   if (key === "overview") return `/workspaces/${workspaceId}/overview`;
   if (key === "knowledge") return `/workspaces/${workspaceId}/knowledge`;

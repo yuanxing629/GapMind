@@ -29,7 +29,7 @@ from app.domains.retrieval.schemas import RetrievalResponse, RetrievalResultItem
 @dataclass
 class FakeResponse:
     content: str
-    model: str = "fake-deepseek"
+    model: str = "fake-remote"
     prompt_tokens: int = 20
     completion_tokens: int = 30
     total_tokens: int = 50

@@ -1,7 +1,8 @@
 """extract_knowledge Celery task (Phase 3).
 
-Reads a paper's parsed_markdown artifact, sends it to Deepseek with a
-structured extraction prompt, validates the JSON output, and writes
+Reads a paper's parsed_markdown artifact, sends it to the configured remote
+OpenAI Chat Completions-compatible provider with a structured extraction
+prompt, validates the JSON output, and writes
 knowledge_items / knowledge_relations / evidence_spans.
 
 State flow:
@@ -365,8 +366,8 @@ def _ensure_extraction_run(
         task_id=task_id,
         schema_version="1.0.0",
         prompt_version=PROMPT_VERSION,
-        model_provider="deepseek",
-        model_name=settings.deepseek_model,
+        model_provider="remote",
+        model_name=settings.remote_model,
         status="running",
         started_at=datetime.now(timezone.utc),
     )

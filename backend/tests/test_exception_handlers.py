@@ -52,7 +52,7 @@ def _build_client() -> TestClient:
     @app.get("/boom/chat-upstream")
     def _raise_chat_upstream() -> None:
         raise ChatUpstreamError(
-            "deepseek 502", conversation_id="c2", assistant_message_id=None
+            "remote 502", conversation_id="c2", assistant_message_id=None
         )
 
     @app.get("/boom/semantic-scholar-429")
@@ -120,7 +120,7 @@ def test_503_chat_configuration_includes_context():
     response = client.get("/boom/chat-config")
     assert response.status_code == 503
     detail = response.json()["detail"]
-    assert detail["error"] == "deepseek_unavailable"
+    assert detail["error"] == "llm_unavailable"
     assert detail["conversation_id"] == "c1"
     assert detail["assistant_message_id"] == "a1"
 
@@ -130,7 +130,7 @@ def test_502_chat_upstream_is_retryable():
     response = client.get("/boom/chat-upstream")
     assert response.status_code == 502
     detail = response.json()["detail"]
-    assert detail["error"] == "deepseek_request_failed"
+    assert detail["error"] == "llm_request_failed"
     assert detail["retryable"] is True
     assert detail["conversation_id"] == "c2"
     # assistant_message_id was None on the exception — should not appear in envelope

@@ -212,9 +212,8 @@ class RemoteGapExtractor:
     @property
     def model_parameters(self) -> dict[str, Any]:
         return {
-            # DeepSeek Chat Completions supports JSON Output rather than the
-            # Responses API's native json_schema format. Schema 3.0 is still
-            # enforced locally by validate_annotation below.
+            # The remote extractor uses Chat Completions JSON mode. Schema 3.0
+            # is still enforced locally by validate_annotation below.
             "response_format": "json_object",
             "temperature": 0.0,
             "max_tokens": settings.gap_extractor_remote_max_tokens,

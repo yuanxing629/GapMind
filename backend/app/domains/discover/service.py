@@ -15,6 +15,7 @@ from uuid import uuid4
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.logging import get_logger
 from app.domains.agent.models import AgentRun, AgentStep
 from app.domains.artifact.models import Artifact
@@ -197,7 +198,7 @@ class DiscoverService(OpportunityWorkflow):
 
         # Bind the cross-domain collaborators through Protocol ports (see
         # ``ports.py``). Tests can inject Protocol-compatible fakes to
-        # exercise the orchestration without Milvus / DeepSeek / S2.
+        # exercise the orchestration without Milvus / an LLM / S2.
         self.retrieval: RetrievalPort = retrieval or RetrievalAdapter(db)
         self.external_search: ExternalSearchPort = external_search or ExternalSearchAdapter()
         self.llm: LLMGatewayPort = llm or LLMGatewayAdapter()
@@ -249,8 +250,8 @@ class DiscoverService(OpportunityWorkflow):
             stage="preflight",
             progress=0.0,
             verification_status="not_started",
-            model_provider="deepseek",
-            model_name="deepseek-chat",
+            model_provider="remote",
+            model_name=settings.remote_model or "remote",
             model_parameters={"temperature": 0.1, "max_tokens": 2200},
             prompt_version=DISCOVER_PROMPT_VERSION,
             corpus_version=self._corpus_snapshot(workspace_id),

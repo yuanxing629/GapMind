@@ -5,9 +5,10 @@ external-paper search client, and an LLM gateway. Without these ports,
 ``DiscoverService`` would import concrete modules from three other
 domains — making it hard to:
 
-  * unit-test the orchestration without bringing up Milvus + DeepSeek;
+  * unit-test the orchestration without bringing up Milvus + an LLM;
   * swap the LLM or the external-search provider (the next chat-agent
-    iteration needs LangChain / Anthropic / OpenAI alongside DeepSeek);
+    iteration may need LangChain / Anthropic / OpenAI alongside the remote
+    Chat Completions provider);
   * trace exactly which call path a given Discover run took.
 
 A ``Port`` here is a ``typing.Protocol`` describing the surface that

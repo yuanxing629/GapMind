@@ -28,7 +28,9 @@ export interface KnowledgeGraphParams {
   limit?: number;
   offset?: number;
   status?: string;
-  projection_mode?: "all" | "landscape" | "claims" | "evidence";
+  edge_limit?: number;
+  include_related_papers?: boolean;
+  projection_mode?: "all" | "workspace" | "landscape" | "claims" | "evidence";
 }
 
 export const knowledgeApi = {
@@ -78,7 +80,12 @@ export const knowledgeApi = {
   async graphNeighbors(
     workspaceId: string,
     nodeId: string,
-    params: { depth?: number; limit?: number; relation_type?: string } = {},
+    params: {
+      depth?: number;
+      limit?: number;
+      relation_type?: string;
+      projection_mode?: KnowledgeGraphParams["projection_mode"];
+    } = {},
   ): Promise<KnowledgeGraphResponse> {
     const resp = await apiClient.get<KnowledgeGraphResponse>(
       `/workspaces/${workspaceId}/knowledge/graph/neighbors/${encodeURIComponent(nodeId)}`,
@@ -89,7 +96,7 @@ export const knowledgeApi = {
 
   async searchGraphNodes(
     workspaceId: string,
-    params: { q: string; projection_mode?: "all" | "landscape" | "claims" | "evidence"; limit?: number },
+    params: { q: string; projection_mode?: KnowledgeGraphParams["projection_mode"]; limit?: number },
   ): Promise<KnowledgeGraphSearchResponse> {
     const resp = await apiClient.get<KnowledgeGraphSearchResponse>(
       `/workspaces/${workspaceId}/knowledge/graph/search`,

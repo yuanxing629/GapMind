@@ -393,7 +393,7 @@ def test_build_evidence_manifest_aggregates_counts(db_session) -> None:
         id=str(uuid4()), opportunity_id=opp.id, version_number=1, title="T", problem_statement="P",
         created_at=datetime.now(UTC),
         verification_status="verified_with_warnings",
-        synthesis_metadata={"provider": "deepseek", "prompt_version": "discover-v1"},
+        synthesis_metadata={"provider": "remote", "prompt_version": "discover-v1"},
     )
     opp.current_version_id = version.id
     db_session.add_all([opp, version])
@@ -425,7 +425,7 @@ def test_build_evidence_manifest_aggregates_counts(db_session) -> None:
     assert manifest.narrowing_outcome == "direction_clear"
     assert manifest.human_status == "candidate"
     assert manifest.prompt_version == "discover-v1"
-    assert manifest.model_name == "deepseek"
+    assert manifest.model_name == "remote"
     assert manifest.verification_status == "verified_with_warnings"
     assert manifest.evidence_freshness == "current"
     assert manifest.evidence_checked_at is not None

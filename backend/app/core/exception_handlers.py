@@ -111,9 +111,9 @@ def _resolve_status(exc: Exception) -> tuple[int, str, bool, dict[str, str]]:
     """
     # Chat LLM errors — retryable by nature; context travels with the exception.
     if isinstance(exc, ChatConfigurationError):
-        return 503, "deepseek_unavailable", False, _extras_for_chat(exc)
+        return 503, "llm_unavailable", False, _extras_for_chat(exc)
     if isinstance(exc, ChatUpstreamError):
-        return 502, "deepseek_request_failed", True, _extras_for_chat(exc)
+        return 502, "llm_request_failed", True, _extras_for_chat(exc)
     if isinstance(exc, ChatRetrievalError):
         return 502, "workspace_retrieval_failed", True, _extras_for_chat(exc)
 

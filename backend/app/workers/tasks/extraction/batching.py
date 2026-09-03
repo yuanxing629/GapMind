@@ -1,6 +1,7 @@
 """Split long parsed-markdown documents into LLM-sized batches.
 
-The extraction prompt targets the whole paper, but Deepseek's context window
+The extraction prompt targets the whole paper, but the configured remote
+model's context window
 forces us to chunk. The strategy here:
 
   * keep paragraphs / headings (``\n## ``, ``\n\n``) intact at split
@@ -18,7 +19,7 @@ can be unit-tested without spinning up a DB or an LLM client.
 from __future__ import annotations
 
 # Why these defaults:
-#   * ``max_chars`` (40 000): safely below Deepseek's 64 K-token context
+#   * ``max_chars`` (40 000): a bounded slice for the configured remote model
 #     while leaving room for the prompt scaffold and the JSON response.
 #   * ``overlap_chars`` (1 000): large enough to re-surface a tail method,
 #     small enough not to balloon token spend.

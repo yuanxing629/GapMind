@@ -627,8 +627,22 @@ class ChatService:
             return None
         model = str(getattr(gateway, "vision_model", "") or "").strip()
         if not model:
-            raise ChatConfigurationError("DeepSeek 视觉模型未配置")
+            raise ChatConfigurationError("VISION_MODEL is not configured")
         return model
+
+    @staticmethod
+    def _ensure_llm_credentials(gateway: Any, image_data_urls: list[str]) -> None:
+        if image_data_urls:
+            if not (
+                getattr(gateway, "vision_api_key", None)
+                or getattr(gateway, "api_key", None)
+            ):
+                raise ChatConfigurationError(
+                    "VISION_API_KEY or REMOTE_API_KEY is not configured"
+                )
+            return
+        if not getattr(gateway, "api_key", None):
+            raise ChatConfigurationError("REMOTE_API_KEY is not configured")
 
     @staticmethod
     def _attach_images(
@@ -695,8 +709,7 @@ class ChatService:
                         assistant,
                     )
             gateway = self.gateway or get_llm_gateway()
-            if not getattr(gateway, "api_key", None):
-                raise ChatConfigurationError("DeepSeek API key is not configured")
+            self._ensure_llm_credentials(gateway, image_data_urls)
             vision_model = self._vision_model(gateway, image_data_urls)
             if image_data_urls:
                 context = self._attach_images(context, image_data_urls)
@@ -739,7 +752,7 @@ class ChatService:
             safe_error = _safe_error_message(exc)
             self._mark_failed(assistant, safe_error)
             raise ChatUpstreamError(
-                "DeepSeek request failed",
+                "Remote LLM request failed",
                 conversation_id=conversation_id,
                 assistant_message_id=assistant_id,
             ) from exc
@@ -879,8 +892,7 @@ class ChatService:
                 assistant.retrieval_diagnostic_code = workspace_context.retrieval_diagnostic_code
                 assistant.retrieval_audit = workspace_context.retrieval_audit
             gateway = self.gateway or get_llm_gateway()
-            if not getattr(gateway, "api_key", None):
-                raise ChatConfigurationError("DeepSeek API key is not configured")
+            self._ensure_llm_credentials(gateway, image_data_urls)
         except ChatConfigurationError as exc:
             self._mark_failed(assistant, str(exc))
             yield {"type": "error", "message": str(exc)}

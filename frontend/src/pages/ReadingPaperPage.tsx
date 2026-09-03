@@ -20,12 +20,15 @@ import {
   DeleteOutlined,
   FilePdfOutlined,
   HighlightOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
   RobotOutlined,
   SaveOutlined,
   UploadOutlined,
 } from "@ant-design/icons";
 import { useNavigate, useParams } from "react-router-dom";
 import PageHeader from "../components/common/PageHeader";
+import { readingLibraryPath } from "../components/layout/navigation";
 import paperApi from "../api/paper";
 import readingApi, {
   paperArtifactViewUrl,
@@ -64,6 +67,7 @@ export default function ReadingPaperPage() {
   const [selectedText, setSelectedText] = useState("");
   const [notePage, setNotePage] = useState(1);
   const [noteKind, setNoteKind] = useState<"note" | "highlight" | "underline">("note");
+  const [annotationsOpen, setAnnotationsOpen] = useState(false);
 
   const load = useCallback(async () => {
     if (!paperId) return;
@@ -201,14 +205,22 @@ export default function ReadingPaperPage() {
         description={paper.authors.slice(0, 5).join(", ") || "作者信息暂缺"}
         extra={
           <Space wrap>
-            <Button icon={<ArrowLeftOutlined />} onClick={() => navigate("/reading")}>返回阅读库</Button>
+            <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(readingLibraryPath(paper.workspace_id))}>返回阅读库</Button>
+            <Button
+              icon={annotationsOpen ? <MenuFoldOutlined /> : <MenuUnfoldOutlined />}
+              aria-controls="paper-annotation-sidebar"
+              aria-expanded={annotationsOpen}
+              onClick={() => setAnnotationsOpen((open) => !open)}
+            >
+              {annotationsOpen ? "隐藏批注栏" : "显示批注栏"}
+            </Button>
             {paper.doi && <Typography.Link href={`https://doi.org/${paper.doi}`} target="_blank" rel="noreferrer">DOI</Typography.Link>}
             {paper.arxiv_id && <Typography.Link href={`https://arxiv.org/abs/${paper.arxiv_id}`} target="_blank" rel="noreferrer">arXiv</Typography.Link>}
           </Space>
         }
       />
 
-      <div className="gm-reader-layout">
+      <div className={`gm-reader-layout${annotationsOpen ? "" : " gm-reader-layout--annotations-hidden"}`}>
         <Card
           className="gm-reader-pdf"
           title={<span><FilePdfOutlined /> PDF 原文</span>}
@@ -240,7 +252,7 @@ export default function ReadingPaperPage() {
           )}
         </Card>
 
-        <div className="gm-reader-side">
+        <div id="paper-annotation-sidebar" className="gm-reader-side">
           <Card title={<span><HighlightOutlined /> 添加批注</span>} size="small">
             <Form layout="vertical">
               <Form.Item label="页码">

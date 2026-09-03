@@ -112,6 +112,12 @@ class KnowledgeGraphNodeRead(BaseModel):
     relation_count: int = 0
     evidence_count: int = 0
     paper_count: int = 0
+    mention_count: int = 0
+    knowledge_item_count: int = 0
+    confirmed_item_count: int = 0
+    aliases: list[str] = Field(default_factory=list)
+    supporting_paper_ids: list[str] = Field(default_factory=list)
+    supporting_paper_ids_truncated: bool = False
     review_status: str | None = None
 
 
@@ -128,6 +134,11 @@ class KnowledgeGraphEdgeRead(BaseModel):
     source_label: str | None = None
     target_label: str | None = None
     relation_group: str | None = None
+    occurrence_count: int = 0
+    paper_count: int = 0
+    evidence_count: int = 0
+    supporting_paper_ids: list[str] = Field(default_factory=list)
+    supporting_item_ids: list[str] = Field(default_factory=list)
 
 
 class KnowledgeGraphResponse(BaseModel):
@@ -148,6 +159,7 @@ class KnowledgeGraphResponse(BaseModel):
     node_counts: dict[str, int] = Field(default_factory=dict)
     relation_counts: dict[str, int] = Field(default_factory=dict)
     workspace_counts: dict[str, int] = Field(default_factory=dict)
+    truncation_reason: str | None = None
     seed_node_id: str | None = None
     depth: int = 0
 
@@ -159,6 +171,10 @@ class KnowledgeGraphSearchResult(BaseModel):
     type: str
     paper_title: str | None = None
     confidence: float = 0.0
+    paper_count: int = 0
+    mention_count: int = 0
+    knowledge_item_count: int = 0
+    evidence_count: int = 0
 
 
 class KnowledgeGraphSearchResponse(BaseModel):

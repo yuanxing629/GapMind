@@ -136,7 +136,7 @@ def _readiness_checks() -> dict[str, dict[str, str]]:
         "milvus": _check_milvus(),
         "storage": _check_storage(),
         "celery_worker": _check_worker(),
-        "llm": _check_configured(llm.ping, missing="llm_api_key_missing"),
+        "llm": _check_configured(llm.ping, missing="llm_config_missing"),
         "embedding": _check_configured(embedding.ping, missing="embedding_api_key_missing"),
         "reranker": _check_configured(reranker.ping, missing="reranker_api_key_missing"),
         "semantic_scholar": _check_configured(

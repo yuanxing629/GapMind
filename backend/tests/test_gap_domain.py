@@ -896,7 +896,7 @@ def test_spawn_gap_extraction_skips_valid_remote_or_old_prompt_annotation(
     db_session.flush()
 
     row = _annotation(db_session, workspace, artifact, paper, _output())
-    row.model_name = "deepseek-remote-model"
+    row.model_name = "remote-model"
     row.model_provider = "remote"
     row.prompt_version = "gap-schema3-v1"
     db_session.commit()

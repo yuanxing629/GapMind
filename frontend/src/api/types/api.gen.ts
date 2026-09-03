@@ -3397,6 +3397,25 @@ export interface components {
             target_label?: string | null;
             /** Relation Group */
             relation_group?: string | null;
+            /**
+             * Occurrence Count
+             * @default 0
+             */
+            occurrence_count: number;
+            /**
+             * Paper Count
+             * @default 0
+             */
+            paper_count: number;
+            /**
+             * Evidence Count
+             * @default 0
+             */
+            evidence_count: number;
+            /** Supporting Paper Ids */
+            supporting_paper_ids?: string[];
+            /** Supporting Item Ids */
+            supporting_item_ids?: string[];
         };
         /**
          * KnowledgeGraphNodeRead
@@ -3458,6 +3477,30 @@ export interface components {
              * @default 0
              */
             paper_count: number;
+            /**
+             * Mention Count
+             * @default 0
+             */
+            mention_count: number;
+            /**
+             * Knowledge Item Count
+             * @default 0
+             */
+            knowledge_item_count: number;
+            /**
+             * Confirmed Item Count
+             * @default 0
+             */
+            confirmed_item_count: number;
+            /** Aliases */
+            aliases?: string[];
+            /** Supporting Paper Ids */
+            supporting_paper_ids?: string[];
+            /**
+             * Supporting Paper Ids Truncated
+             * @default false
+             */
+            supporting_paper_ids_truncated: boolean;
             /** Review Status */
             review_status?: string | null;
         };
@@ -3529,6 +3572,8 @@ export interface components {
             workspace_counts?: {
                 [key: string]: number;
             };
+            /** Truncation Reason */
+            truncation_reason?: string | null;
             /** Seed Node Id */
             seed_node_id?: string | null;
             /**
@@ -3559,6 +3604,26 @@ export interface components {
              * @default 0
              */
             confidence: number;
+            /**
+             * Paper Count
+             * @default 0
+             */
+            paper_count: number;
+            /**
+             * Mention Count
+             * @default 0
+             */
+            mention_count: number;
+            /**
+             * Knowledge Item Count
+             * @default 0
+             */
+            knowledge_item_count: number;
+            /**
+             * Evidence Count
+             * @default 0
+             */
+            evidence_count: number;
         };
         /** KnowledgeItemListResponse */
         KnowledgeItemListResponse: {
@@ -7027,6 +7092,8 @@ export interface operations {
                 projection_mode?: string;
                 limit?: number;
                 offset?: number;
+                edge_limit?: number;
+                include_related_papers?: boolean;
             };
             header?: {
                 "X-User-ID"?: string | null;
@@ -7103,6 +7170,7 @@ export interface operations {
                 depth?: number;
                 limit?: number;
                 relation_type?: string | null;
+                projection_mode?: string;
             };
             header?: {
                 "X-User-ID"?: string | null;

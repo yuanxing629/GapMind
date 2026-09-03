@@ -21,11 +21,14 @@ import {
   InboxOutlined,
   PaperClipOutlined,
   PlusOutlined,
+  ReadOutlined,
 } from "@ant-design/icons";
 import type { UploadRequestOption } from "rc-upload/lib/interface";
+import { useNavigate } from "react-router-dom";
 import paperApi from "../api/paper";
 import type { Paper, PaperUpdate } from "../api/types/domain";
 import StatusBadge from "./common/StatusBadge";
+import { readingPaperPath } from "./layout/navigation";
 
 const { Text } = Typography;
 const { TextArea } = Input;
@@ -68,6 +71,7 @@ function toEditValues(p: Paper): EditFormValues {
 
 export default function PapersSection({ workspaceId, papers, loading, onChanged }: Props) {
   const { message, modal } = App.useApp();
+  const navigate = useNavigate();
   const [manualOpen, setManualOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editingPaper, setEditingPaper] = useState<Paper | null>(null);
@@ -320,9 +324,17 @@ export default function PapersSection({ workspaceId, papers, loading, onChanged 
             {
               title: "操作",
               key: "actions",
-              width: 160,
+              width: 220,
               render: (_: unknown, p) => (
                 <Space size={4}>
+                  <Button
+                    size="small"
+                    type="primary"
+                    icon={<ReadOutlined />}
+                    onClick={() => navigate(readingPaperPath(p.id))}
+                  >
+                    阅读
+                  </Button>
                   <Button
                     size="small"
                     icon={<EditOutlined />}

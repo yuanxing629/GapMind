@@ -188,8 +188,8 @@ def test_create_run_stamps_audit_fields(db_session):
     db_session.refresh(run)
     assert run.prompt_version == DISCOVER_PROMPT_VERSION
     assert run.corpus_version == "workspace-v1-0p-0k"
-    assert run.model_provider == "deepseek"
-    assert run.model_name == "deepseek-chat"
+    assert run.model_provider == "remote"
+    assert run.model_name == "remote"
     event = db_session.scalar(
         select(TimelineEvent).where(
             TimelineEvent.workspace_id == ws.id,

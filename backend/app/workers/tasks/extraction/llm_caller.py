@@ -1,6 +1,6 @@
 """LLM-call helpers used by the extraction worker.
 
-The Deepseek wrapper in ``app.gateway.llm`` already handles transport;
+The provider-neutral wrapper in ``app.gateway.llm`` already handles transport;
 this module adds the things specific to *structured extraction*:
 
   * retry on JSON-parse failure (the model occasionally drops a brace or

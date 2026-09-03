@@ -1628,7 +1628,7 @@ class AgentService:
     ) -> tuple[dict[str, Any], dict[str, int]]:
         gateway = self.gateway or get_llm_gateway()
         if not getattr(gateway, "api_key", None):
-            raise AgentInputError("DeepSeek API key is not configured")
+            raise AgentInputError("REMOTE_API_KEY is not configured")
         response = gateway.chat_completion(
             [
                 {

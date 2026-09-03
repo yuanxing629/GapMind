@@ -16,7 +16,7 @@ AI 输出默认是候选或草稿，不会自动成为科学事实；资料不�
 | 数据库 | PostgreSQL 15 |
 | 向量数据库 | Milvus 2.x（单机模式） |
 | 任务队列 | Redis 7 + Celery |
-| 大语言模型 | DeepSeek（`deepseek-v4-flash`） |
+| 大语言模型 | OpenAI Chat Completions-compatible remote/vision/backup providers |
 | 向量模型 | SiliconFlow（`BAAI/bge-m3`） |
 | 前端 | React 18 + TypeScript + Vite |
 | UI 组件库 | Ant Design 5.x |
@@ -106,7 +106,9 @@ GapMind 可以通过 Ollama 使用微调后的 Qwen3 Schema 3.0 抽取器，构�
 
 复制 `.env.example` 为 `.env`，然后填写实际使用的凭据：
 
-- `DEEPSEEK_API_KEY`：DeepSeek API 密钥
+- `REMOTE_API_KEY`、`REMOTE_BASE_URL`、`REMOTE_MODEL`：主文本模型的 OpenAI Chat Completions 配置
+- `VISION_API_KEY`、`VISION_BASE_URL`、`VISION_MODEL`：带图像请求的模型配置；前两项为空时复用主文本模型凭据
+- `BACKUP_API_KEY`、`BACKUP_BASE_URL`、`BACKUP_MODEL`：主文本请求失败时的备用配置，三项需同时填写
 - `SILICONFLOW_API_KEY`：用于 BGE-m3 向量模型的 SiliconFlow API 密钥
 - `SEMANTIC_SCHOLAR_API_KEY`：可选，用于提高 Semantic Scholar 的访问速率限制
 - `AUTH_SESSION_SECRET`：staging/production 环境必填
@@ -114,3 +116,5 @@ GapMind 可以通过 Ollama 使用微调后的 Qwen3 Schema 3.0 抽取器，构�
 机器本地的密钥或覆盖配置可以放在被 Git 忽略的 `.env.local` 中。后端会在 `.env` 之后加载 `.env.local`，Vite 也会自动加载该文件。不要把密钥写入 `config/gapmind.yaml`，也不要提交任何环境文件。
 
 部署时仍可以通过 `APP_ENV`、`DATABASE_URL`、`REDIS_URL`、`CORS_ORIGINS` 和 `VITE_API_BASE_URL` 等环境变量覆盖配置。Docker Compose 使用命令中显式传入的 `--env-file`；未提供的基础设施配置会使用 Compose 内置的本地默认值。
+
+旧的 `DEEPSEEK_*` 变量不再读取；迁移部署时请将其替换为上述通用变量。

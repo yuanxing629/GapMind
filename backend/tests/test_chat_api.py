@@ -1,4 +1,4 @@
-"""Chat API tests use a fake gateway and never call DeepSeek."""
+"""Chat API tests use a fake gateway and never call an external LLM."""
 
 from __future__ import annotations
 
@@ -9,13 +9,14 @@ from uuid import uuid4
 
 import pytest
 
+from app.domains.chat.service import ChatService
 from app.domains.retrieval.schemas import RetrievalResponse, RetrievalResultItem
 
 
 @dataclass
 class FakeResponse:
     content: str
-    model: str = "fake-deepseek"
+    model: str = "fake-remote"
     prompt_tokens: int = 10
     completion_tokens: int = 5
     total_tokens: int = 15
@@ -47,6 +48,13 @@ class FakeGateway:
         self.stream_call_kwargs.append(kwargs)
         for delta in getattr(self, "stream_deltas", ["流式"]):
             yield delta
+
+
+def test_image_chat_accepts_a_vision_only_api_key() -> None:
+    ChatService._ensure_llm_credentials(
+        SimpleNamespace(api_key="", vision_api_key="vision-key"),
+        ["data:image/png;base64,abc"],
+    )
 
 
 @pytest.fixture
@@ -100,7 +108,7 @@ def test_first_send_creates_conversation_and_two_messages(client, fake_gateway):
     assert body["conversation"]["title"] == "什么是时间图神经网络？"
     assert body["user_message"]["role"] == "user"
     assert body["assistant_message"]["status"] == "completed"
-    assert body["assistant_message"]["model"] == "fake-deepseek"
+    assert body["assistant_message"]["model"] == "fake-remote"
     assert body["assistant_message"]["total_tokens"] == 15
     assert body["assistant_message"]["prompt_chars"] == len("什么是时间图神经网络？")
     assert body["assistant_message"]["response_chars"] == len("这是 AI 的回答")
@@ -315,7 +323,7 @@ def test_missing_api_key_is_mapped_to_503_and_persisted(client, fake_gateway):
     response = client.post("/api/v1/chat/conversations/send", json={"content": "测试未配置密钥"})
     assert response.status_code == 503
     detail = response.json()["detail"]
-    assert detail["error"] == "deepseek_unavailable"
+    assert detail["error"] == "llm_unavailable"
     messages = client.get(f"/api/v1/chat/conversations/{detail['conversation_id']}").json()[
         "messages"
     ]
