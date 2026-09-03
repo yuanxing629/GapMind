@@ -1,32 +1,116 @@
 """Application configuration.
 
-Loads from environment variables with sensible defaults for local dev.
-The env file lives at the repo root (single source of truth shared with
-docker compose and vite); resolve it from this file's location so the
-CWD at launch time (backend/, repo root, IDE runner) does not matter.
+Stable defaults live in ``config/gapmind.yaml``. Environment variables remain
+the deployment override mechanism and take precedence over the YAML file.
+The env files live at the repo root; resolving them from this file's location
+keeps backend startup independent of the launch CWD.
 """
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import Field, computed_field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import (
+    BaseSettings,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+)
+import yaml
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
+_DEFAULT_CONFIG_FILE = _REPO_ROOT / "config" / "gapmind.yaml"
+
+
+def _config_file_path() -> Path:
+    """Resolve the YAML defaults file, optionally overridden by the process."""
+    configured = os.getenv("GAPMIND_CONFIG_FILE", "").strip()
+    if not configured:
+        return _DEFAULT_CONFIG_FILE
+    path = Path(configured).expanduser()
+    return path if path.is_absolute() else _REPO_ROOT / path
+
+
+def _flatten_yaml_sections(raw: Any) -> dict[str, Any]:
+    """Map YAML sections such as ``chat.rag_top_k`` to Settings field names."""
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise ValueError("GapMind YAML config must contain a mapping at the root")
+
+    flattened: dict[str, Any] = {}
+    for section, values in raw.items():
+        if isinstance(values, dict):
+            for key, value in values.items():
+                flattened[f"{section}_{key}"] = value
+        else:
+            flattened[str(section)] = values
+    return flattened
+
+
+def _load_yaml_defaults() -> dict[str, Any]:
+    """Load non-secret defaults from the repository configuration file."""
+    config_path = _config_file_path()
+    if not config_path.is_file():
+        raise RuntimeError(f"GapMind config file not found: {config_path}")
+    try:
+        with config_path.open("r", encoding="utf-8") as handle:
+            return _flatten_yaml_sections(yaml.safe_load(handle))
+    except yaml.YAMLError as exc:
+        raise RuntimeError(f"Invalid GapMind YAML config: {config_path}") from exc
+
+
+class YamlSettingsSource(PydanticBaseSettingsSource):
+    """Settings source for stable defaults stored in the YAML config."""
+
+    def __init__(self, settings_cls: type[BaseSettings]) -> None:
+        super().__init__(settings_cls)
+        self._defaults = _load_yaml_defaults()
+
+    def get_field_value(
+        self,
+        field: Any,
+        field_name: str,
+    ) -> tuple[Any, str, bool]:
+        return self._defaults.get(field_name), field_name, False
+
+    def __call__(self) -> dict[str, Any]:
+        return self._defaults
 
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
     model_config = SettingsConfigDict(
-        env_file=str(_REPO_ROOT / ".env"),
+        env_file=(
+            str(_REPO_ROOT / ".env"),
+            str(_REPO_ROOT / ".env.local"),
+        ),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
     )
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """Keep init/env/.env overrides ahead of YAML defaults."""
+        return (
+            init_settings,
+            env_settings,
+            dotenv_settings,
+            YamlSettingsSource(settings_cls),
+            file_secret_settings,
+        )
 
     # ---- App ----
     app_env: Literal["development", "staging", "production"] = "development"
@@ -35,6 +119,16 @@ class Settings(BaseSettings):
     app_log_level: str = "INFO"
     app_storage_dir: str = "./storage"
     workspace_storage_quota_bytes: int = 500 * 1024 * 1024
+
+    # ---- PDF parsing ----
+    # Keep PyMuPDF as the safe default; local MinerU is opt-in while its
+    # parsing quality is being validated on the project's paper set.
+    parser_provider: Literal["pymupdf", "mineru_local"] = "pymupdf"
+    parser_fallback_enabled: bool = True
+    mineru_api_url: str = "http://127.0.0.1:8002"
+    mineru_timeout_seconds: float = 1800.0
+    # The original PDF is the reading source; derived paper images are opt-in.
+    parser_return_images: bool = False
 
     # ---- Minimal delivery authentication ----
     # Format: comma-separated ``token:user_id`` pairs.  Development keeps the
@@ -114,6 +208,15 @@ class Settings(BaseSettings):
     gap_extractor_remote_api_key: str = ""
     gap_extractor_remote_model: str = ""
     gap_extractor_remote_max_tokens: int = 4096
+    # Gap extraction consumes the paper-local projection of knowledge
+    # extraction by default. Legacy compact Markdown remains a rollout-safe
+    # fallback until existing papers are backfilled.
+    gap_extraction_context_mode: Literal[
+        "knowledge_context_v1", "core_markdown_legacy_v1"
+    ] = "knowledge_context_v1"
+    gap_extraction_allow_legacy_markdown_fallback: bool = True
+    gap_extraction_context_max_chars: int = 24000
+    gap_extraction_require_knowledge: bool = False
 
     # ---- Chat ----
     chat_history_message_limit: int = 20

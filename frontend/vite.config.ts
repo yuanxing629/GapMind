@@ -4,7 +4,7 @@ import path from "node:path";
 
 export default defineConfig({
   plugins: [react()],
-  // VITE_* vars live in the repo-root .env (single env file for the project)
+  // VITE_* vars live in the repo-root .env or ignored .env.local
   envDir: "../",
   resolve: {
     alias: {
