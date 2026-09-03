@@ -1,8 +1,7 @@
 """parse_pdf Celery task.
 
 Phase 2 core: takes a paper_id, reads its PDF artifact, parses it into
-text + chunks, writes derived artifacts, exports chunks JSONL (Contract #1),
-and updates the paper row's parsing state.
+text + chunks, writes derived artifacts, and updates the paper row's parsing state.
 
 State flow:
     Paper row:    not_applicable / pending -> parsing -> parsed / failed
@@ -16,17 +15,15 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from pathlib import Path
 
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
 from app.core.logging import configure_logging, get_logger
 from app.db.models import *  # noqa: F401,F403  - registers all ORM models on Base.metadata
 from app.db.session import SessionLocal
 from app.domains.artifact.chunker import chunk_parsed_pdf
+from app.domains.artifact.document_parser import parse_document
 from app.domains.artifact.models import Artifact
-from app.domains.artifact.pdf_parser import parse_pdf
 from app.domains.artifact.service import ArtifactService
 from app.domains.paper.models import Paper
 from app.domains.task.schemas import TaskCreate
@@ -136,7 +133,8 @@ def _do_parse(
     task_service.update_progress(task_id, 0.2)
 
     # 2. Parse PDF into text + sections.
-    parsed = parse_pdf(pdf_bytes)
+    parse_result = parse_document(pdf_bytes)
+    parsed = parse_result.parsed
     if not parsed.full_text.strip():
         raise RuntimeError(
             f"PDF produced no text (page_count={parsed.page_count}, "
@@ -148,6 +146,7 @@ def _do_parse(
     # defined against this immutable text artifact.
     parsed_text_artifact = artifact_service.save_upload(
         workspace_id=paper.workspace_id,
+        paper_id=paper.id,
         filename=f"{paper.id}_parsed_text.txt",
         content=parsed.full_text.encode("utf-8"),
         mime_type="text/plain",
@@ -169,6 +168,7 @@ def _do_parse(
     parsed_md = parsed.to_markdown()
     parsed_md_artifact = artifact_service.save_upload(
         workspace_id=paper.workspace_id,
+        paper_id=paper.id,
         filename=f"{paper.id}_{paper.title[:30]}_parsed.md".replace(" ", "_"),
         content=parsed_md.encode("utf-8"),
         mime_type="text/markdown",
@@ -180,17 +180,29 @@ def _do_parse(
     chunks_jsonl = "\n".join(json.dumps(_chunk_to_dict(c)) for c in chunks)
     chunk_index_artifact = artifact_service.save_upload(
         workspace_id=paper.workspace_id,
+        paper_id=paper.id,
         filename=f"{paper.id}_chunks.jsonl",
         content=chunks_jsonl.encode("utf-8"),
         mime_type="application/jsonl",
         kind="chunk_index",
     )
+
+    image_artifacts = []
+    for image in parse_result.images:
+        image_filename = image.relative_path.rsplit("/", 1)[-1] or "image"
+        image_artifacts.append(
+            artifact_service.save_upload(
+                workspace_id=paper.workspace_id,
+                paper_id=paper.id,
+                filename=image_filename,
+                content=image.content,
+                mime_type=image.mime_type,
+                kind="paper_image",
+            )
+        )
     task_service.update_progress(task_id, 0.9)
 
-    # 7. Export chunks to Contract #1 path: data/chunks/{ws}/{paper}.jsonl
-    _export_chunks_jsonl(paper.workspace_id, paper.id, chunks)
-
-    # 8. Update paper row with parsing state.
+    # 7. Update paper row with parsing state.
     paper = db.get(Paper, paper.id)  # refresh to avoid stale state
     paper.parse_status = "parsed"
     paper.parsed_at = datetime.now(timezone.utc)
@@ -209,7 +221,7 @@ def _do_parse(
     db.commit()
     db.refresh(paper)
 
-    # 9. Transition task to succeeded.
+    # 8. Transition task to succeeded.
     task_service.transition(
         task_id,
         "succeeded",
@@ -222,10 +234,14 @@ def _do_parse(
             "page_count": parsed.page_count,
             "parsed_text_chars": len(parsed.full_text),
             "quality_flags": paper.quality_flags,
+            "parser_provider": parse_result.provider,
+            "parser_backend": parse_result.backend,
+            "parser_version": parse_result.version,
+            "image_count": len(image_artifacts),
         },
     )
 
-    # 10. Timeline event.
+    # 9. Timeline event.
     TimelineService(db).record(
         workspace_id=paper.workspace_id,
         event_type="paper.parsed",
@@ -237,8 +253,12 @@ def _do_parse(
             "parsed_text_chars": len(parsed.full_text),
             "quality_flags": paper.quality_flags,
             "sections_detected": len(parsed.sections),
+            "parser_provider": parse_result.provider,
+            "parser_backend": parse_result.backend,
+            "parser_version": parse_result.version,
             "parsed_text_artifact_id": parsed_text_artifact.id,
             "chunk_index_artifact_id": chunk_index_artifact.id,
+            "image_count": len(image_artifacts),
         },
     )
 
@@ -248,6 +268,7 @@ def _do_parse(
         task_id=task_id,
         chunk_count=len(chunks),
         page_count=parsed.page_count,
+        parser_provider=parse_result.provider,
     )
 
     # Spawn knowledge extraction task (Phase 3). Best-effort: if the
@@ -291,6 +312,10 @@ def _do_parse(
         "parsed_text_artifact_id": parsed_text_artifact.id,
         "parsed_md_artifact_id": parsed_md_artifact.id,
         "chunk_index_artifact_id": chunk_index_artifact.id,
+        "parser_provider": parse_result.provider,
+        "parser_backend": parse_result.backend,
+        "parser_version": parse_result.version,
+        "image_count": len(image_artifacts),
     }
 
 
@@ -315,28 +340,6 @@ def _chunk_to_dict(c) -> dict:
         "chunk_version": c.chunk_version,
         "created_at": c.created_at,
     }
-
-
-def _export_chunks_jsonl(workspace_id: str, paper_id: str, chunks: list) -> None:
-    """Write chunks to data/chunks/{workspace_id}/{paper_id}.jsonl (Contract #1).
-
-    This is the file队友 zwx (RAG) consumes to build the Milvus index.
-    The path is relative to the backend/ directory (where the worker runs).
-    """
-    export_root = Path(settings.app_storage_dir).resolve().parent / "data" / "chunks"
-    export_dir = export_root / workspace_id
-    export_dir.mkdir(parents=True, exist_ok=True)
-    export_path = export_dir / f"{paper_id}.jsonl"
-
-    lines = [json.dumps(_chunk_to_dict(c)) for c in chunks]
-    export_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    logger.info(
-        "chunks.exported",
-        paper_id=paper_id,
-        workspace_id=workspace_id,
-        path=str(export_path),
-        chunk_count=len(chunks),
-    )
 
 
 def spawn_parse_pdf_task(db: Session, paper_id: str, workspace_id: str) -> str:

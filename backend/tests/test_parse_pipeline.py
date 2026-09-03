@@ -5,7 +5,7 @@ These tests verify the full flow:
               -> parse_pdf task runs (synchronously via test patch)
               -> Paper.parse_status=parsed, chunk_count > 0
               -> parsed_text + chunk_index artifacts created
-              -> chunks JSONL exported to data/chunks/{ws}/{paper}.jsonl
+              -> chunk_index JSONL stored as a canonical storage Artifact
               -> timeline event "paper.parsed" recorded
               -> task row ends in "succeeded" status
 """
@@ -16,8 +16,11 @@ import json
 from pathlib import Path
 
 import fitz
-import pytest
 from fastapi.testclient import TestClient
+
+from app.domains.artifact.document_parser import DocumentParseResult
+from app.domains.artifact.mineru_parser import MinerUImage
+from app.domains.artifact.pdf_parser import ParsedPdf
 
 
 def _create_workspace(client: TestClient, name: str = "WS") -> dict:
@@ -44,11 +47,6 @@ def test_upload_triggers_parse_pipeline(client: TestClient, tmp_path: Path, monk
         "app.domains.artifact.service.settings.app_storage_dir",
         str(tmp_path / "storage"),
     )
-    monkeypatch.setattr(
-        "app.workers.tasks.parse_pdf.settings.app_storage_dir",
-        str(tmp_path / "storage"),
-    )
-
     ws = _create_workspace(client, "ParseWS")
     pdf = _make_real_pdf(
         [
@@ -88,11 +86,6 @@ def test_parse_creates_parsed_text_and_chunk_index_artifacts(
         "app.domains.artifact.service.settings.app_storage_dir",
         str(tmp_path / "storage"),
     )
-    monkeypatch.setattr(
-        "app.workers.tasks.parse_pdf.settings.app_storage_dir",
-        str(tmp_path / "storage"),
-    )
-
     ws = _create_workspace(client)
     pdf = _make_real_pdf(["This is page one. " * 80, "This is page two. " * 80])
     resp = client.post(
@@ -102,31 +95,90 @@ def test_parse_creates_parsed_text_and_chunk_index_artifacts(
     assert resp.status_code == 201
     paper = resp.json()
 
-    # List artifacts - should have 3: pdf, parsed_text, chunk_index
+    # List artifacts - PDF and all derived artifacts belong to this paper dir.
     arts = client.get(f"/api/v1/workspaces/{ws['id']}/artifacts").json()
     kinds = {a["kind"] for a in arts}
     assert "pdf" in kinds
     assert "parsed_text" in kinds
     assert "chunk_index" in kinds
+    expected_prefix = (
+        f"workspaces/{ws['id'][:2]}/{ws['id']}/papers/{paper['id']}/artifacts/"
+    )
+    assert all(a["file_path"].startswith(expected_prefix) for a in arts)
 
 
-def test_parse_exports_chunks_jsonl(
+def test_parse_persists_mineru_image_resources(
     client: TestClient, tmp_path: Path, monkeypatch
 ) -> None:
-    """The chunks JSONL file (Contract #1) is exported to data/chunks/{ws}/{paper}.jsonl."""
+    monkeypatch.setattr(
+        "app.domains.artifact.service.settings.app_storage_dir",
+        str(tmp_path / "storage"),
+    )
+
+    def fake_parse_document(content: bytes) -> DocumentParseResult:
+        assert content.startswith(b"%PDF-")
+        parsed = ParsedPdf(
+            full_text="Paper text",
+            page_count=1,
+            page_char_ranges=[(0, len("Paper text"))],
+        )
+        return DocumentParseResult(
+            parsed=parsed,
+            provider="mineru_local",
+            backend="pipeline",
+            version="3.4.5",
+            images=(
+                MinerUImage(
+                    relative_path="images/figure-1.jpg",
+                    content=b"jpeg-bytes",
+                    mime_type="image/jpeg",
+                ),
+            ),
+        )
+
+    monkeypatch.setattr(
+        "app.workers.tasks.parse_pdf.parse_document",
+        fake_parse_document,
+    )
+    ws = _create_workspace(client)
+    pdf = _make_real_pdf(["Paper text"])
+    resp = client.post(
+        f"/api/v1/workspaces/{ws['id']}/papers/upload",
+        files={"file": ("p.pdf", pdf, "application/pdf")},
+    )
+    assert resp.status_code == 201, resp.text
+    paper = resp.json()
+
+    image_response = client.get(
+        f"/api/v1/workspaces/{ws['id']}/artifacts",
+        params={"kind": "paper_image", "paper_id": paper["id"]},
+    )
+    assert image_response.status_code == 200, image_response.text
+    images = image_response.json()
+    assert len(images) == 1
+    image = images[0]
+    assert image["original_filename"] == "figure-1.jpg"
+    assert image["mime_type"] == "image/jpeg"
+    assert image["file_path"].startswith(
+        f"workspaces/{ws['id'][:2]}/{ws['id']}/papers/{paper['id']}/artifacts/"
+    )
+
+    download = client.get(
+        f"/api/v1/workspaces/{ws['id']}/artifacts/{image['id']}/download"
+    )
+    assert download.status_code == 200
+    assert download.content == b"jpeg-bytes"
+
+
+def test_parse_persists_chunk_index_artifact(
+    client: TestClient, tmp_path: Path, monkeypatch
+) -> None:
+    """The canonical chunk JSONL is readable from the storage Artifact."""
     storage_dir = tmp_path / "storage"
-    data_dir = tmp_path / "data"
     monkeypatch.setattr(
         "app.domains.artifact.service.settings.app_storage_dir",
         str(storage_dir),
     )
-    monkeypatch.setattr(
-        "app.workers.tasks.parse_pdf.settings.app_storage_dir",
-        str(storage_dir),
-    )
-    # The export path is computed as storage_dir.parent / "data" / "chunks"
-    # so it'll be tmp_path / "data" / "chunks".
-
     ws = _create_workspace(client)
     pdf = _make_real_pdf(["Page one content. " * 100, "Page two content. " * 100])
     resp = client.post(
@@ -136,13 +188,20 @@ def test_parse_exports_chunks_jsonl(
     assert resp.status_code == 201
     paper = resp.json()
 
-    # Find the exported JSONL file
-    chunks_dir = data_dir / "chunks" / ws["id"]
-    jsonl_path = chunks_dir / f"{paper['id']}.jsonl"
-    assert jsonl_path.exists(), f"chunks JSONL not exported at {jsonl_path}"
+    chunk_artifacts = client.get(
+        f"/api/v1/workspaces/{ws['id']}/artifacts",
+        params={"kind": "chunk_index"},
+    ).json()
+    assert len(chunk_artifacts) == 1
+    chunk_artifact = chunk_artifacts[0]
+    assert chunk_artifact["id"] == paper["chunk_index_artifact_id"]
 
-    # Validate JSONL content
-    lines = jsonl_path.read_text(encoding="utf-8").strip().split("\n")
+    # Validate the JSONL content served from the canonical Artifact.
+    download = client.get(
+        f"/api/v1/workspaces/{ws['id']}/artifacts/{chunk_artifact['id']}/download"
+    )
+    assert download.status_code == 200, download.text
+    lines = download.text.strip().split("\n")
     assert len(lines) == paper["chunk_count"]
     for line in lines:
         chunk = json.loads(line)
@@ -175,11 +234,6 @@ def test_parse_records_timeline_event(
         "app.domains.artifact.service.settings.app_storage_dir",
         str(tmp_path / "storage"),
     )
-    monkeypatch.setattr(
-        "app.workers.tasks.parse_pdf.settings.app_storage_dir",
-        str(tmp_path / "storage"),
-    )
-
     ws = _create_workspace(client)
     pdf = _make_real_pdf(["Some content here. " * 50])
     client.post(
@@ -200,11 +254,6 @@ def test_parse_task_ends_in_succeeded(
         "app.domains.artifact.service.settings.app_storage_dir",
         str(tmp_path / "storage"),
     )
-    monkeypatch.setattr(
-        "app.workers.tasks.parse_pdf.settings.app_storage_dir",
-        str(tmp_path / "storage"),
-    )
-
     ws = _create_workspace(client)
     pdf = _make_real_pdf(["Some content. " * 50])
     client.post(
@@ -252,11 +301,6 @@ def test_attach_pdf_triggers_parse(
         "app.domains.artifact.service.settings.app_storage_dir",
         str(tmp_path / "storage"),
     )
-    monkeypatch.setattr(
-        "app.workers.tasks.parse_pdf.settings.app_storage_dir",
-        str(tmp_path / "storage"),
-    )
-
     ws = _create_workspace(client)
     # Create metadata-only
     paper = client.post(
@@ -285,11 +329,6 @@ def test_parse_failure_marks_paper_failed(
         "app.domains.artifact.service.settings.app_storage_dir",
         str(tmp_path / "storage"),
     )
-    monkeypatch.setattr(
-        "app.workers.tasks.parse_pdf.settings.app_storage_dir",
-        str(tmp_path / "storage"),
-    )
-
     ws = _create_workspace(client)
     # Build a PDF with no text - just a blank page with an image-like shape
     doc = fitz.open()

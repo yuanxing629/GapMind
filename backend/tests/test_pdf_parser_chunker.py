@@ -125,6 +125,8 @@ def test_parse_pdf_multi_page_char_ranges() -> None:
     # Ranges should be monotonically increasing.
     starts = [r[0] for r in parsed.page_char_ranges]
     assert starts == sorted(starts)
+    assert parsed.full_text.count("\f") == 2
+    assert not parsed.full_text.endswith("\f")
 
 
 # --------------------------------------------------------------- chunker

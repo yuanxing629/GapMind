@@ -45,12 +45,29 @@ class ArtifactService:
 
     # ------------------------------------------------------------ storage
     def _workspace_dir(self, workspace_id: str) -> Path:
-        """Return the storage dir for a workspace, creating it if needed."""
+        """Return the legacy workspace-level storage dir, creating it if needed."""
         self._validate_uuid(workspace_id)
         # Use first 2 chars of UUID as a sharding subdirectory to avoid
         # thousands of files in a single directory later.
         shard = workspace_id[:2]
         path = self.storage_root / "workspaces" / shard / workspace_id / "artifacts"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def _paper_dir(self, workspace_id: str, paper_id: str) -> Path:
+        """Return the paper-isolated artifact dir, creating it if needed."""
+        self._validate_uuid(workspace_id)
+        self._validate_uuid(paper_id)
+        shard = workspace_id[:2]
+        path = (
+            self.storage_root
+            / "workspaces"
+            / shard
+            / workspace_id
+            / "papers"
+            / paper_id
+            / "artifacts"
+        )
         path.mkdir(parents=True, exist_ok=True)
         return path
 
@@ -62,12 +79,15 @@ class ArtifactService:
         content: bytes,
         mime_type: str | None = None,
         kind: str = "pdf",
+        paper_id: str | None = None,
     ) -> Artifact:
         """Persist uploaded bytes to disk and create an Artifact row.
 
         The on-disk filename is a random token (not the user-supplied name)
         to avoid path traversal and filesystem encoding issues. The original
-        filename is preserved in `original_filename`.
+        filename is preserved in `original_filename`. Paper-owned artifacts
+        are isolated under the paper directory when `paper_id` is provided;
+        callers without a paper keep the legacy workspace-level path.
         """
         if not content:
             raise ValueError("Uploaded file is empty")
@@ -87,7 +107,11 @@ class ArtifactService:
                 settings.workspace_storage_quota_bytes,
             )
 
-        ws_dir = self._workspace_dir(workspace_id)
+        ws_dir = (
+            self._paper_dir(workspace_id, paper_id)
+            if paper_id is not None
+            else self._workspace_dir(workspace_id)
+        )
         token = secrets.token_hex(8)
         safe_ext = Path(filename).suffix.lower()[:16] if filename else ""
         stored_name = f"{token}{safe_ext}"
@@ -127,13 +151,27 @@ class ArtifactService:
             raise ArtifactNotFoundError(artifact_id)
         return a
 
-    def list_by_workspace(self, workspace_id: str, *, kind: str | None = None) -> list[Artifact]:
+    def list_by_workspace(
+        self,
+        workspace_id: str,
+        *,
+        kind: str | None = None,
+        paper_id: str | None = None,
+    ) -> list[Artifact]:
+        self._validate_uuid(workspace_id)
         q = select(Artifact).where(
             Artifact.workspace_id == workspace_id,
             Artifact.is_deleted.is_(False),
         )
         if kind is not None:
             q = q.where(Artifact.kind == kind)
+        if paper_id is not None:
+            self._validate_uuid(paper_id)
+            shard = workspace_id[:2]
+            prefix = (
+                f"workspaces/{shard}/{workspace_id}/papers/{paper_id}/artifacts/"
+            )
+            q = q.where(Artifact.file_path.startswith(prefix))
         return list(self.db.execute(q).scalars().all())
 
     # --------------------------------------------------------------- delete

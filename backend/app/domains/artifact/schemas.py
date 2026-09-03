@@ -32,7 +32,7 @@ class ArtifactCreateInternal(BaseModel):
     """Internal schema used by the service layer (not exposed via HTTP)."""
 
     workspace_id: str
-    kind: str = Field(..., pattern=r"^(pdf|parsed_text|chunk_index|report)$")
+    kind: str = Field(..., pattern=r"^(pdf|parsed_text|parsed_markdown|chunk_index|paper_image|report)$")
     file_path: str
     original_filename: str | None = None
     mime_type: str | None = None

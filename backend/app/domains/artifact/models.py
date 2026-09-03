@@ -19,7 +19,9 @@ class Artifact(Base, UUIDPKMixin, TimestampMixin):
     `kind` distinguishes artifact roles:
       - "pdf"          : original PDF upload
       - "parsed_text"  : extracted plain text (Phase 2)
+      - "parsed_markdown": layout-aware parsed Markdown (Phase 2)
       - "chunk_index"  : chunked text + offsets (Phase 2)
+      - "paper_image" : image resource extracted from a paper PDF
       - "report"       : generated report (Phase 5+)
     """
 

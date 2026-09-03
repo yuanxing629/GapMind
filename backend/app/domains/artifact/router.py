@@ -46,7 +46,11 @@ def _not_found(exc: Exception) -> HTTPException:
 )
 def list_artifacts(
     workspace_id: str,
-    kind: str | None = Query(None, pattern=r"^(pdf|parsed_text|parsed_markdown|chunk_index|report)$"),
+    kind: str | None = Query(
+        None,
+        pattern=r"^(pdf|parsed_text|parsed_markdown|chunk_index|paper_image|report)$",
+    ),
+    paper_id: str | None = Query(None),
     artifact_service: ArtifactService = Depends(_get_artifact_service),
     workspace_service: WorkspaceService = Depends(_get_workspace_service),
 ) -> list[ArtifactRead]:
@@ -54,7 +58,11 @@ def list_artifacts(
         workspace_service.get(workspace_id)
     except WorkspaceNotFoundError as e:
         raise _not_found(e) from e
-    items = artifact_service.list_by_workspace(workspace_id, kind=kind)
+    items = artifact_service.list_by_workspace(
+        workspace_id,
+        kind=kind,
+        paper_id=paper_id,
+    )
     return [ArtifactRead.model_validate(a) for a in items]
 
 

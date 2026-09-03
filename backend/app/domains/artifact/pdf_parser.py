@@ -294,7 +294,10 @@ def parse_pdf(content: bytes) -> ParsedPdf:
             # "text" mode extracts reading order; "blocks" is better for
             # multi-column but slower. We use "text" and rely on cleaning
             # to fix most issues.
-            raw = page.get_text("text")
+            # Some PDF text streams contain embedded form-feed characters.
+            # They are not page boundaries here; page boundaries are added
+            # explicitly below so the resulting ranges stay one-per-page.
+            raw = page.get_text("text").replace("\f", "\n")
             cleaned = _clean_page_text(raw)
             page_texts.append(cleaned)
 
@@ -303,13 +306,13 @@ def parse_pdf(content: bytes) -> ParsedPdf:
         full_text_parts: list[str] = []
         page_char_ranges: list[tuple[int, int]] = []
         cursor = 0
-        for pt in page_texts:
+        for page_index, pt in enumerate(page_texts):
             start = cursor
             full_text_parts.append(pt)
             cursor += len(pt)
             # Add separator unless this is the last page and text is empty.
             page_char_ranges.append((start, cursor))
-            if pt:
+            if pt and page_index < doc.page_count - 1:
                 full_text_parts.append("\f")  # form feed
                 cursor += 1  # for the \f char
 

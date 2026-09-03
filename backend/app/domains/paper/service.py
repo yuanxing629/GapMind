@@ -119,12 +119,14 @@ class PaperService:
         dict (best-effort via PyMuPDF). Caller-supplied values always win.
         """
         self._ensure_workspace_exists(workspace_id)
+        paper_id = str(uuid4())
         artifact = self.artifact_service.save_upload(
             workspace_id=workspace_id,
             filename=filename,
             content=content,
             mime_type=mime_type,
             kind="pdf",
+            paper_id=paper_id,
         )
 
         # Best-effort metadata extraction. Fields the user already supplied
@@ -136,7 +138,7 @@ class PaperService:
 
         try:
             paper = Paper(
-                id=str(uuid4()),
+                id=paper_id,
                 workspace_id=workspace_id,
                 primary_artifact_id=artifact.id,
                 title=title,
@@ -235,6 +237,7 @@ class PaperService:
             content=content,
             mime_type=mime_type,
             kind="pdf",
+            paper_id=paper.id,
         )
 
         pdf_meta = extract_metadata(content)
