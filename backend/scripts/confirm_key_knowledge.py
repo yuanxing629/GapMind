@@ -1,14 +1,13 @@
-"""Confirm the knowledge items referenced by research-opportunity evidence.
+"""确认 research-opportunity 证据引用的知识项。
 
-The demo corpus has 881 extracted knowledge items, none human-confirmed. The
-"key" knowledge is the small set that backs existing research opportunities
-(items reached via EvidenceSpan -> OpportunityEvidence -> version -> opportunity).
-Confirming those (HITL demo prep, authorized by the user) moves the readiness
-metric from "0 条已确认" to "N 条已确认" while keeping the rest honestly pending.
+演示语料有 881 个抽取知识项，尚无人工确认项。“关键”知识是支撑现有研究机会的小集合
+（通过 EvidenceSpan -> OpportunityEvidence -> version -> opportunity 到达的项）。
+确认这些项（HITL 演示准备，已获用户授权）会将就绪度指标从“0 条已确认”变为“N 条已确认”，
+其余项仍如实保持 pending。
 
-Default is a read-only dry run; pass ``--apply`` to actually confirm.
+默认是只读试运行；传入 ``--apply`` 才会实际确认。
 
-Usage (from backend/):
+用法（从 backend/ 目录运行）：
     .venv/Scripts/python.exe scripts/confirm_key_knowledge.py --workspace-id <wid> [--apply]
 """
 
@@ -39,7 +38,7 @@ NOTE = "demo 关键证据确认（被研究机会引用）"
 
 
 def key_item_ids(db, workspace_id: str) -> list[str]:
-    """KnowledgeItems that back at least one opportunity's evidence."""
+    """至少支撑一个 opportunity 证据的 KnowledgeItem。"""
     rows = (
         db.query(KnowledgeItem.id)
         .join(EvidenceSpan, EvidenceSpan.knowledge_item_id == KnowledgeItem.id)
@@ -71,7 +70,7 @@ def main() -> None:
             .filter(KnowledgeItem.id.in_(ids), KnowledgeItem.is_deleted.is_(False))
             .all()
         )
-        # deterministic order: type, canonical_name
+# 确定性排序：type、canonical_name
         items.sort(key=lambda i: (i.type or "", i.canonical_name or ""))
 
         already = sum(1 for i in items if i.status == "human_confirmed")

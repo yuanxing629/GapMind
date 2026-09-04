@@ -1,8 +1,7 @@
-"""Task service layer with state machine.
+"""带状态机的 Task service 层。
 
-State transitions are validated against an explicit matrix. Any attempt to
-move from status A to status B that's not in ALLOWED_TRANSITIONS raises
-InvalidTaskTransition.
+状态转换会根据显式矩阵进行校验。任何不在 ALLOWED_TRANSITIONS 中、试图将状态从 A
+转换为 B 的操作，都会抛出 InvalidTaskTransition。
 """
 
 from __future__ import annotations
@@ -33,12 +32,10 @@ class InvalidTaskTransition(Exception):
         self.to_status = to_status
 
 
-# Allowed forward transitions. Keys are the current status, values are the
-# set of statuses the task may move INTO from that status.
+# 允许的前向状态转换。键是当前状态，值是任务可以从该状态转换到的状态集合。
 ALLOWED_TRANSITIONS: dict[str, set[str]] = {
-    # A queueing failure can happen after retrying a failed task (for example
-    # when the local worker/broker is unavailable).  It must return to failed
-    # instead of looking queued forever in the UI.
+# 失败任务重试后可能发生排队失败（例如本地 worker/broker 不可用）。
+# 此时必须回到 failed，不能让 UI 永远显示 queued。
     "queued": {"running", "failed", "cancel_requested", "cancelled"},
     "running": {
         "waiting_for_user",
@@ -58,13 +55,13 @@ TERMINAL_STATUSES = {"succeeded", "cancelled"}
 
 
 class TaskService:
-    """Task lifecycle management."""
+    """Task 生命周期管理。"""
 
     def __init__(self, db: Session) -> None:
         self.db = db
         self.timeline_service = TimelineService(db)
 
-    # ------------------------------------------------------------ create
+# ------------------------------------------------------------ 创建
     def create(self, payload: TaskCreate) -> Task:
         task = Task(
             id=str(uuid4()),
@@ -82,7 +79,7 @@ class TaskService:
         logger.info("task.created", task_id=task.id, task_type=task.task_type)
         return task
 
-    # ----------------------------------------------------------------- read
+# ----------------------------------------------------------------- 读取
     def get(self, task_id: str) -> Task:
         self._validate_uuid(task_id)
         t = self.db.get(Task, task_id)
@@ -111,7 +108,7 @@ class TaskService:
         total = int(self.db.execute(total_q).scalar() or 0)
         return items, total
 
-    # ------------------------------------------------------- state machine
+# ------------------------------------------------------- 状态机
     def transition(
         self,
         task_id: str,
@@ -122,9 +119,9 @@ class TaskService:
         error: str | None = None,
         payload_patch: dict | None = None,
     ) -> Task:
-        """Move a task to a new status, validating the transition.
+        """校验状态转换并将任务移动到新状态。
 
-        Also patches any of progress/result/error/payload atomically.
+        同时以原子方式更新 progress/result/error/payload 中传入的字段。
         """
         task = self.get(task_id)
         from_status = task.status
@@ -164,15 +161,14 @@ class TaskService:
         )
         return task
 
-    # --------------------------------------------------------- user actions
+# --------------------------------------------------------- 用户操作
     def request_cancel(self, task_id: str) -> Task:
-        """User-facing cancel. Revokes the running celery task and finalizes the
-        cancellation immediately.
+        """面向用户的取消操作。撤销运行中的 celery 任务并完成
+        并立即完成取消。
 
-        The previous behaviour stopped at ``cancel_requested``, but no poller /
-        worker ever advanced that state — a cancel left the UI stuck on
-        "正在取消" forever. Finalizing to ``cancelled`` here (plus a best-effort
-        celery revoke) makes cancel deterministic.
+        之前的行为停留在 ``cancel_requested``，但没有 poller / worker 会推进该状态，
+        导致 UI 永远卡在“正在取消”。这里直接完成到 ``cancelled``（并尽力执行 celery
+        revoke），使取消行为可确定。
         """
         task = self.get(task_id)
         if task.status in TERMINAL_STATUSES:
@@ -187,7 +183,7 @@ class TaskService:
         return self.transition(task_id, "cancelled")
 
     def resume_from_user(self, task_id: str, *, decision: dict | None = None) -> Task:
-        """User resumes a task waiting for their input."""
+        """用户恢复一个等待输入的任务。"""
         task = self.get(task_id)
         if task.status != "waiting_for_user":
             raise InvalidTaskTransition(task.status, "running")
@@ -198,16 +194,15 @@ class TaskService:
         )
 
     def retry(self, task_id: str) -> Task:
-        """Re-queue a failed task.
+        """重新排队一个失败任务。
 
-        Clears any prior error/progress, transitions to ``queued``, then
-        re-dispatches the underlying celery task so the queued row is actually
-        processed (previously it just sat in ``queued`` — nothing re-enqueued it).
+        清除之前的错误和进度，切换到 ``queued``，然后重新派发底层 celery task，确保
+        队列中的任务行真正被处理（此前它只停留在 ``queued``，没有重新入队）。
         """
         task = self.get(task_id)
         if task.status != "failed":
             raise InvalidTaskTransition(task.status, "queued")
-        # Clear error/progress before re-queuing so the retry starts clean.
+# 重新排队前清除错误/进度，使重试从干净状态开始。
         task.error = None
         task.progress = 0.0
         self.db.commit()
@@ -233,9 +228,9 @@ class TaskService:
         self.db.commit()
         return transited
 
-    # ----------------------------------------------------------------- update
+# ----------------------------------------------------------------- 更新
     def update_progress(self, task_id: str, progress: float) -> Task:
-        """Update progress without changing status (allowed only when running)."""
+        """更新进度而不改变状态（仅运行中允许）。"""
         task = self.get(task_id)
         if task.status != "running":
             raise InvalidTaskTransition(task.status, "running")
@@ -244,7 +239,7 @@ class TaskService:
         self.db.refresh(task)
         return task
 
-    # ------------------------------------------------------------- helpers
+# ------------------------------------------------------------- 辅助函数
     def _timeline(self, task: Task, event_type: str, *, extra: dict | None = None) -> None:
         if not task.workspace_id:
             return  # workspace-scoped timeline only

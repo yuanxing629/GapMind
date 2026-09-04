@@ -1,2 +1,2 @@
-"""Gap extraction and deterministic method-problem board domain."""
+"""Gap 抽取与确定性方法-问题棋盘 domain。"""
 

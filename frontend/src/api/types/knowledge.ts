@@ -1,11 +1,9 @@
-// Knowledge type aliases — re-exported from the auto-generated OpenAPI
-// schemas. Run `npm run gen:api` after touching the corresponding Pydantic
-// models to keep these in sync.
+// Knowledge 类型别名——从自动生成的 OpenAPI schemas 重新导出。
+// 修改对应 Pydantic models 后运行 `npm run gen:api`，保持两边同步。
 //
-// Do NOT add hand-written fields here. The Omit+Pick overrides below are
-// the only exception: they relax Pydantic `dict[str, Any]` (which
-// openapi-typescript renders as `Record<string, never>`) to a friendlier
-// `Record<string, unknown>` so component code can iterate without casts.
+// 不要在这里添加手写字段。下面的 Omit+Pick 覆盖是唯一例外：它们将 Pydantic
+// `dict[str, Any]`（openapi-typescript 会生成 `Record<string, never>`）放宽为
+// 更易用的 `Record<string, unknown>`，使组件代码无需类型转换即可遍历。
 
 import type { components } from "./api.gen";
 
@@ -40,6 +38,6 @@ export type GraphRAGAudit = components["schemas"]["GraphRetrievalAuditRead"];
 
 export type EvidenceContext = components["schemas"]["EvidenceContextRead"];
 
-// Enum-style string literal types derived from the generated schemas.
+// 从生成 schemas 派生的枚举风格字符串字面量类型。
 export type KnowledgeType = KnowledgeItem["type"];
 export type KnowledgeStatus = KnowledgeItem["status"];

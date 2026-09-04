@@ -1,18 +1,16 @@
-"""Fix SubgraphX: re-parse with the fixed pdf_parser, rebuild all artifacts.
+"""修复 SubgraphX：使用修复后的 pdf_parser 重新解析并重建所有 Artifact。
 
-SubgraphX's arXiv PDF typesets headings at ~11.95pt which the old
-`is_large >= 12.0` threshold rejected → only 4 appendix chunks were indexed.
-The pdf_parser threshold is now 11.5; this script re-runs the full pipeline
-for SubgraphX so its body text is chunked and extracted properly.
+SubgraphX 的 arXiv PDF 使用约 11.95pt 排版标题，旧的 `is_large >= 12.0` 阈值会拒绝这些标题，
+导致只有 4 个附录分块被索引。pdf_parser 阈值现在为 11.5；本脚本为 SubgraphX 重新运行完整流水线，
+使正文得到正确分块和抽取。
 
-Steps (mirrors workers/tasks/parse_pdf._run_parse_pdf + rebuild_paper_chunks):
-  1. re-parse the PDF with the fixed parser
-  2. save a NEW parsed_markdown artifact, update paper pointer
-  3. re-chunk + create a new chunk_index Artifact + update chunk_count
-  4. force-reindex Milvus (drop old vectors, insert new)
-  5. soft-delete the OLD knowledge_items / evidence_spans (they anchor to the
-     old 1-section markdown)
-  6. trigger a fresh synchronous extraction (new Task + _run_extract)
+步骤（对应 workers/tasks/parse_pdf._run_parse_pdf + rebuild_paper_chunks）：
+  1. 使用修复后的解析器重新解析 PDF
+  2. 保存新的 parsed_markdown Artifact，更新论文指针
+  3. 重新分块、创建新的 chunk_index Artifact，并更新 chunk_count
+  4. 强制重建 Milvus 索引（删除旧向量，插入新向量）
+  5. 软删除旧的 knowledge_items / evidence_spans（它们指向旧的单章节 Markdown）
+  6. 触发新的同步抽取（新 Task + _run_extract）
 """
 
 from __future__ import annotations
@@ -56,12 +54,12 @@ def main() -> int:
             print("no PDF artifact")
             return 1
 
-        # 1. Re-parse with the fixed parser.
+# 1. 使用修复后的解析器重新解析。
         pdf_bytes = ArtifactService(db).resolve_abs_path(pdf_artifact).read_bytes()
         parsed = parse_pdf(pdf_bytes)
         print(f"parse: {len(parsed.full_text)} chars, sections={len(parsed.sections)}")
 
-        # 2. Save NEW parsed_markdown artifact + update paper pointer.
+# 2. 保存新的 parsed_markdown Artifact 并更新论文指针。
         artifacts = ArtifactService(db)
         parsed_md = parsed.to_markdown()
         md_artifact = artifacts.save_upload(
@@ -73,7 +71,7 @@ def main() -> int:
         )
         paper.parsed_markdown_artifact_id = md_artifact.id
 
-        # 3. Re-chunk + create the canonical chunk_index Artifact.
+# 3. 重新分块并创建规范的 chunk_index Artifact。
         chunks = chunk_parsed_pdf(
             parsed,
             workspace_id=paper.workspace_id,
@@ -97,7 +95,7 @@ def main() -> int:
         db.commit()
         print(f"chunks: {len(chunks)}")
 
-        # 4. Force-reindex Milvus.
+# 4. 强制重建 Milvus 索引。
         result = index_paper_chunks(
             paper.workspace_id,
             paper.id,
@@ -106,7 +104,7 @@ def main() -> int:
         )
         print(f"index: total={result.total_chunks} indexed={result.indexed_count} skipped={result.skipped_count}")
 
-        # 5. Soft-delete OLD knowledge items / evidence (anchored to old md).
+# 5. 软删除旧的 knowledge items / evidence（它们指向旧 Markdown）。
         old_items = db.query(KnowledgeItem).filter(
             KnowledgeItem.paper_id == paper.id, KnowledgeItem.is_deleted.is_(False)
         ).all()
@@ -120,7 +118,7 @@ def main() -> int:
         db.commit()
         print(f"soft-deleted old items: {len(old_items)}, spans: {len(old_spans)}")
 
-        # 6. Fresh synchronous extraction (new Task + _run_extract).
+# 6. 进行新的同步抽取（新 Task + _run_extract）。
         task = TaskService(db).create(
             TaskCreate(
                 workspace_id=paper.workspace_id,

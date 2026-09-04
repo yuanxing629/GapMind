@@ -1,13 +1,12 @@
-"""Report diagnostic false positives/negatives without approving a threshold.
+"""报告诊断性的假阳性/假阴性，不批准任何阈值。
 
-The Chat QA evaluator deliberately has no production answerability threshold.
-This read-only helper measures one explicit diagnostic proxy—treating
-``mechanical_passed`` as "supported"—against the already human-annotated
-``human_verdict`` field.  It exists to show why structural citation checks
-cannot replace factual review; it never edits Gold, observations, or Chat
-messages and never calls an LLM.
+Chat QA 评估器刻意不设置生产环境的可回答性阈值。
+这个只读辅助工具使用一个明确的诊断代理指标——将 ``mechanical_passed``
+视为 “supported”——与已经人工标注的 ``human_verdict`` 字段进行比较。
+它用于说明结构化引用检查为什么不能替代事实复核；不会编辑 Gold、观测记录或 Chat
+消息，也不会调用 LLM。
 
-Example::
+示例：
 
     backend\\.venv\\Scripts\\python.exe \\
       evaluation\\chat\\report_threshold_calibration.py \\

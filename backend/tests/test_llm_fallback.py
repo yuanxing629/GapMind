@@ -1,4 +1,4 @@
-"""LLM gateway primary/backup fallback tests (demo-day fuse)."""
+"""LLM 网关主备回退测试（演示日保险丝）。"""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ def _stream_chunks(*deltas: str) -> list[SimpleNamespace]:
 
 
 class FakeCompletions:
-    """create() follows a scripted list of outcomes: values succeed, exceptions raise."""
+    """create() 按预设结果列表执行：值表示成功，异常表示抛出。"""
 
     def __init__(self, outcomes: list[Any]) -> None:
         self.outcomes = outcomes
@@ -84,12 +84,12 @@ def test_primary_failure_falls_over_to_backup():
     assert response.content == "backup ok"
     assert backup is not None
     assert backup.calls[0]["model"] == "backup-model"
-    # The backup receives the same standard Chat Completions payload.
+    # 备用端点接收相同的标准 Chat Completions 负载。
     assert "extra_body" not in backup.calls[0]
 
 
 def test_generic_chat_completion_does_not_send_provider_specific_thinking_fields():
-    # A standard OpenAI-compatible endpoint should receive only standard fields.
+    # 标准 OpenAI 兼容端点只应接收标准字段。
     gateway, _, backup = _gateway(
         [RuntimeError("primary down")],
         [
@@ -129,7 +129,7 @@ def test_backup_also_failing_raises_primary_error():
         )
         raise AssertionError("should have raised")
     except RuntimeError as exc:
-        # the primary error is the one worth investigating, so it wins
+        # 主端点错误更值得调查，因此优先抛出它。
         assert "primary down" in str(exc)
 
 

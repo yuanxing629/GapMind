@@ -1,4 +1,4 @@
-"""HTTP contracts for the Chat domain."""
+"""Chat domain 的 HTTP 契约。"""
 
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ class ChatConversationUpdate(BaseModel):
 
 
 class ChatImageInput(BaseModel):
-    """A browser image encoded as a data URL for the current request."""
+    """当前请求中编码为 data URL 的浏览器图片。"""
 
     filename: str = Field(default="image", min_length=1, max_length=512)
     mime_type: str = Field(..., min_length=1, max_length=128)
@@ -51,8 +51,8 @@ class ChatMessageCreate(BaseModel):
     research_plan_id: str | None = None
     source_artifact_ids: list[str] = Field(default_factory=list, max_length=4)
     images: list[ChatImageInput] = Field(default_factory=list, max_length=3)
-    # These fields are intentionally diagnostic-only during the PostgreSQL
-    # GraphRAG shadow phase.  They never replace dense answer evidence.
+    # 本阶段这些字段仅用于 PostgreSQL GraphRAG shadow 诊断，
+    # 不会替代 dense answer evidence。
     retrieval_mode: Literal["dense", "hybrid", "graph"] = "dense"
     graph_expand: bool | None = None
     graph_max_hops: int = Field(default=2, ge=1, le=2)
@@ -118,7 +118,7 @@ class ChatMessageImageRead(BaseModel):
 
 
 class CitationCheckRead(BaseModel):
-    """Result of validating [En] markers in an assistant message against its citations."""
+    """校验 assistant 消息中的 [En] 标记与其 citation 后的结果。"""
     referenced: list[int] = Field(default_factory=list)
     broken: list[int] = Field(default_factory=list)
     ok: bool = True
@@ -126,7 +126,7 @@ class CitationCheckRead(BaseModel):
 
 
 class SourceCheckRead(BaseModel):
-    """Validation of [P1]/[D1]/[C1] markers against the source passport."""
+    """校验 [P1]/[D1]/[C1] 标记与来源 passport 后的结果。"""
 
     referenced: list[str] = Field(default_factory=list)
     broken: list[str] = Field(default_factory=list)
@@ -134,7 +134,7 @@ class SourceCheckRead(BaseModel):
 
 
 class CitationQualityRead(BaseModel):
-    """Persisted audit of the bounded citation/source quality gate."""
+    """有界 citation/source 质量门的持久化审计记录。"""
 
     status: Literal["not_needed", "passed", "repaired", "rejected"] = "not_needed"
     attempts: int = Field(default=0, ge=0, le=1)
@@ -148,7 +148,7 @@ class CitationQualityRead(BaseModel):
 
 
 class GraphRetrievalAuditRead(BaseModel):
-    """Bounded GraphRAG diagnostics; it is not answer evidence by itself."""
+    """有界 GraphRAG 诊断信息；其本身不是回答证据。"""
 
     mode: Literal["disabled", "shadow"] = "disabled"
     projection_version: str = "sql_graph_v1"
@@ -156,9 +156,8 @@ class GraphRetrievalAuditRead(BaseModel):
     expanded_node_count: int = Field(default=0, ge=0)
     expanded_edge_count: int = Field(default=0, ge=0)
     path_count: int = Field(default=0, ge=0)
-    # Path budget diagnostics: ``path_count`` remains the emitted path count;
-    # these fields explain how many eligible candidates were packed or
-    # dropped by the bounded node/edge budget.
+    # 路径预算诊断：``path_count`` 仍表示实际输出的路径数；
+    # 以下字段说明有多少符合条件的候选被纳入，或因节点/边有界预算被丢弃。
     candidate_path_count: int = Field(default=0, ge=0)
     emitted_path_count: int = Field(default=0, ge=0)
     dropped_path_count: int = Field(default=0, ge=0)
@@ -174,7 +173,7 @@ class GraphRetrievalAuditRead(BaseModel):
 
 
 class RetrievalAuditRead(BaseModel):
-    """Persisted, non-sensitive retrieval observability for one answer."""
+    """一条回答的持久化、非敏感检索观测信息。"""
 
     request_id: str = ""
     status: str = "unknown"
@@ -190,7 +189,7 @@ class RetrievalAuditRead(BaseModel):
 
 
 class ChatMessageSourceRead(BaseModel):
-    """One explicitly labelled context source used for an answer."""
+    """回答使用的一条明确标注的上下文来源。"""
 
     marker: str
     source_type: Literal["plan", "paper", "report", "code_draft"]

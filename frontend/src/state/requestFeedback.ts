@@ -1,8 +1,8 @@
 import axios from "axios";
 
 /**
- * Keeps transport failures actionable without surfacing raw browser, proxy, or
- * upstream service errors in the research workspace UI.
+* 让传输失败仍可操作，同时不在研究 workspace UI 中暴露原始浏览器、代理或
+* 上游 service 错误。
  */
 export function requestErrorMessage(error: unknown, fallback = "操作失败，请稍后重试。"): string {
   if (!axios.isAxiosError(error)) return fallback;

@@ -1,4 +1,4 @@
-"""Persistent history and favorites for external paper search."""
+"""外部论文搜索的持久化历史与收藏模型。"""
 
 from __future__ import annotations
 

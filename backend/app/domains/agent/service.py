@@ -1,4 +1,4 @@
-"""Application service and workers for controlled workspace agents."""
+"""受控 workspace agents 的应用 service 与 worker。"""
 
 from __future__ import annotations
 
@@ -50,7 +50,7 @@ class AgentConflictError(RuntimeError):
 ACTIVE_STATUSES = {"queued", "running"}
 TERMINAL_STATUSES = {"succeeded", "failed", "cancelled"}
 
-# W7 full-lifecycle agents share the same controlled-run protocol.
+# W7 全生命周期 agents 共用同一套 controlled-run protocol。
 SUPPORTED_AGENT_TYPES = {
     "research_plan",
     "code_generation",
@@ -59,16 +59,16 @@ SUPPORTED_AGENT_TYPES = {
     "respond",
     "deep_research",
 }
-# Agents that must be attached to an existing research plan.
+# 必须关联到现有 research plan 的 agents。
 PLAN_REQUIRED_AGENT_TYPES = {"code_generation", "deep_research"}
 PLAN_OPTIONAL_AGENT_TYPES = {"analyze", "write", "respond"}
 
-# Code generation Phase A (docs/0819_code_generation_improvement.md):
-# blueprint first, then one bounded LLM call per file.
+# 代码生成 Phase A（docs/0819_code_generation_improvement.md）：
+# 先生成 blueprint，然后每个文件执行一次有界 LLM 调用。
 CODE_BLUEPRINT_MAX_FILES = 8
 
-# CodeRAG-lite (Phase B1): facet the workspace chunks before generation so the
-# model gets method/formula/hyperparam/preprocessing grounding, not just one query.
+# CodeRAG-lite（Phase B1）：在生成前对 workspace chunks 做 facet，使模型获得
+# method/formula/hyperparam/preprocessing grounding，而不是只有一个 query。
 CODE_RAG_FACET_TOP_K = 4
 CODE_RAG_MAX_EVIDENCE = 10
 
@@ -580,7 +580,7 @@ class AgentService:
         return {"status": run.status, "run_id": run.id}
 
     def _execute_code_repair(self, run: AgentRun) -> dict[str, Any]:
-        """Generate one bounded, preview-only repair candidate for a code run."""
+        """为 code run 生成一个有界、仅预览的修复候选。"""
 
         parent_id = str(run.input_payload.get("repair_parent_run_id") or "")
         parent = self.get(run.workspace_id, parent_id)
@@ -846,8 +846,7 @@ class AgentService:
                     run, plan, blueprint, spec, evidence, interface_summaries
                 )
             except AgentInputError as exc:
-                # a single file must not sink the whole run: record the gap,
-                # keep going, and surface the failure list at the end
+# 单个文件失败不能拖垮整个 run：记录 gap，继续执行，并在最后展示失败列表
                 file_errors.append({"path": spec["path"], "reason": str(exc)})
                 self._step(
                     run,
@@ -920,7 +919,7 @@ class AgentService:
         passed = sum(1 for check in review["checks"] if check["passed"])
         blocking_checks = [check for check in review["checks"] if check["severity"] == "blocking"]
         advisory_checks = [check for check in review["checks"] if check["severity"] == "advisory"]
-        # JSON columns need wholesale reassignment; in-place mutation is not tracked
+# JSON 列需要整体重新赋值；就地修改不会被追踪
         run.result = {
             **run.result,
             "static_review": {
@@ -954,8 +953,8 @@ class AgentService:
         rubric = self._normalize_rubric(rubric_raw, plan)
         for key in usage_totals:
             usage_totals[key] += int(rubric_usage.get(key, 0))
-        # expose the concrete gaps (Phase A4 follow-up): structured partial/missing
-        # items so the UI can surface them instead of leaving them inside the report
+# 暴露具体 gaps（Phase A4 follow-up）：提供结构化的 partial/missing item，
+# 让 UI 可以展示，而不是把它们留在 report 内部
         known_gaps = [item for item in rubric["items"] if item["status"] != "covered"]
         run.result = {
             **run.result,
@@ -1013,15 +1012,14 @@ class AgentService:
         self.db.commit()
         return {"status": run.status, "run_id": run.id, "file_count": len(files)}
 
-    # ----------------------------------------------------- W7 lifecycle agents
-    # Analyze / Write / Respond are lightweight, evidence-linked, controlled
-    # agents. They follow the same AgentRun/AgentStep/AgentArtifact protocol,
-    # keep their outputs in agent_artifacts (never auto-promoted to facts),
-    # end in "succeeded" (no confirmation gate - HITL reviews the artifacts),
-    # and every claim cites workspace evidence via [En] markers.
+# ----------------------------------------------------- W7 生命周期 agents
+# Analyze / Write / Respond 是轻量、证据关联、受控的 agents。它们遵循同一套
+# AgentRun/AgentStep/AgentArtifact protocol，将输出保存在 agent_artifacts 中
+#（绝不自动提升为事实），以 "succeeded" 结束（没有确认 gate，由 HITL 审阅 artifacts），
+# 且每个 claim 都通过 [En] marker 引用 workspace evidence。
 
     def _optional_plan(self, run: AgentRun) -> ResearchPlan | None:
-        """Plan bound to this run, or None for standalone (independent) mode."""
+        """该 run 绑定的 Plan；standalone（independent）模式下为 None。"""
         plan_id = str(run.input_payload.get("research_plan_id") or "")
         if not plan_id:
             return None
@@ -1032,20 +1030,17 @@ class AgentService:
 
     @staticmethod
     def _is_independent(run: AgentRun) -> bool:
-        """Whether this run is owned by the system standalone workspace.
+        """判断该 run 是否由系统 standalone workspace 所有。
 
-        The flag is captured at creation time so lifecycle agents can make the
-        source boundary explicit even when the system workspace has no corpus.
-        Older rows did not carry it; they retain the historical workspace
-        behavior instead of being reclassified.
+        该标记在创建时记录，使生命周期 Agent 即使在系统工作区没有语料时，也能明确来源边界。
+        旧记录没有该字段，保持历史工作区行为，不重新分类。
         """
         return bool((run.context_snapshot or {}).get("independent"))
 
     def _execute_analyze(self, run: AgentRun) -> dict[str, Any]:
-        """AnalyzeAgent: user-uploaded experiment results vs the plan's
-        falsification criteria, producing a support / partial / reject verdict
-        with evidence-linked findings. Eats manual data (results are supplied
-        by the user, never auto-run experiments)."""
+        """AnalyzeAgent：比较用户上传的实验结果与 plan 的
+        证伪标准，并生成 support / partial / reject 结论及回链证据的发现。
+        使用人工数据（结果由用户提供，绝不自动运行实验）。"""
         plan = self._optional_plan(run)
         independent = self._is_independent(run)
         self._step(
@@ -1093,7 +1088,7 @@ class AgentService:
         )
 
     def _execute_write(self, run: AgentRun) -> dict[str, Any]:
-        """WriteAgent: plan + evidence -> paper section drafts."""
+        """WriteAgent：plan + evidence -> 论文分节草稿。"""
         plan = self._optional_plan(run)
         independent = self._is_independent(run)
         self._step(
@@ -1141,7 +1136,7 @@ class AgentService:
         )
 
     def _execute_respond(self, run: AgentRun) -> dict[str, Any]:
-        """RespondAgent: reviewer comments -> per-point rebuttal draft."""
+        """RespondAgent：审稿意见 -> 逐点 rebuttal 草稿。"""
         plan = self._optional_plan(run)
         comments = str(run.input_payload.get("reviewer_comments") or "")
         independent = self._is_independent(run)
@@ -1201,7 +1196,7 @@ class AgentService:
         self.db.commit()
         return {"status": run.status, "run_id": run.id}
 
-    # ---------------------------------------------------------------- prompts
+# ---------------------------------------------------------------- 提示词
     def _analysis_prompt(self, run: AgentRun, plan: ResearchPlan | None, evidence: list[dict[str, Any]]) -> str:
         results = run.input_payload.get("results") or {}
         if plan is None:
@@ -1270,7 +1265,7 @@ class AgentService:
             f"证据：{json.dumps(evidence, ensure_ascii=False)}"
         )
 
-    # -------------------------------------------------------------- normalize
+# -------------------------------------------------------------- 规范化
     def _normalize_analysis(self, data: dict[str, Any]) -> dict[str, Any]:
         verdict = str(data.get("verdict") or "证据不足")
         if verdict not in {"支持", "部分支持", "否定", "证据不足"}:
@@ -1316,7 +1311,7 @@ class AgentService:
             "evidence_refs": self._string_list(data.get("evidence_refs")),
         }
 
-    # -------------------------------------------------------------- markdown
+# -------------------------------------------------------------- Markdown 输出
     @staticmethod
     def _bullets(values: list[str]) -> str:
         return "\n".join(f"- {value}" for value in values) or "- 暂无"
@@ -1471,11 +1466,10 @@ class AgentService:
     def _code_rag_evidence(
         self, run: AgentRun, plan: ResearchPlan, fallback: list[dict[str, Any]]
     ) -> list[dict[str, Any]]:
-        """Facet the workspace chunks for code grounding (CodeRAG-lite, Phase B1).
+        """为代码 grounding 对 workspace 分块进行 facet 划分（CodeRAG-lite，Phase B1）。
 
-        Runs a short set of targeted queries (method/formula/experiment setup/
-        preprocessing) instead of a single free-form query, then fuses the hits
-        in result order and labels each chunk with the facets it matched.
+        执行一组简短的定向查询（method/formula/experiment setup/preprocessing），
+        而不是单个自由查询，然后按结果顺序融合命中，并为每个分块标记其命中的 facet。
         """
         self._transition(run, "running", "workspace_retrieval", 0.18)
         facets: list[tuple[str, str]] = [
@@ -1654,7 +1648,7 @@ class AgentService:
                 finish_reason = None
             if finish_reason == "length":
                 raise AgentInputError("模型输出被 max_tokens 截断，JSON 不完整")
-            # surface the raw tail so a real failure is diagnosable from the log
+# 展示原始末尾内容，以便从日志诊断真实失败
             snippet = response.content[-300:].replace("\n", " ")[:300]
             raise AgentInputError(
                 f"模型返回的结构化结果无效（finish_reason={finish_reason}，响应尾部：{snippet}）"
@@ -1933,7 +1927,7 @@ class AgentService:
                 lines.append(f"class {node.name}: {'/'.join(methods[:4])}")
         return {"path": path, "summary": "; ".join(lines[:12])[:600] or "(空文件)"}
 
-    # import name -> requirements.txt package name for common mismatches
+# import name -> requirements.txt package name，用于处理常见不匹配
     REQUIREMENT_ALIASES = {
         "sklearn": "scikit-learn",
         "cv2": "opencv-python",

@@ -1,8 +1,7 @@
-"""Compare dense-only and GraphRAG shadow observation exports.
+"""比较 dense-only 与 GraphRAG shadow 观测导出结果。
 
-The script is intentionally dependency-free and diagnostic-only. It validates
-the persisted temporary path contract, then reports counts for later human
-review; it never decides whether GraphRAG is better.
+脚本刻意保持无依赖且仅用于诊断。它会校验持久化临时路径契约，
+然后报告供人工复核的计数；不会判断 GraphRAG 是否更好。
 """
 
 from __future__ import annotations

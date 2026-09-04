@@ -1,4 +1,4 @@
-"""Tests for YAML defaults and environment override precedence."""
+"""YAML 默认值和环境覆盖优先级测试。"""
 
 from __future__ import annotations
 

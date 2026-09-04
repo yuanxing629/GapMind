@@ -54,7 +54,7 @@ export interface ChatMessageImage {
   size_bytes: number;
   created_at: string;
   updated_at: string;
-  /** Browser-only data URL used by optimistic messages before persistence. */
+/** 持久化前由 optimistic 消息使用的、仅浏览器可用的 data URL。 */
   data_url?: string;
 }
 
@@ -260,8 +260,8 @@ export const chatApi = {
     return data;
   },
   async streamSend(conversationId: string, content: string, context: { researchPlanId?: string; sourceArtifactIds?: string[]; images?: ChatImageInput[] } & ChatRetrievalOptions = {}): Promise<Response> {
-    // SSE uses the same API base as Axios so a separately hosted frontend can
-    // carry the session cookie with an explicit CORS configuration.
+// SSE 与 Axios 使用相同的 API base，使单独托管的前端可以在明确的 CORS 配置下
+// 携带 session cookie。
     const csrf = getCsrfToken();
     return fetch(`${apiBaseURL.replace(/\/$/, "")}/chat/conversations/${conversationId}/messages/stream`, {
       method: "POST",

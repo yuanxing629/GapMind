@@ -10,7 +10,7 @@ type RecommendationRequestError = {
   };
 };
 
-/** Turn Semantic Scholar failures into stable, actionable UI copy. */
+/** 将 Semantic Scholar 失败转换为稳定且可操作的 UI 文案。 */
 export function recommendationErrorMessage(error: unknown): string {
   const response = (error as RecommendationRequestError).response;
   const detail = response?.data?.detail;

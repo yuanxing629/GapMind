@@ -1,11 +1,9 @@
-"""HTTP routes for global and workspace-grounded AI chat.
+"""全局和 workspace-grounded AI chat 的 HTTP 路由。
 
-Domain exceptions raised here are translated into HTTP responses by the
-central handler registered in ``app.core.exception_handlers``. In
-particular, ``ChatConfigurationError`` and ``ChatUpstreamError`` carry a
-``conversation_id`` / ``assistant_message_id`` pair which the handler
-exposes in the response envelope so the front-end can update message
-status correctly.
+此处抛出的领域异常由注册在 ``app.core.exception_handlers`` 中的中央处理器转换为 HTTP 响应。
+特别是，``ChatConfigurationError`` 和 ``ChatUpstreamError`` 携带
+``conversation_id`` / ``assistant_message_id`` 对，处理器会将其暴露在响应信封中，
+使前端正确更新消息状态。
 """
 
 from __future__ import annotations
@@ -47,7 +45,7 @@ def _service(db: Session = Depends(get_db)) -> ChatService:
 
 
 def _message_view(message: ChatMessage) -> ChatMessageRead:
-    """Build the message DTO and validate its [En] citation markers."""
+    """构建消息 DTO 并校验其中的 [En] citation 标记。"""
     read = ChatMessageRead.model_validate(message)
     if read.role == "assistant":
         ranks = [c.rank for c in read.citations if c.rank is not None]
@@ -202,11 +200,11 @@ def stream_message(
     service: ChatService = Depends(_service),
     user_id: str = Depends(get_current_user),
 ) -> StreamingResponse:
-    """Stream a chat completion as Server-Sent Events (P0.5-1).
+    """将 chat completion 作为 Server-Sent Events 流式返回（P0.5-1）。
 
-    Events are ``data: {json}`` lines: ``start`` (ids), ``evidence`` (retrieval
-    citations), ``token`` (one delta each), ``done`` (final content), or
-    ``error``. The full persisted message is available via GET afterwards.
+    事件是 ``data: {json}`` 行：``start``（ID）、``evidence``（检索引用）、
+    ``token``（每行一个增量）、``done``（最终内容）或 ``error``。
+    完整的持久化消息可在之后通过 GET 获取。
     """
     def event_stream():
         for event in service.stream_send(

@@ -1,7 +1,7 @@
-"""Add the auditable Discover Agent workflow.
+"""增加可审计的 Discover Agent 工作流。
 
-This migration is additive. The 0009 synchronous opportunity prototype is
-kept intact and new runs gradually populate the normalized workflow tables.
+本迁移只增加内容。0009 的同步 opportunity 原型保持不变，
+新的运行记录逐步填充规范化工作流表。
 """
 
 from __future__ import annotations

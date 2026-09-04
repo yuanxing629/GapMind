@@ -1,4 +1,4 @@
-"""Schemas for the reading library and paper annotations."""
+"""阅读库和论文标注的 schemas。"""
 
 from __future__ import annotations
 

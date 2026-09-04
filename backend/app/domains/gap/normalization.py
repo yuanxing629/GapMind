@@ -1,9 +1,8 @@
-"""Auditable domain taxonomy for cross-paper gap-board axes.
+"""跨论文 gap-board 轴的可审计 domain 分类体系。
 
-The fine-tuned extractor intentionally emits paper-local, descriptive labels.  A
-board needs a coarser and stable vocabulary, otherwise every paper becomes its
-own row and column.  These rules only collapse labels when a transparent
-domain marker is present; unmatched labels remain separate.
+微调后的 extractor 有意输出属于单篇论文的描述性标签。棋盘需要更粗粒度且稳定的词汇，
+否则每篇论文都会产生自己的行和列。只有存在透明的 domain 标记时，这些规则才会折叠
+标签；未匹配的标签保持独立。
 """
 
 from __future__ import annotations
@@ -23,10 +22,10 @@ def _has(text: str, *markers: str) -> bool:
 
 
 def canonical_axis_label(axis_type: str, label: str, description: str = "") -> TaxonomyMatch | None:
-    """Return a conservative GNN-explanation family, or ``None``.
+    """返回保守的 GNN-explanation family，或 ``None``。
 
-    Rule order is deliberate: specific counterfactual mechanisms are matched
-    before their descriptions can be captured by the broader causal family.
+    规则顺序是有意设计的：先匹配具体的反事实机制，避免其描述先被更宽泛的因果 family
+    捕获。
     """
 
     text = f"{label} {description}".lower()

@@ -1,8 +1,8 @@
-"""Workspace service layer.
+"""Workspace service 层。
 
-Business logic for CRUD + soft-delete + archive. The API layer is thin and
-delegates here. Soft delete (is_deleted=True) keeps the row for audit and
-Timeline traceability - we never hard-delete in MVP unless explicitly forced.
+负责 CRUD、soft-delete 和 archive 的业务逻辑。API 层保持薄，并将调用转发到这里。Soft
+delete（is_deleted=True）保留数据行用于审计和 Timeline 追溯；除非明确强制，MVP 中不做
+hard-delete。
 """
 
 from __future__ import annotations
@@ -24,12 +24,12 @@ from app.domains.workspace.schemas import (
 
 logger = get_logger(__name__)
 
-# System workspace used by standalone W7 agents (no user workspace selected).
+# standalone W7 agent 使用的系统 workspace（未选择用户 workspace）。
 INDEPENDENT_WORKSPACE_NAME = "__independent__"
 
 
 class WorkspaceNotFoundError(Exception):
-    """Raised when a workspace lookup fails."""
+    """workspace 查找失败时抛出的异常。"""
 
     def __init__(self, workspace_id: str) -> None:
         super().__init__(f"Workspace not found: {workspace_id}")
@@ -37,12 +37,12 @@ class WorkspaceNotFoundError(Exception):
 
 
 class WorkspaceService:
-    """CRUD operations for Workspace."""
+    """Workspace 的 CRUD 操作。"""
 
     def __init__(self, db: Session) -> None:
         self.db = db
 
-    # ------------------------------------------------------------------ create
+# ------------------------------------------------------------------ 创建
     def create(self, payload: WorkspaceCreate, *, owner_id: str = "user") -> Workspace:
         ws = Workspace(
             id=str(uuid4()),
@@ -68,7 +68,7 @@ class WorkspaceService:
         logger.info("workspace.created", workspace_id=ws.id, name=ws.name)
         return ws
 
-    # -------------------------------------------------------------------- read
+# -------------------------------------------------------------------- 读取
     def get(self, workspace_id: str, *, actor_id: str | None = None) -> Workspace:
         self._validate_uuid(workspace_id)
         ws = self.db.get(Workspace, workspace_id)
@@ -86,7 +86,7 @@ class WorkspaceService:
         offset: int = 0,
         owner_id: str | None = None,
     ) -> tuple[list[Workspace], int]:
-        """Return (items, total) with soft-deleted rows excluded."""
+        """返回（items、total），并排除软删除行。"""
         limit = max(1, min(limit, 200))
         offset = max(0, offset)
 
@@ -103,14 +103,14 @@ class WorkspaceService:
         total = int(self.db.execute(total_q).scalar() or 0)
         return items, total
 
-    # ------------------------------------------------------------------ update
+# ------------------------------------------------------------------ 更新
     def update(
         self, workspace_id: str, payload: WorkspaceUpdate, *, actor_id: str | None = None
     ) -> Workspace:
         ws = self.get(workspace_id, actor_id=actor_id)
         data = payload.model_dump(exclude_unset=True)
 
-        # Empty dict means no fields to update - return as-is.
+# 空字典表示没有字段需要更新，原样返回。
         if not data:
             return ws
 
@@ -124,7 +124,7 @@ class WorkspaceService:
         logger.info("workspace.updated", workspace_id=ws.id, fields=list(data.keys()))
         return ws
 
-    # ------------------------------------------------------------------ delete
+# ------------------------------------------------------------------ 删除
     def soft_delete(self, workspace_id: str, *, actor_id: str | None = None) -> None:
         ws = self.get(workspace_id, actor_id=actor_id)
         ws.is_deleted = True
@@ -140,11 +140,10 @@ class WorkspaceService:
         return ws
 
     def get_or_create_independent(self, *, owner_id: str = "user") -> Workspace:
-        """Return (creating if needed) the system independent workspace.
+        """返回系统 independent workspace，不存在时创建。
 
-        Used by standalone W7 agents (analyze/write/respond) when the user has
-        not selected a workspace. The independent space has no corpus, so only
-        user-provided inputs feed the agents (Discover/Plan are unavailable).
+        供 standalone W7 agents（analyze/write/respond）在用户尚未选择 workspace 时使用。
+        独立空间没有语料库，因此 agent 只使用用户提供的输入（Discover/Plan 不可用）。
         """
         existing = self.db.scalar(
             select(Workspace).where(

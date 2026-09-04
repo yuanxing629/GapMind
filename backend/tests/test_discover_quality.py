@@ -1,8 +1,8 @@
-"""W2 opportunity-quality tests.
+"""W2 opportunity 质量测试。
 
-Covers: critic-challenge injection into the Opportunity synthesis prompt,
-critic challenge collection (narrow/reject, dedup, bounded), and the audit
-trail on DiscoverRun (prompt_version / corpus_version fingerprint).
+覆盖：将 critic challenge 注入 Opportunity synthesis prompt、收集 critic challenge
+（narrow/reject、dedup、有界），以及 DiscoverRun 上的审计轨迹（prompt_version /
+corpus_version fingerprint）。
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ from app.domains.workspace.models import Workspace  # noqa: E402
 
 
 class _SynthLLM:
-    """Records the user prompt; returns one valid opportunity."""
+    """记录 user prompt，并返回一个有效 opportunity。"""
 
     def __init__(self) -> None:
         self.messages: list[list[dict[str, str]]] = []
@@ -96,7 +96,7 @@ def _empty_response(workspace_id: str, purpose: str) -> RetrievalResponse:
     return RetrievalResponse(workspace_id=workspace_id, purpose=purpose, status="succeeded", items=[])
 
 
-# ----------------------------------------------------- critic feedback injection
+# ----------------------------------------------------- critic feedback 注入
 
 
 def test_synthesize_injects_critic_feedback(db_session):
@@ -121,7 +121,7 @@ def test_synthesize_injects_critic_feedback(db_session):
     assert "CRITIC_FEEDBACK" in prompt
     assert "challenge A" in prompt
     assert "challenge B" in prompt
-    # Evidence payload carries the challenges verbatim.
+# Evidence 载荷原样携带 challenges。
     assert '"critic_feedback": ["challenge A", "challenge B"]' in prompt
 
 
@@ -152,7 +152,7 @@ def test_critic_challenges_collects_narrow_reject_deduped():
         {"index": 1, "verdict": "narrow", "challenges": ["narrow it to x", "also check y"]},
         {"index": 2, "verdict": "reject", "challenges": ["narrow it to x", "z"]},
     ]
-    # keep is ignored; duplicates collapse; reject is collected too (bounded 3).
+# keep 被忽略；重复项合并；reject 也会收集（上限 3）。
     assert svc._critic_challenges(reviews) == ["narrow it to x", "also check y", "z"]
 
 
@@ -164,7 +164,7 @@ def test_critic_challenges_bounded_and_empty_cases():
     assert svc._critic_challenges([{"verdict": "narrow", "challenges": []}]) == []
 
 
-# ---------------------------------------------------------------- audit trail
+# ---------------------------------------------------------------- 审计轨迹
 
 
 def test_corpus_snapshot_fingerprint(db_session):

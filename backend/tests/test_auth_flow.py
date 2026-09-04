@@ -1,4 +1,4 @@
-"""Tests for invitation authentication, sessions, and personal workspaces."""
+"""邀请认证、session 和个人 workspace 测试。"""
 
 from __future__ import annotations
 

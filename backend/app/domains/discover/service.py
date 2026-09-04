@@ -1,7 +1,7 @@
-"""Discover Agent orchestration and opportunity workflow.
+"""Discover Agent 编排与 opportunity 工作流。
 
-The service keeps the expensive external/LLM work outside HTTP transactions.
-Runs are durable product objects; Celery is only the execution mechanism.
+service 将耗时的 external/LLM 工作放在 HTTP 事务之外。Run 是持久化的产品对象；Celery
+仅作为执行机制。
 """
 
 from __future__ import annotations
@@ -75,10 +75,10 @@ logger = get_logger(__name__)
 
 TERMINAL_RUN_STATUSES = {"succeeded", "failed", "cancelled"}
 
-# W2: prompt version stamped on every DiscoverRun for audit trails.
+# W2：每个 DiscoverRun 都记录 prompt version，便于审计。
 DISCOVER_PROMPT_VERSION = "discover-v2"
 
-# LLM prompt for external candidate role judgement (Stage 3).
+# 外部候选角色判断的 LLM prompt（Stage 3）。
 EXTERNAL_ROLE_SYSTEM_PROMPT = """\
 You classify whether external research papers serve as counter-evidence for a \
 research question.
@@ -103,12 +103,10 @@ Output a JSON object, nothing else:
 WAITING_RUN_STATUSES = {"waiting_for_user", "waiting_for_fulltext"}
 PIPELINE_PENDING_STATUSES = {"queued", "running", "waiting_for_user"}
 
-# LLM prompt for external-query axis decomposition (Stage 3). The research
-# question alone (long prose) is a poor Semantic Scholar relevance query; the
-# LLM decomposes it into concise, term-rich search queries that target
-# foundational methods, overlapping work, counter-evidence, and evaluation /
-# critique literature — with the workspace's extracted methods/limitations as
-# context so queries cross research axes with the workspace's named methods.
+# 外部 query 研究轴拆解的 LLM prompt（Stage 3）。单独使用研究问题的长段文字，
+# 作为 Semantic Scholar relevance query 的效果较差；LLM 会将其拆解为简洁且术语丰富的
+# 搜索 query，覆盖基础方法、重叠工作、反证和评估/批评文献，并以 workspace 提取的
+# method/limitation 为上下文，使 query 能够跨研究轴覆盖 workspace 中命名的方法。
 EXTERNAL_QUERY_AXIS_SYSTEM_PROMPT = """\
 You write effective search queries to find EXTERNAL papers that challenge, \
 overlap with, or foundationally support a research question. The papers must \
@@ -143,19 +141,17 @@ Examples of good queries:
 Output a JSON object, nothing else:
 {"queries": ["...", "...", "..."], "exact_lookups": ["Method Full Name", "...", "..."]}"""
 
-# Stage 3 external-query construction budget. A handful of focused queries
-# covers more angles than the literal claim wording while keeping S2 API
-# calls and the LLM role-judge batches bounded. The LLM-decomposed axis
-# queries are the highest-value external-search keys, so they are prioritized
-# over raw workspace signals and generic keywords.
+# Stage 3 外部 query 构建预算。少量聚焦 query 比直接使用 claim 原文能覆盖更多角度，
+# 同时保持 S2 API 调用和 LLM 角色判断 batch 有界。LLM 拆解出的研究轴 query 是价值最高
+# 的外部搜索 key，因此优先级高于原始 workspace 信号和通用关键词。
 EXTERNAL_QUERY_MAX_TOTAL = 8  # kept for compatibility with older imports
 EXTERNAL_QUERY_AXIS_COUNT = 5  # kept for compatibility with older imports
 EXTERNAL_QUERY_MAX_EXACT_LOOKUPS = 2  # kept for compatibility with older imports
 EXTERNAL_QUERY_SIGNAL_TYPES = ("method", "claim", "task", "limitation")
 EXTERNAL_QUERY_MIN_CONFIDENCE = 0.3  # skip low-confidence extracted signals
 EXTERNAL_QUERY_MAX_KEYWORDS = 2  # generic user keywords are lowest priority
-# Architectural components are not named research contributions, so they are
-# poor external-search keys; deprioritize them so real method names win.
+# Architecture component 不是命名的研究贡献，因此不适合作为外部搜索 key；降低其优先级，
+# 让真正的方法名称优先。
 EXTERNAL_METHOD_COMPONENT_TOKENS = {
     "pool",
     "module",
@@ -170,8 +166,7 @@ EXTERNAL_METHOD_COMPONENT_TOKENS = {
 }
 
 WAITING_RUN_STATUSES = {"waiting_for_user", "waiting_for_fulltext"}
-# Domain exception classes live in their own module so they can be
-# imported by submodules (and tests) without dragging the whole service.
+# Domain exception class 放在独立模块中，以便子模块（以及测试）导入时无需加载整个 service。
 from app.domains.discover.exceptions import (  # noqa: E402
     DiscoverGateError,
     DiscoverInputError,
@@ -196,15 +191,13 @@ class DiscoverService(OpportunityWorkflow):
         self.db = db
         self.timeline = TimelineService(db)
 
-        # Bind the cross-domain collaborators through Protocol ports (see
-        # ``ports.py``). Tests can inject Protocol-compatible fakes to
-        # exercise the orchestration without Milvus / an LLM / S2.
+# 通过 Protocol port 绑定跨 domain 协作者（见 ``ports.py``）。测试可以注入兼容 Protocol
+# 的 fake，在没有 Milvus / LLM / S2 的情况下验证 orchestration。
         self.retrieval: RetrievalPort = retrieval or RetrievalAdapter(db)
         self.external_search: ExternalSearchPort = external_search or ExternalSearchAdapter()
         self.llm: LLMGatewayPort = llm or LLMGatewayAdapter()
 
-        # Cheap runtime sanity check — fails loudly if a custom binding is
-        # missing a method the orchestrator calls.
+# 廉价的运行时完整性检查：如果自定义 binding 缺少 orchestrator 调用的方法，则立即报错。
         assert_protocol(self.retrieval, RetrievalPort)
         assert_protocol(self.external_search, ExternalSearchPort)
         assert_protocol(self.llm, LLMGatewayPort)
@@ -212,7 +205,7 @@ class DiscoverService(OpportunityWorkflow):
         self.synthesis = SynthesisService(db, llm=self.llm)
         self.external = ExternalRetrievalService(db, llm=self.llm, external_search=self.external_search, service=self)
 
-    # ---------------------------------------------------------------- runs
+# ---------------------------------------------------------------- 运行记录
     def create_run(
         self,
         workspace_id: str,
@@ -309,7 +302,7 @@ class DiscoverService(OpportunityWorkflow):
         }
 
     def _run_agent_steps(self, run: DiscoverRun) -> list[AgentStep]:
-        """The multi-agent handoff recorded for this Discover run (empty pre-run)."""
+        """该 Discover run 记录的多 Agent 交接信息（运行前为空）。"""
         if not run.task_id:
             return []
         agent_run = self.db.scalar(
@@ -346,7 +339,7 @@ class DiscoverService(OpportunityWorkflow):
         return run
 
     def delete_run(self, workspace_id: str, run_id: str, *, actor: str = "user") -> None:
-        """Hide a completed Discover Run without deleting its research data."""
+        """隐藏已完成的 Discover Run，但不删除其研究数据。"""
         run = self.get_run(workspace_id, run_id)
         if run.status not in TERMINAL_RUN_STATUSES:
             raise DiscoverRunDeletionConflict(
@@ -450,8 +443,8 @@ class DiscoverService(OpportunityWorkflow):
         summary = (run.stage_summaries or {}).get("external_selection") or {}
         return summary.get("status") == "skipped"
 
-    # ---------------------------------------------------------- external (MA-1)
-    # Delegate to ExternalRetrievalService (app.domains.discover.external_retrieval).
+# ---------------------------------------------------------- 外部检索（MA-1）
+# 委托给 ExternalRetrievalService（app.domains.discover.external_retrieval）。
     def _external_candidate_state(self, run):
         return self.external._external_candidate_state(run)
 
@@ -462,10 +455,10 @@ class DiscoverService(OpportunityWorkflow):
         return self.external._paper_pipeline_state(paper_id)
 
     def _corpus_snapshot(self, workspace_id: str) -> str:
-        """Short corpus fingerprint for run audit (W2): papers + knowledge counts.
+        """用于 run 审计的简短语料指纹（W2）：论文数和知识数。
 
-        Lets a downstream auditor tell "which corpus produced this run" from the
-        run row alone, without re-querying counts at review time.
+        使下游审计者只根据 run 行就能知道“该 run 由哪份语料产生”，无需在审查时重新
+        查询数量。
         """
         papers = int(
             self.db.execute(
@@ -486,7 +479,7 @@ class DiscoverService(OpportunityWorkflow):
         )
         return f"workspace-v1-{papers}p-{knowledge}k"
 
-    # -------------------------------------------------------------- worker
+# -------------------------------------------------------------- worker：任务执行
     def execute_run(self, run_id: str) -> dict[str, Any]:
         run = self.db.get(DiscoverRun, run_id)
         if run is None:
@@ -504,8 +497,7 @@ class DiscoverService(OpportunityWorkflow):
                 return self._cancelled_result(run)
         run.status = "running"
         run.started_at = run.started_at or datetime.now(timezone.utc)
-        # Refresh the corpus fingerprint - the workspace may have changed while
-        # the run sat in the queue.
+# 刷新 corpus fingerprint——run 在队列中等待时 workspace 可能已经发生变化。
         run.corpus_version = self._corpus_snapshot(run.workspace_id)
         self._stage(run, "preflight", 0.05)
 
@@ -628,8 +620,7 @@ class DiscoverService(OpportunityWorkflow):
         elif pending:
             return self._wait_for_fulltext(run, candidate_state)
         elif verified:
-            # W1: full-text verification completed on a resume - refine the
-            # metadata-level roles against the imported papers' full text.
+# W1：恢复运行时完成 full-text verification——根据导入论文的全文优化 metadata-level role。
             judged = self._judge_external_fulltext_roles(run, claim_text)
             self._stage(
                 run,
@@ -669,9 +660,8 @@ class DiscoverService(OpportunityWorkflow):
         )
         self._checkpoint(run)
 
-        # CriticAgent: adversarially review candidates. Verdicts are advisory —
-        # weak candidates are down-weighted, never silently dropped, and a
-        # critic failure must not block the pipeline.
+# CriticAgent：对候选进行对抗式审阅。Verdict 仅供参考——弱候选会降低权重但不会静默丢弃，
+# Critic 失败也不能阻塞 pipeline。
         critic_reviews = self._critic_review(
             run,
             claim_text,
@@ -689,8 +679,7 @@ class DiscoverService(OpportunityWorkflow):
                 "Critic reviewed candidates against the evidence ledger.",
                 {"reviews": critic_reviews, "verdicts": verdict_counts},
             )
-            # W2: inject critic challenges into a second synthesis pass so the
-            # refined opportunities explicitly respond to the critic's gaps.
+# W2：将 critic challenge 注入第二次 synthesis，使优化后的 opportunity 明确回应 critic 的 gap。
             challenges = self._critic_challenges(critic_reviews)
             if challenges:
                 refined = self._synthesize_candidates(
@@ -717,8 +706,8 @@ class DiscoverService(OpportunityWorkflow):
                     f"Re-synthesized opportunities addressing {len(challenges)} critic challenge(s).",
                     {"challenges": challenges, "refined": sum(1 for c in candidates if c.get("critic_refined"))},
                 )
-            # Orchestrator narrowing loop (bounded): for "narrow" candidates,
-            # run a focused counter-evidence pass on the suggested focus.
+# Orchestrator 收窄循环（有界）：对标记为 "narrow" 的候选，针对建议方向执行 focused
+# 反证检索阶段。
             narrowed = self._narrowing_pass(run, candidates, critic_reviews)
             if narrowed:
                 self._agent_step(
@@ -764,9 +753,8 @@ class DiscoverService(OpportunityWorkflow):
             "complete" if any(gate["verified"] for gate in final_gates) else "incomplete"
         )
         saved_summary = {"opportunities": len(created), "gates": final_gates}
-        # A cancellation can arrive while synthesis or persistence is running.
-        # Use a conditional UPDATE so a stale worker can never overwrite the
-        # user's cancelled state with succeeded.
+# synthesis 或 persistence 执行期间可能收到取消请求。使用条件 UPDATE，确保过期 worker
+# 永远不能用 succeeded 覆盖用户的 cancelled 状态。
         result = self.db.execute(
             update(DiscoverRun)
             .where(DiscoverRun.id == run.id, DiscoverRun.status != "cancelled")
@@ -813,7 +801,7 @@ class DiscoverService(OpportunityWorkflow):
         return {"run_id": run.id, "status": run.status, "opportunity_ids": [item.id for item in created]}
 
     def _checkpoint(self, run: DiscoverRun) -> None:
-        """Refresh the run and stop this worker after a user cancellation."""
+        """刷新 run，并在用户取消后停止该 worker。"""
         self.db.refresh(run)
         if self._cancelled(run):
             raise DiscoverRunCancelled(run.id)
@@ -829,16 +817,14 @@ class DiscoverService(OpportunityWorkflow):
         self.db.commit()
         return {"run_id": run.id, "status": "cancelled", "idempotent": True}
 
-    # -------------------------------------------------------------- agent observability
+# -------------------------------------------------------------- agent 可观测性
     def _discover_agent_run(self, run: DiscoverRun) -> AgentRun | None:
-        """Find-or-create the AgentRun mirroring this Discover run's orchestration.
+        """查找或创建镜像该 Discover run 编排过程的 AgentRun。
 
-        Reuses the workspace AgentRun/AgentStep protocol (agent domain) so the
-        Discover pipeline surfaces as an auditable agent handoff, consistent
-        with the multi-agent direction. The run is keyed by the Discover run's
-        ``task_id`` so it survives worker resumes (external-selection and
-        fulltext pauses). ``None`` when the run has no task (e.g. tests that
-        construct runs directly).
+        复用 workspace 的 AgentRun/AgentStep protocol（agent domain），使 Discover 流程
+        以可审计的 agent handoff 形式呈现，与多智能体方向保持一致。该记录以 Discover
+        run 的 ``task_id`` 为键，因此可以跨 worker 恢复（external-selection 和 fulltext
+        暂停）。当 run 没有关联 task 时返回 ``None``（例如测试直接构造 run）。
         """
         if run.task_id:
             existing = self.db.scalar(
@@ -865,7 +851,7 @@ class DiscoverService(OpportunityWorkflow):
         return agent_run
 
     def _agent_step(self, agent_run: AgentRun | None, stage: str, status: str, summary: str, details: dict[str, Any] | None = None) -> None:
-        """Append an AgentStep to the discover AgentRun (idempotent across resumes)."""
+        """向 discover AgentRun 追加 AgentStep（跨恢复操作保持幂等）。"""
         if agent_run is None:
             return
         max_seq = int(self.db.scalar(select(func.max(AgentStep.sequence)).where(AgentStep.run_id == agent_run.id)) or 0)
@@ -892,9 +878,9 @@ class DiscoverService(OpportunityWorkflow):
         agent_run.progress = run.progress
         self.db.commit()
 
-    # -------------------------------------------------------------- CriticAgent (MA-1)
-    # Delegate to CriticService (app.domains.discover.critic). Kept as thin
-    # wrappers so existing callers (orchestrator + tests) continue to work.
+# -------------------------------------------------------------- CriticAgent（MA-1）：批评代理
+# 委托给 CriticService（app.domains.discover.critic）。保留薄封装，以便现有调用方
+#（orchestrator + tests）继续工作。
     def _critic_review(self, run, claim_text, candidates, supporting, similar, counter):
         return self.critic.review(run, claim_text, candidates, supporting, similar, counter)
 
@@ -959,7 +945,7 @@ class DiscoverService(OpportunityWorkflow):
         )
         return {"run_id": run.id, "status": "failed", "error_code": code}
 
-    # ----------------------------------------------------------- retrieval
+# ----------------------------------------------------------- 检索
     def _workspace_similar(
         self, run: DiscoverRun, claim: KnowledgeItem | None, text: str, config: DiscoverConfig
     ) -> RetrievalResponse:
@@ -1062,11 +1048,10 @@ class DiscoverService(OpportunityWorkflow):
         candidate: dict[str, Any],
         config: DiscoverConfig,
     ) -> RetrievalResponse:
-        """Retrieve evidence for the concrete synthesized opportunity.
+        """为具体合成的 opportunity 检索证据。
 
-        The initial topic retrieval is only a context builder. Final Gate
-        evidence must be re-retrieved against the candidate's problem and
-        hypothesis so broad topic matches cannot be promoted to support.
+        初始 topic 检索仅用于构建上下文。Final Gate 的证据必须针对候选的 problem 和
+        hypothesis 重新检索，避免宽泛的主题匹配被提升为 supporting evidence。
         """
         query = " ".join(
             str(candidate.get(key) or "")
@@ -1172,16 +1157,13 @@ class DiscoverService(OpportunityWorkflow):
         supporting: RetrievalResponse,
         counter: RetrievalResponse,
     ) -> dict[str, Any]:
-        """Evaluate only explicit, span-backed supporting evidence.
+        """仅评估有明确文本范围支持的 supporting evidence。
 
-        Similar Work, Counter Evidence, metadata snapshots, and duplicate
-        chunks are intentionally excluded from this set.
+        Similar Work、Counter Evidence、元数据快照和重复 chunk 会有意排除在该集合之外。
         """
-        # ``supporting`` is already produced by ``_candidate_supporting`` for
-        # the concrete proposal.  Do not apply a second lexical-overlap gate
-        # here: proposals are generated in Chinese while paper excerpts often
-        # remain English, so an ASCII token intersection incorrectly discards
-        # valid cross-lingual semantic retrieval hits.
+# ``supporting`` 已由具体 proposal 的 ``_candidate_supporting`` 生成。这里不要再应用一次
+# lexical-overlap gate：proposal 使用中文生成，而论文摘录经常仍是英文，ASCII token 交集
+# 会错误丢弃有效的跨语言 semantic retrieval 命中。
         candidate_items = supporting.items
         valid: list[RetrievalResultItem] = []
         seen_papers: set[str] = set()
@@ -1286,11 +1268,9 @@ class DiscoverService(OpportunityWorkflow):
             str(candidate.get("candidate_hypothesis") or ""),
             str(candidate.get("why_existing_work_is_insufficient") or ""),
         ]
-        # Candidate-specific semantic retrieval has already matched the joint
-        # problem/hypothesis query.  Coverage therefore measures whether the
-        # proposal is structurally complete and backed by independent,
-        # span-anchored papers, instead of comparing Chinese proposal text to
-        # untranslated English evidence with a lexical regex.
+# 针对候选的 semantic retrieval 已经匹配了联合 problem/hypothesis query。因此 coverage
+# 衡量的是 proposal 是否结构完整、是否有独立且以 span 为锚点的论文支撑，而不是用 lexical
+# regex 比较中文 proposal 文本和未翻译的英文 evidence。
         complete_fields = sum(bool(field.strip()) for field in fields)
         papers = len({item.paper_id for item in items if item.paper_id})
         evidence_density = min(len(items) / 3, 1.0)
@@ -1326,9 +1306,9 @@ class DiscoverService(OpportunityWorkflow):
         overlap = len(span_tokens & item_tokens)
         return overlap >= 3 and overlap / max(1, len(span_tokens)) >= 0.5
 
-    # ---------------------------------------------------------- synthesis (MA-1)
-    # Delegate to SynthesisService (app.domains.discover.synthesis). Kept as
-    # thin wrappers so existing callers (orchestrator + tests) continue to work.
+# ---------------------------------------------------------- synthesis（MA-1）：综合
+# 委托给 SynthesisService（app.domains.discover.synthesis）。保留薄封装，以便现有调用方
+#（orchestrator + tests）继续工作。
     def _synthesize_candidates(
         self,
         run: DiscoverRun,
@@ -1394,8 +1374,7 @@ class DiscoverService(OpportunityWorkflow):
             ).scalars()
         )
         for index, candidate in enumerate(candidates):
-            # Re-run supporting retrieval for each concrete proposal. The
-            # pre-synthesis topic retrieval remains context only.
+# 为每个具体 proposal 重新运行 supporting retrieval。synthesis 前的 topic retrieval 仅作为上下文。
             config = DiscoverConfig.model_validate(run.config or {})
             candidate_supporting = self._candidate_supporting(run, claim, candidate, config)
             gate = self._evidence_gate(
@@ -1484,11 +1463,10 @@ class DiscoverService(OpportunityWorkflow):
         *,
         actor: str = "user",
     ) -> ResearchOpportunity:
-        """Recompute a saved opportunity gate from its immutable evidence snapshot.
+        """根据不可变证据快照重新计算已保存 opportunity 的 gate。
 
-        This is intentionally deterministic and performs no new external or
-        model calls.  It is useful when gate logic is upgraded, while keeping
-        the original retrieval snapshot auditable.
+        该过程有意保持确定性，不进行新的 external 或 model 调用。Gate 逻辑升级时可以
+        使用它重新评估，同时保留原始检索快照的可审计性。
         """
         opportunity = self.get_opportunity(workspace_id, opportunity_id)
         version = self._current_version(opportunity, None)
@@ -1583,9 +1561,8 @@ class DiscoverService(OpportunityWorkflow):
     ) -> EvidenceSpan | None:
         if not item.paper_id or not item.text:
             return None
-        # The retrieved chunk may still carry NUL bytes from an older parse
-        # (pre-sanitization). PostgreSQL refuses NUL in a LIKE parameter, so
-        # strip it defensively before querying.
+# 检索到的 chunk 可能仍携带旧解析产生的 NUL 字节（sanitize 之前的数据）。PostgreSQL 拒绝
+# LIKE 参数中的 NUL，因此在查询前进行防御性移除。
         fragment = item.text[:80].replace("\x00", "")
         exact = self.db.execute(
             select(EvidenceSpan)
@@ -1630,7 +1607,7 @@ class DiscoverService(OpportunityWorkflow):
         span = self._find_evidence_span(item, workspace_id)
         return span.id if span else None
 
-    # -------------------------------------------------------------- helpers
+# -------------------------------------------------------------- 辅助函数
     def _resolve_claim(self, workspace_id: str, claim_item_id: str | None) -> KnowledgeItem | None:
         if not claim_item_id:
             return None
@@ -1687,7 +1664,7 @@ class DiscoverService(OpportunityWorkflow):
 
 
 def resume_discover_runs_for_paper(db: Session, paper_id: str, workspace_id: str) -> None:
-    """Resume waiting Discover runs once an imported paper is fully ready."""
+    """导入论文完全就绪后，恢复等待中的 Discover run。"""
     service = DiscoverService(db)
     candidate_rows = list(
         db.execute(

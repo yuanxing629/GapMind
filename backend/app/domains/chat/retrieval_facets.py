@@ -1,10 +1,8 @@
-"""Deterministic query-facet planning for Workspace Chat experiments.
+"""Workspace Chat 实验的确定性 query facet 规划。
 
-This module only plans candidate facet queries.  It deliberately does not
-call an LLM, embedding provider, Milvus, or the database.  Production Chat
-must keep the original question as the primary query; callers may use the
-returned facets only after an offline A/B evaluation has justified enabling
-them.
+本模块只规划候选 facet 查询。它刻意不调用 LLM、embedding provider、Milvus 或数据库。
+生产 Chat 必须保留原始问题作为主查询；调用方只有在离线 A/B 评测证明启用合理后，
+才可以使用返回的 facet。
 """
 
 from __future__ import annotations
@@ -28,7 +26,7 @@ class _FacetRule:
 
 @dataclass(frozen=True)
 class RetrievalFacet:
-    """One deterministic facet derived from the user's original question."""
+    """从用户原始问题派生的一条确定性 facet。"""
 
     name: FacetName
     query: str
@@ -110,12 +108,10 @@ def _contains_trigger(question: str, trigger: str) -> bool:
 
 
 def plan_retrieval_facets(question: str) -> tuple[RetrievalFacet, ...]:
-    """Return at most two deterministic facets for ``question``.
+    """为 ``question`` 返回最多两个确定性 facet。
 
-    The rule order is intentional and stable: formula questions are handled
-    before method, dataset, and comparison facets.  The original normalized
-    question is copied into every planned query, so a future caller cannot
-    accidentally replace the primary query with a keyword-only query.
+    规则顺序是有意设计且稳定的：公式问题优先于 method、dataset 和 comparison facet 处理。
+    原始规范化问题会复制到每个规划查询中，避免未来调用方意外用仅关键词查询替换主查询。
     """
 
     normalized = " ".join(question.split()).strip().casefold()

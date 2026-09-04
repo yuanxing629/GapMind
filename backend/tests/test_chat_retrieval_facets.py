@@ -1,4 +1,4 @@
-"""Tests for deterministic Chat retrieval facet planning."""
+"""确定性 Chat retrieval facet 规划测试。"""
 
 from __future__ import annotations
 

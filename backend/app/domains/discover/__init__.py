@@ -1,1 +1,1 @@
-"""Research opportunity discovery domain."""
+"""研究机会发现 domain。"""

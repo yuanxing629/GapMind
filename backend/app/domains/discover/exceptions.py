@@ -1,42 +1,41 @@
-"""Discover-domain exception hierarchy.
+"""Discover domain 的异常层次。
 
-Centralising these classes makes them importable from anywhere in the
-domain (router, service submodules, tests) without dragging the rest of
-``service.py`` along. The mapping from class → HTTP status lives in
-``app.core.exception_handlers``.
+集中定义这些异常后，domain 内的任何位置（router、service 子模块、tests）都可以直接
+导入，而不必连带加载 ``service.py`` 的其余内容。异常类到 HTTP 状态码的映射位于
+``app.core.exception_handlers``。
 """
 
 from __future__ import annotations
 
 
 class DiscoverInputError(Exception):
-    """User-provided input is invalid (missing topic, malformed paper_ids, ...)."""
+    """用户输入无效（缺少 topic、paper_ids 格式错误等）。"""
 
 
 class DiscoverRunNotFoundError(Exception):
-    """No DiscoverRun with the given id (or it belongs to a different workspace)."""
+    """不存在给定 id 的 DiscoverRun，或它属于其他 workspace。"""
 
 
 class DiscoverRunDeletionConflict(Exception):
-    """A DiscoverRun cannot be deleted while its worker is still active."""
+    """worker 仍处于活动状态时，DiscoverRun 不能删除。"""
 
 
 class OpportunityNotFoundError(Exception):
-    """No ResearchOpportunity with the given id (or workspace mismatch)."""
+    """不存在给定 id 的 ResearchOpportunity，或 workspace 不匹配。"""
 
 
 class OpportunityVersionConflict(Exception):
-    """Optimistic-lock conflict — caller's base_version_id is stale."""
+    """乐观锁冲突——调用方的 base_version_id 已过期。"""
 
 
 class InvalidOpportunityTransition(Exception):
-    """Tried to move an Opportunity to a status not reachable from the current one."""
+    """尝试将 Opportunity 移动到从当前状态不可达的状态。"""
 
 
 class DiscoverGateError(Exception):
-    """Evidence gate failed before confirmation; ``code`` drives the front-end hint.
+    """确认前的证据门禁失败；``code`` 用于驱动前端提示。
 
-    Examples: ``insufficient_full_text_evidence``, ``coverage_below_threshold``.
+    示例：``insufficient_full_text_evidence``、``coverage_below_threshold``。
     """
 
     def __init__(self, code: str, message: str) -> None:
@@ -45,7 +44,7 @@ class DiscoverGateError(Exception):
 
 
 class DiscoverRunCancelled(Exception):
-    """Internal signal raised when a run has been cancelled mid-pipeline."""
+    """run 在流水线中途被取消时抛出的内部信号。"""
 
 
 __all__ = [

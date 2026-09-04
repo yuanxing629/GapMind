@@ -1,4 +1,4 @@
-"""Record the reason a Gap annotation used a remote fallback."""
+"""记录 Gap 标注使用远程回退的原因。"""
 
 from __future__ import annotations
 

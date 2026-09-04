@@ -1,4 +1,4 @@
-"""Add soft deletion to evidence spans used by bounded graph projections."""
+"""为 bounded graph projection 使用的 evidence span 增加软删除。"""
 
 from __future__ import annotations
 

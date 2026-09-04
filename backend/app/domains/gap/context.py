@@ -1,10 +1,8 @@
-"""Build the bounded, auditable input used by the gap extractor.
+"""构建 gap extractor 使用的有界、可审计输入。
 
-Knowledge extraction remains the general-purpose extraction layer.  This
-module projects the useful, paper-local subset of that layer into the
-specialized methods/problems prompt.  The Markdown path is kept as an
-explicit compatibility fallback for papers that predate knowledge
-extraction or whose run produced no usable items.
+Knowledge extraction 仍是通用抽取层。本模块将其中有用且属于单篇论文的子集投影到
+methods/problems 专用 prompt。Markdown 路径作为显式兼容回退保留，用于早于知识抽取
+能力的论文，或抽取 run 未产生可用条目的论文。
 """
 
 from __future__ import annotations
@@ -34,12 +32,12 @@ _ITEM_TYPE_ORDER = {name: index for index, name in enumerate(_KNOWLEDGE_ITEM_TYP
 
 
 class GapKnowledgeExtractionPendingError(Exception):
-    """Raised when a paper is not ready for dependent gap extraction."""
+    """论文尚未准备好执行依赖它的 gap 抽取时抛出的异常。"""
 
 
 @dataclass(frozen=True)
 class GapContextIdentity:
-    """Identity used for idempotency and stale-annotation checks."""
+    """用于幂等性和过期标注检查的身份信息。"""
 
     input_mode: str
     knowledge_extraction_run_id: str | None
@@ -49,7 +47,7 @@ class GapContextIdentity:
 
 @dataclass(frozen=True)
 class GapExtractionContext:
-    """Bounded model input plus the source lineage behind it."""
+    """有界模型输入及其来源 lineage。"""
 
     text: str
     input_mode: str
@@ -119,7 +117,7 @@ def _knowledge_items(db: Session, paper: Paper, run: ExtractionRun) -> list[Know
 
 
 def get_gap_context_identity(db: Session, paper: Paper) -> GapContextIdentity:
-    """Return the cheap lineage identity used before queueing a task."""
+    """返回任务排队前使用的低成本 lineage 身份。"""
     if settings.gap_extraction_context_mode == LEGACY_CONTEXT_MODE:
         return GapContextIdentity(LEGACY_CONTEXT_MODE, None)
 
@@ -204,7 +202,7 @@ def _build_knowledge_text(
 
 
 def build_gap_context(db: Session, paper: Paper, raw_markdown: str) -> GapExtractionContext:
-    """Build the configured context and retain enough IDs to audit it later."""
+    """构建配置的上下文，并保留足够的 ID 供后续审计。"""
     if settings.gap_extraction_context_mode == LEGACY_CONTEXT_MODE:
         legacy = compact_markdown(raw_markdown)
         return GapExtractionContext(

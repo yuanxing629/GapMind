@@ -1,4 +1,4 @@
-"""Shared FastAPI dependencies."""
+"""共用的 FastAPI dependencies。"""
 
 from __future__ import annotations
 
@@ -10,10 +10,10 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.core.config import settings
 
 
-# Session factory is created lazily in db.session; re-exported here for deps.
-# Importing here would create a circular import, so we import inside the function.
+# Session factory 在 db.session 中延迟创建，并在此为 deps 重新导出。
+# 直接导入会产生循环依赖，因此放在函数内部导入。
 def get_db() -> Generator[Session, None, None]:
-    """FastAPI dependency that yields a SQLAlchemy session."""
+    """生成 SQLAlchemy session 的 FastAPI dependency。"""
     from app.db.session import SessionLocal
 
     session_factory: sessionmaker[Session] = SessionLocal
@@ -25,17 +25,17 @@ def get_db() -> Generator[Session, None, None]:
 
 
 def get_settings_dep() -> "settings.__class__":  # type: ignore[valid-type]
-    """FastAPI dependency returning the cached Settings instance."""
+    """返回缓存 Settings 实例的 FastAPI dependency。"""
     return settings
 
 
 def authentication_required() -> bool:
-    """Return whether this deployment must authenticate every API request."""
+    """返回当前部署是否必须认证每个 API 请求。"""
     return settings.auth_required or settings.app_env != "development"
 
 
 def _token_users() -> dict[str, str]:
-    """Parse the intentionally small delivery-time token registry."""
+    """解析有意保持精简的交付期 token 注册表。"""
     users: dict[str, str] = {}
     for item in settings.auth_tokens.split(","):
         token, separator, user_id = item.strip().partition(":")
@@ -49,11 +49,10 @@ def resolve_user_id(
     authorization: str | None = None,
     x_user_id: str | None = None,
 ) -> str:
-    """Resolve a user from Bearer auth, with a development-only fallback.
+    """根据 Bearer auth 解析用户，并提供仅限开发环境的回退。
 
-    ``X-User-ID`` is deliberately not accepted as an identity source once the
-    app is running outside development.  The token registry is a minimal
-    competition/deployment guard, not a replacement for an institutional IdP.
+    应用在开发环境之外运行时，刻意不接受 ``X-User-ID`` 作为身份来源。
+    token 注册表是轻量的比赛/部署保护，不用于替代机构 IdP。
     """
     if authorization:
         scheme, _, token = authorization.partition(" ")
@@ -96,7 +95,7 @@ def get_current_user(
     authorization: str | None = Header(default=None, alias="Authorization"),
     db: Session = Depends(get_db),
 ) -> str:
-    """Resolve the acting user identity for a route dependency."""
+    """为路由 dependency 解析实际操作者身份。"""
     state_user_id = getattr(request.state, "user_id", None)
     if state_user_id:
         return state_user_id
@@ -127,12 +126,10 @@ def get_owned_workspace(
     db: Session = Depends(get_db),
     user_id: str = Depends(get_current_user),
 ):
-    """Resolve a Workspace only when it belongs to the acting user.
+    """仅在 Workspace 属于实际操作者时解析它。
 
-    Routers whose URL is uniformly ``/workspaces/{workspace_id}/...`` can use
-    this dependency as the canonical ownership check. The delivery middleware
-    repeats the same check when it can resolve a session before routing, while
-    this dependency keeps local development and direct route callers honest.
+    URL 统一为 ``/workspaces/{workspace_id}/...`` 的路由可以使用该依赖作为规范所有权检查。
+    交付中间件在路由前能够解析 session 时会重复同一检查，而该依赖可以约束本地开发和直接路由调用方。
     """
     from app.domains.workspace.service import WorkspaceService
 

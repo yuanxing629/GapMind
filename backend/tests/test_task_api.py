@@ -1,10 +1,8 @@
-"""Integration tests for the Task state machine + Timeline.
+"""Task 状态机和 Timeline 的集成测试。
 
-Task creation isn't exposed via HTTP in Phase 1b (tasks are spawned by the
-system in Phase 2). For tests we create tasks through the service layer
-using the same `db_session` the TestClient sees, by overriding the
-`get_db` dependency to a function that returns our session and using a
-small helper that constructs TaskService with that session.
+Phase 1b 不通过 HTTP 暴露 task creation（task 由 Phase 2 的系统流程派发）。测试通过 service
+layer 创建 task，并使用 TestClient 看到的同一个 `db_session`：将 `get_db` dependency
+覆盖为返回该 session 的函数，再用小型 helper 以该 session 构造 TaskService。
 """
 
 from __future__ import annotations
@@ -19,7 +17,7 @@ from app.domains.task.service import TaskService
 
 @pytest.fixture
 def task_factory(db_session: Session):
-    """Return a callable that creates a task using the test session."""
+    """返回一个使用测试 session 创建任务的可调用对象。"""
 
     def _make(workspace_id: str | None, task_type: str = "parse_pdf") -> str:
         svc = TaskService(db_session)
@@ -31,7 +29,7 @@ def task_factory(db_session: Session):
 
 @pytest.fixture
 def task_transitioner(db_session: Session):
-    """Return a callable that transitions a task using the test session."""
+    """返回一个使用测试 session 转换任务状态的可调用对象。"""
 
     def _transition(task_id: str, to_status: str, **kwargs) -> None:
         TaskService(db_session).transition(task_id, to_status, **kwargs)
@@ -53,7 +51,7 @@ def test_task_cancel_from_queued(
 
     resp = client.post(f"/api/v1/tasks/{tid}/cancel")
     assert resp.status_code == 200
-    # Cancel is finalized immediately (previously it stopped at the never-advanced
+# Cancel 会立即完成（之前会停留在永远不会推进的
     # "cancel_requested" state, leaving the UI stuck on "正在取消").
     assert resp.json()["status"] == "cancelled"
     assert client.get(f"/api/v1/tasks/{tid}").json()["status"] == "cancelled"
@@ -82,8 +80,8 @@ def test_task_retry_from_failed(
     task_transitioner(tid, "running")
     task_transitioner(tid, "failed", error="boom")
 
-    # Hermetic: stub the celery re-dispatch (the retry endpoint now re-enqueues
-    # the celery task so the queued row is actually processed).
+# Hermetic：替换 Celery 重新派发（retry 端点现在会重新入队 Celery 任务，
+# 使 queued 行真正得到处理）。
     import app.workers.tasks.dispatch as dispatch_mod
 
     monkeypatch.setattr(dispatch_mod, "redispatch_task", lambda task: "fake-celery-id")
@@ -93,7 +91,7 @@ def test_task_retry_from_failed(
     body = resp.json()
     assert body["status"] == "queued"
     assert body["error"] is None
-    # The re-dispatched celery id is recorded on the row.
+# 重新派发的 Celery id 会记录在该行中。
     assert client.get(f"/api/v1/tasks/{tid}").json()["celery_task_id"] == "fake-celery-id"
 
 

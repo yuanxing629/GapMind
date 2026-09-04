@@ -1,8 +1,7 @@
-"""Tests for the lightweight ``X-User-ID`` dependency.
+"""轻量 ``X-User-ID`` dependency 测试。
 
-The MVP is single-user, so the dependency falls back to ``"user"`` when
-the header is absent. Wiring this in now means a future auth migration
-only touches ``get_current_user``.
+MVP 是单用户模式，因此 header 缺失时 dependency 回退到 ``"user"``。现在接入该 wiring
+后，未来的 auth migration 只需修改 ``get_current_user``。
 """
 
 from __future__ import annotations
@@ -36,7 +35,7 @@ def test_get_current_user_resolves_header() -> None:
 
 
 def test_get_current_user_handles_empty_header() -> None:
-    """An empty ``X-User-ID`` is treated as 'no header' → fallback."""
+    """空 ``X-User-ID`` 按“没有请求头”处理并回退。"""
     client = _client()
     response = client.get("/me", headers={"X-User-ID": ""})
     assert response.json() == {"user": "user"}

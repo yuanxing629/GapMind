@@ -1,7 +1,7 @@
-"""Export saved Workspace Chat answers for offline QA review.
+"""导出已保存的 Workspace Chat 回答，供离线 QA 审查。
 
-This is a read-only exporter. It does not call an LLM, access Milvus, create
-tasks, or mutate the workspace. Human verdicts are intentionally left empty.
+这是只读导出器。它不会调用 LLM、访问 Milvus、创建 task 或修改 workspace。human verdict
+有意保持为空。
 """
 
 from __future__ import annotations
@@ -50,7 +50,7 @@ def _parse_selection(values: list[str]) -> list[tuple[str, str]]:
 
 
 def _audit_snapshot(value: dict | None) -> RetrievalAuditSnapshot | None:
-    """Copy only stable, non-sensitive retrieval audit fields."""
+    """只复制稳定且非敏感的检索审计字段。"""
 
     if not value or not value.get("status"):
         return None

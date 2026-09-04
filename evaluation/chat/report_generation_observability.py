@@ -1,11 +1,10 @@
-"""Aggregate persisted Chat generation observations without exporting content.
+"""聚合持久化的 Chat 生成观测，不导出内容。
 
-This read-only report is intended for the RAG generation-quality gate.  It
-reads completed and non-completed assistant rows for one workspace, emits
-only counts and numeric aggregates, and never writes message text, source
-text, message ids, or provider errors to the report.
+该只读报告用于 RAG generation-quality gate。它读取一个 workspace 中已完成和未完成的
+assistant 行，只输出数量和数值聚合，绝不会将消息文本、来源文本、消息 ID 或 provider
+错误写入报告。
 
-Example::
+示例：
 
     backend\\.venv\\Scripts\\python.exe \\
       evaluation\\chat\\report_generation_observability.py \\
@@ -108,7 +107,7 @@ def _summarize_rows(rows: list[ChatMessage]) -> dict[str, Any]:
 
 
 def build_report(workspace_id: str) -> dict[str, Any]:
-    """Read active-conversation Chat rows and return an aggregate report."""
+    """读取活动 conversation 的 Chat 行并返回聚合报告。"""
 
     db = SessionLocal()
     try:

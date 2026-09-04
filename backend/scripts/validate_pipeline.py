@@ -1,14 +1,13 @@
-"""Validate parse, extraction, indexing, and retrieval for real papers.
+"""验证真实论文的解析、抽取、索引和检索。
 
-Run from backend/:
+从 backend/ 目录运行：
 
     python scripts/validate_pipeline.py \
         --workspace-id <workspace-uuid> \
         --paper-id <paper-1> --paper-id <paper-2> --paper-id <paper-3> \
         --query "self-interpretable graph neural network"
 
-The script performs structural checks only. Retrieval relevance and LLM
-judgements still require human review of the printed passages.
+脚本只执行结构检查。检索相关性和 LLM 判断仍需要人工复核打印出的段落。
 """
 
 from __future__ import annotations

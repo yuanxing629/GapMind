@@ -120,9 +120,9 @@ export function mergeGraph(current: GraphData, incoming: GraphData): GraphData {
   const nodeIds = new Set(nodes.keys());
   return {
     nodes: [...nodes.values()],
-    // A partial/faulty response must not create a dangling Cytoscape edge.
-    // Identity is the only join key; labels and canonical names are display
-    // values and must never collapse distinct paper-local items.
+    // 不完整或错误的响应不得创建悬空的 Cytoscape 边。
+    // 身份是唯一的关联键；label 和 canonical name 只是展示值，
+    // 绝不能合并不同论文中的局部 item。
     edges: [...edges.values()].filter(
       (edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target),
     ),
@@ -148,14 +148,13 @@ export function branchGraph(graph: GraphData, nodeId: string | null): GraphData 
 }
 
 /**
- * Hides the canonical-entity layer for the semantic views.
+ * 在语义视图中隐藏 canonical-entity 层。
  *
- * Knowledge items already carry their canonical name as the node label, so the
- * "对应规范实体" (canonicalizes) edges + entity nodes are pure visual noise when
- * many same-named items all point at one same-named entity node (e.g. 18
- * "GNNExplainer" items → one "GNNExplainer" entity). Removes canonicalizes
- * edges, then drops canonical_entity nodes left with no other connection (an
- * entity that happens to have a real semantic edge is preserved).
+ * 知识项节点标签已经携带 canonical name，因此当多个同名项都指向一个同名实体节点时，
+ * “对应规范实体”（canonicalizes）边和实体节点只是视觉噪声（例如 18 个
+ * “GNNExplainer” 项 -> 一个 “GNNExplainer” 实体）。函数会移除 canonicalizes 边，
+ * 然后删除没有其他连接的 canonical_entity 节点
+ * （恰好存在真实语义边的实体会被保留）。
  */
 export function hideEntityLayer(graph: GraphData): GraphData {
   const edges = graph.edges.filter((edge) => edge.relation_type !== "canonicalizes");

@@ -1,7 +1,7 @@
-"""Embedding Gateway - SiliconFlow BGE-m3 integration.
+"""Embedding Gateway：SiliconFlow BGE-m3 集成。
 
-Phase 0: skeleton with a basic `embed_texts` method. Phase 2 will add
-batching, Milvus integration, and embedding version tracking.
+Phase 0：提供基础 `embed_texts` 方法的骨架。Phase 2 将增加 batching、Milvus 集成和
+embedding 版本跟踪。
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ logger = get_logger(__name__)
 
 @dataclass
 class EmbeddingResult:
-    """Normalized embedding response."""
+    """规范化的 embedding 响应。"""
 
     embeddings: list[list[float]]
     model: str
@@ -29,9 +29,9 @@ class EmbeddingResult:
 
 
 class EmbeddingGateway:
-    """Wrapper over SiliconFlow's OpenAI-compatible embedding endpoint.
+    """SiliconFlow OpenAI-compatible embedding endpoint 的包装器。
 
-    Uses BGE-m3 (1024-dim, 8192 context) for paper/academic text.
+    使用 BGE-m3（1024 维、8192 context）处理论文和学术文本。
     """
 
     def __init__(
@@ -63,7 +63,7 @@ class EmbeddingGateway:
         *,
         batch_size: int = 16,
     ) -> EmbeddingResult:
-        """Embed a list of texts. Batches to stay under provider limits."""
+        """将文本列表向量化，并分批处理以遵守 provider 限制。"""
         all_embeddings: list[list[float]] = []
         total_tokens = 0
 
@@ -90,11 +90,11 @@ class EmbeddingGateway:
         )
 
     def embed_one(self, text: str) -> list[float]:
-        """Convenience: embed a single text, return its vector."""
+        """便捷方法：将单条文本向量化并返回其向量。"""
         return self.embed_texts([text]).embeddings[0]
 
     def ping(self) -> bool:
-        """Lightweight check - returns True if API key is configured."""
+        """轻量检查：已配置 API key 时返回 True。"""
         return bool(self.api_key)
 
 
@@ -102,7 +102,7 @@ _gateway: EmbeddingGateway | None = None
 
 
 def get_embedding_gateway() -> EmbeddingGateway:
-    """Singleton accessor for the Embedding gateway."""
+    """Embedding gateway 的单例访问器。"""
     global _gateway
     if _gateway is None:
         _gateway = EmbeddingGateway()

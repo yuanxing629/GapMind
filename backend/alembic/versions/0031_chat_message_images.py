@@ -1,4 +1,4 @@
-"""Store chat image attachments outside the workspace corpus."""
+"""将 Chat 图片附件存储在工作区语料之外。"""
 
 from __future__ import annotations
 

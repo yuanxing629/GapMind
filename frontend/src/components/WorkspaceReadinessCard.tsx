@@ -5,12 +5,11 @@ import { Link, useNavigate } from "react-router-dom";
 import type { ReadinessDimension, WorkspaceReadiness } from "../api/types/workspace";
 
 /**
- * W0 research readiness progress bar.
+ * W0 研究就绪度进度条。
  *
- * Single-source-of-truth bar: 文献 → 知识 → 发现 → 确认 → 计划 → 执行, all
- * driven by the backend /readiness document (not by duplicated frontend
- * aggregations). Each step is clickable and jumps to the page that advances
- * that dimension.
+ * 唯一数据源进度条：文献 → 知识 → 发现 → 确认 → 计划 → 执行。
+ * 数据由后端 /readiness 文档驱动（不使用重复的前端聚合）。每个步骤都可点击，
+ * 并跳转到推进该维度的页面。
  */
 interface StepDef {
   title: string;

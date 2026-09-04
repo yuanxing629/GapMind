@@ -1,17 +1,15 @@
-"""Verify P0 exact-dedup by re-extracting a paper and comparing run stats.
+"""通过重新抽取论文并比较运行统计，验证 P0 精确去重。
 
-The P0 dedup (``extraction/dedup.py``) only affects NEW extractions — it
-does not retroactively change existing knowledge_items. This script:
+P0 去重（``extraction/dedup.py``）只影响新的抽取，不会追溯修改已有 knowledge_items。
+本脚本会：
 
-  1. snapshots the paper's most recent extraction run (item counts +
-     claim/limitation duplicate groups);
-  2. creates a fresh Task + ExtractionRun and runs the extraction pipeline
-     synchronously in-process (same ``_run_extract`` / ``_write_extraction``
-     the Celery worker calls, but without needing the worker);
-  3. snapshots the NEW run's duplicate groups;
-  4. prints a before/after comparison and a verdict.
+  1. 快照论文最近一次抽取运行（项数量以及 claim/limitation 重复组）；
+  2. 创建新的 Task + ExtractionRun，并在进程内同步运行抽取流水线
+     （与 Celery worker 调用的 ``_run_extract`` / ``_write_extraction`` 相同，但无需 worker）；
+  3. 快照新运行的重复组；
+  4. 输出前后对比及结论。
 
-Usage (from backend/):
+用法（从 backend/ 目录运行）：
 
     .venv/Scripts/python.exe scripts/verify_dedup.py \
         --workspace-id 533c89cd-625f-45e7-8a44-cc737244273c \
@@ -56,7 +54,7 @@ def content_text(item: dict[str, Any]) -> str:
 
 
 def run_stats(db, run_id: str) -> dict[str, Any]:
-    """Count claim/limitation items and detect duplicate groups in a run."""
+    """统计一次运行中的 claim/limitation 项并检测重复组。"""
     rows = db.query(KnowledgeItem).filter(
         KnowledgeItem.extraction_run_id == run_id,
         KnowledgeItem.type.in_(["claim", "limitation"]),
@@ -131,9 +129,8 @@ def main() -> int:
             print("paper has no parsed_markdown — upload + parse first")
             return 1
 
-        # Snapshot OLD run.
-        # Snapshot OLD run: pick the most recent run that actually has items
-        # (a just-failed run with 0 items isn't a useful baseline).
+# 快照旧运行：选择最近一次实际包含项的运行
+# （刚失败且包含 0 个项的运行不是有用的基线）。
         old_run_id = None
         for task in (
             db.query(Task)
@@ -157,7 +154,7 @@ def main() -> int:
               f"same_span_collisions={old_stats['same_span_collisions']} "
               f"exact_dups={old_stats['exact_dups']} near_dups={old_stats['near_dups']}")
 
-        # Trigger NEW extraction synchronously.
+# 同步触发新抽取。
         print("\n-- triggering fresh extraction (real LLM call, may take a while) --")
         task = TaskService(db).create(
             TaskCreate(
@@ -184,7 +181,7 @@ def main() -> int:
               f"same_span_collisions={new_stats['same_span_collisions']} "
               f"exact_dups={new_stats['exact_dups']} near_dups={new_stats['near_dups']}")
 
-        # Verdict
+# 结论
         dedup_fired = (
             db.query(ExtractionRejection)
             .filter(

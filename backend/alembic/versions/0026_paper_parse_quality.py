@@ -1,4 +1,4 @@
-"""Persist PDF parsing quality feedback on paper records."""
+"""在论文记录上持久化 PDF 解析质量反馈。"""
 
 from __future__ import annotations
 

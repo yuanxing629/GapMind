@@ -1,20 +1,16 @@
-"""Knowledge HTTP API router (read-only for Phase 1b).
+"""Knowledge HTTP API 路由（Phase 1b 只读）。
 
-Endpoints:
-  GET /api/v1/workspaces/{wid}/knowledge            list items (filter by type/status)
-  GET /api/v1/workspaces/{wid}/knowledge/{kid}      get one item
-  GET /api/v1/workspaces/{wid}/knowledge/{kid}/evidence   list evidence spans
-  GET /api/v1/workspaces/{wid}/knowledge/relations  list relations (filter by item_id)
+端点：
+  GET /api/v1/workspaces/{wid}/knowledge：列出条目（按 type/status 过滤）
+  GET /api/v1/workspaces/{wid}/knowledge/{kid}：获取单个条目
+  GET /api/v1/workspaces/{wid}/knowledge/{kid}/evidence：列出 evidence span
+  GET /api/v1/workspaces/{wid}/knowledge/relations：列出关系（按 item_id 过滤）
 
-Domain exceptions raised here are translated into HTTP responses by the
-central handler registered in ``app.core.exception_handlers``. The two
-exceptions to that rule are:
+这里抛出的 domain exception 会由 ``app.core.exception_handlers`` 注册的中央
+handler 转换为 HTTP 响应。以下两类异常例外处理：
 
-  * cross-workspace 404s (we deliberately raise ``KnowledgeItemNotFoundError``
-    when an item id belongs to a different workspace, to avoid leaking
-    existence)
-  * local artefact problems (``evidence_source_*``) that aren't tied to a
-    domain exception class
+* 跨 workspace 的 404（有意抛出 ``KnowledgeItemNotFoundError``，避免泄露条目存在性）；
+* 与本地 artifact 相关、但不属于 domain exception class 的 ``evidence_source_*`` 问题。
 """
 
 from __future__ import annotations
@@ -132,8 +128,8 @@ def list_knowledge(
     )
 
 
-# IMPORTANT: this route MUST be declared BEFORE /knowledge/{item_id} so
-# FastAPI does not match the literal "relations" as an item_id.
+# 重要：该路由必须声明在 /knowledge/{item_id} 之前，避免 FastAPI 将字面量
+# "relations" 匹配为 item_id。
 @router.get(
     "/workspaces/{workspace_id}/knowledge/relations",
     response_model=KnowledgeRelationListResponse,
@@ -185,7 +181,7 @@ def get_knowledge_graph(
     service: KnowledgeService = Depends(_get_knowledge_service),
     workspace_service: WorkspaceService = Depends(_get_workspace_service),
 ) -> KnowledgeGraphResponse:
-    """Return a self-contained, workspace-scoped graph projection."""
+    """返回自包含、按 workspace 限定的 graph 投影。"""
     workspace_service.get(workspace_id)
 
     projection = service.graph_projection(

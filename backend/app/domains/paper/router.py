@@ -1,19 +1,18 @@
-"""Paper HTTP API router.
+"""论文 HTTP API 路由。
 
-Endpoints:
-  POST   /api/v1/workspaces/{wid}/papers/upload        multipart upload + create
-  POST   /api/v1/workspaces/{wid}/papers               JSON metadata-only create
-  GET    /api/v1/workspaces/{wid}/papers               list (paginated)
-  GET    /api/v1/workspaces/{wid}/papers/{pid}         get one
-  PATCH  /api/v1/workspaces/{wid}/papers/{pid}         update
-  DELETE /api/v1/workspaces/{wid}/papers/{pid}         soft delete
+端点：
+  POST   /api/v1/workspaces/{wid}/papers/upload        multipart 上传并创建
+  POST   /api/v1/workspaces/{wid}/papers               仅使用 JSON 元数据创建
+  GET    /api/v1/workspaces/{wid}/papers               列表（分页）
+  GET    /api/v1/workspaces/{wid}/papers/{pid}         获取单条
+  PATCH  /api/v1/workspaces/{wid}/papers/{pid}         更新
+  DELETE /api/v1/workspaces/{wid}/papers/{pid}         软删除
 
-Domain exceptions raised here (PaperNotFoundError, WorkspaceNotFoundError,
-PaperAlreadyHasPdfError, SemanticScholarError) are translated into HTTP
-responses by the central handler registered in
-``app.core.exception_handlers``. Business-rule violations (empty file,
-wrong extension, paper not parsed, …) stay as inline ``HTTPException``
-because they're not tied to any exception class.
+此处抛出的领域异常（PaperNotFoundError、WorkspaceNotFoundError、
+PaperAlreadyHasPdfError、SemanticScholarError）由注册在
+``app.core.exception_handlers`` 中的中央处理器转换为 HTTP 响应。
+业务规则违规（空文件、扩展名错误、论文未解析等）仍使用内联 ``HTTPException``，
+因为它们不对应特定的异常类。
 """
 
 from __future__ import annotations
@@ -73,12 +72,11 @@ def _get_semantic_scholar_client() -> SemanticScholarClient:
 
 
 async def _read_pdf_upload(file: UploadFile) -> bytes:
-    """Read an uploaded PDF with a bounded memory budget and magic check.
+    """在有界内存预算下读取上传的 PDF，并检查文件签名。
 
-    The declared MIME type is supplied by the client and is therefore only
-    advisory.  The extension is checked by the endpoint, while this helper
-    checks the PDF signature and reads in chunks so a forged ``Content-Length``
-    cannot make the process hold an unbounded upload in memory.
+    声明的 MIME 类型由客户端提供，因此只能作为参考。端点负责检查扩展名，
+    本辅助函数检查 PDF 签名并分块读取，避免伪造的 ``Content-Length`` 使进程在内存中
+    持有无界大小的上传内容。
     """
     chunks: list[bytes] = []
     total = 0
@@ -115,7 +113,7 @@ async def _read_pdf_upload(file: UploadFile) -> bytes:
 
 
 def _arxiv_pdf_url(external_ids: dict[str, object]) -> str | None:
-    """Build a safe arXiv PDF URL from Semantic Scholar external IDs."""
+    """根据 Semantic Scholar 外部 ID 构建安全的 arXiv PDF 地址。"""
     arxiv_id = _external_id_as_string(external_ids, "ArXiv", "ARXIV")
     if not arxiv_id:
         return None
@@ -157,7 +155,7 @@ def search_external_papers(
     db: Session = Depends(get_db),
     client: SemanticScholarClient = Depends(_get_semantic_scholar_client),
 ) -> SemanticScholarSearchResponse:
-    """Search Semantic Scholar without exposing the upstream API key."""
+    """搜索 Semantic Scholar，同时不暴露上游 API 密钥。"""
     if year_from is not None and year_to is not None and year_from > year_to:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -281,10 +279,9 @@ def import_external_paper(
     workspace_service: WorkspaceService = Depends(_get_workspace_service),
     client: SemanticScholarClient = Depends(_get_semantic_scholar_client),
 ) -> PaperRead:
-    """Import Semantic Scholar metadata into a workspace.
+    """将 Semantic Scholar 元数据导入工作区。
 
-    Import metadata and, when requested, download the advertised open-access
-    PDF. PDF processing continues through the existing Celery pipeline.
+    导入元数据，并在请求时下载声明的开放获取 PDF。PDF 处理继续沿用现有 Celery 流程。
     """
     workspace_service.get(workspace_id)
 
@@ -293,8 +290,8 @@ def import_external_paper(
         workspace_id=workspace_id,
         external_paper_id=external_id,
     )
-    # Keep imports idempotent when a PDF already exists. If only metadata was
-    # imported previously, continue below so the user can retry OA download.
+# 当 PDF 已存在时保持导入幂等。如果之前只导入了元数据，则继续执行下面的逻辑，
+# 允许用户重试 OA 下载。
     if existing is not None and (
         existing.primary_artifact_id is not None or not payload.download_open_access_pdf
     ):
@@ -356,8 +353,7 @@ def import_external_paper(
                 try:
                     content = client.download_pdf(pdf_url.strip())
                 except AttributeError as exc:
-                    # Keep metadata import graceful for lightweight test or
-                    # custom clients that do not implement PDF downloading.
+# 对于轻量测试客户端或未实现 PDF 下载的自定义客户端，保持元数据导入可用。
                     from app.gateway.semantic_scholar import SemanticScholarError as _S2Err
                     raise _S2Err(
                         "PDF downloader is unavailable", status_code=502
@@ -410,8 +406,7 @@ async def upload_paper(
 
     content = await _read_pdf_upload(file)
 
-    # When the user doesn't supply a title, pass None - the service will
-    # fill it from PDF metadata, or fall back to the filename stem.
+# 用户未提供标题时传入 None，由 service 从 PDF 元数据填充，或回退到文件名主体。
     try:
         payload = PaperCreate(
             title=title,  # may be None; service handles fallback
@@ -432,8 +427,7 @@ async def upload_paper(
         payload=payload,
         filename=file.filename,
         content=content,
-        # The client MIME type is advisory; the helper already checked the
-        # PDF signature, so persist and serve the authoritative type.
+# 客户端 MIME 类型仅供参考；辅助函数已检查 PDF 签名，因此持久化并返回权威类型。
         mime_type="application/pdf",
     )
     return PaperRead.model_validate(paper)
@@ -452,11 +446,10 @@ async def attach_pdf_to_paper(
     service: PaperService = Depends(_get_paper_service),
     workspace_service: WorkspaceService = Depends(_get_workspace_service),
 ) -> PaperRead:
-    """Attach a PDF to an existing metadata-only paper.
+    """向已有的仅元数据论文附加 PDF。
 
-    Use case: paper was created via `POST /papers` (metadata only), and the
-    user later obtains the PDF. Any empty metadata fields on the paper row
-    are best-effort filled from the PDF's embedded metadata.
+    使用场景：论文先通过 `POST /papers`（仅元数据）创建，用户之后获得 PDF。
+    论文行中为空的元数据字段会尽力使用 PDF 内嵌元数据补齐。
     """
     workspace_service.get(workspace_id)
 
@@ -491,8 +484,7 @@ def create_paper(
     workspace_service: WorkspaceService = Depends(_get_workspace_service),
 ) -> PaperRead:
     workspace_service.get(workspace_id)
-    # For JSON metadata-only creation, title is required (can't be empty
-    # since there's no PDF to fall back on for a title).
+# 对于 JSON 元数据-only 创建，标题是必填项（没有 PDF 可回退生成标题，不能留空）。
     if not payload.title or not payload.title.strip():
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -536,7 +528,7 @@ def trigger_paper_extraction(
     service: PaperService = Depends(_get_paper_service),
     workspace_service: WorkspaceService = Depends(_get_workspace_service),
 ) -> dict[str, str]:
-    """Idempotently trigger or retry extraction for a parsed paper."""
+    """幂等地触发或重试已解析论文的知识抽取。"""
     workspace_service.get(workspace_id)
     paper = service.get(paper_id)
     if paper.workspace_id != workspace_id:
@@ -619,9 +611,9 @@ def delete_paper(
     return {"id": paper_id, "deleted": True}
 
 
-# ----------------------------------------------------------------- helpers
+# ----------------------------------------------------------------- 辅助函数
 def _external_id_as_string(external_ids: dict[str, object], *names: str) -> str | None:
-    """Read a string-valued external ID without depending on key casing."""
+    """读取字符串类型的外部 ID，不依赖键名大小写。"""
     for name in names:
         value = external_ids.get(name)
         if isinstance(value, str) and value.strip():
@@ -630,14 +622,14 @@ def _external_id_as_string(external_ids: dict[str, object], *names: str) -> str 
 
 
 def _stem(filename: str) -> str:
-    """Return the filename without extension, used as a default paper title."""
+    """返回不含扩展名的文件名，用作默认论文标题。"""
     import os
 
     return os.path.splitext(filename)[0] or filename
 
 
 def _split_authors(raw: str | None) -> list[str]:
-    """Split a comma-or-newline-separated author string into a list."""
+    """将按逗号或换行分隔的作者字符串拆分为列表。"""
     if not raw:
         return []
     return [a.strip() for a in raw.replace("\n", ",").split(",") if a.strip()]

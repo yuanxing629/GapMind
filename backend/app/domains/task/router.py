@@ -1,19 +1,17 @@
-"""Task HTTP API router.
+"""Task HTTP API 路由。
 
-Endpoints:
-  GET    /api/v1/workspaces/{wid}/tasks          list (filterable by status)
-  GET    /api/v1/tasks/{tid}                     get one (workspace-scoped via row)
-  POST   /api/v1/tasks/{tid}/cancel              request cancel
-  POST   /api/v1/tasks/{tid}/resume              resume from waiting_for_user
-  POST   /api/v1/tasks/{tid}/retry               re-queue a failed task
+接口：
+  GET    /api/v1/workspaces/{wid}/tasks          列表（可按状态筛选）
+  GET    /api/v1/tasks/{tid}                     获取单个任务（通过任务行限定 workspace）
+  POST   /api/v1/tasks/{tid}/cancel              请求取消
+  POST   /api/v1/tasks/{tid}/resume              从 waiting_for_user 恢复
+  POST   /api/v1/tasks/{tid}/retry               失败任务重新入队
 
-Task *creation* is not exposed via HTTP in Phase 1b - tasks are created by
-the system (Phase 2 workers) when a user uploads a PDF or asks for an
-opportunity discovery. Exposing creation here would invite users to spawn
-arbitrary task types.
+Phase 1b 不通过 HTTP 暴露 task *creation*；用户上传 PDF 或请求 opportunity discovery 时，
+由系统（Phase 2 worker）创建 task。在这里暴露创建接口会使用户能够随意生成任意 task type。
 
-Domain exceptions raised here are translated into HTTP responses by the
-central handler registered in ``app.core.exception_handlers``.
+这里抛出的 domain exception 会由注册在 ``app.core.exception_handlers`` 中的集中处理器
+转换为 HTTP 响应。
 """
 
 from __future__ import annotations
@@ -48,7 +46,7 @@ def _assert_task_owner(
     workspace_service: WorkspaceService,
     user_id: str,
 ) -> None:
-    """Fail closed for task rows that have no user-visible Workspace owner."""
+    """对于没有用户可见 Workspace 所有者的任务行，采用 fail-closed。"""
     if not task.workspace_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

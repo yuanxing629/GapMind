@@ -1,8 +1,7 @@
-"""Tests for the centralised error envelope / exception handler.
+"""中央错误封装和 exception handler 测试。
 
-These tests don't hit the HTTP layer end-to-end; they invoke the
-``_resolve_status`` dispatcher directly so we can pin the wire format
-without coupling to domain routers.
+这些测试不执行端到端 HTTP layer；它们直接调用 ``_resolve_status`` dispatcher，从而在不
+耦合 domain router 的情况下固定 wire format。
 """
 
 from __future__ import annotations
@@ -81,7 +80,7 @@ def test_envelope_helper_shape():
 def test_default_envelope_is_not_retryable():
     envelope = error_envelope("code_x", "msg")
     assert envelope["detail"]["retryable"] is False
-    # No extra fields leaked through
+# 不应泄露额外字段
     assert set(envelope["detail"].keys()) == {"error", "message", "retryable"}
 
 
@@ -133,7 +132,7 @@ def test_502_chat_upstream_is_retryable():
     assert detail["error"] == "llm_request_failed"
     assert detail["retryable"] is True
     assert detail["conversation_id"] == "c2"
-    # assistant_message_id was None on the exception — should not appear in envelope
+# 异常中的 assistant_message_id 为 None，不应出现在封装中
     assert "assistant_message_id" not in detail
 
 
@@ -152,7 +151,7 @@ def test_knowledge_item_not_found():
 
 
 def test_envelope_is_documented_pydantic_model():
-    """Pin the public schema that the front-end codegen depends on."""
+    """固定前端 codegen 依赖的公开 schema。"""
     from app.core.errors import ErrorDetail, ErrorResponse
 
     detail = ErrorDetail(error="x", message="m", retryable=False, custom_field=42)

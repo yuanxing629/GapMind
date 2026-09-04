@@ -1,4 +1,4 @@
-"""Bounded PostgreSQL GraphRAG projection tests."""
+"""有界 PostgreSQL GraphRAG 投影测试。"""
 
 from __future__ import annotations
 
@@ -94,7 +94,7 @@ def test_bounded_projection_keeps_provenance_and_workspace_boundaries(db_session
                 source_provenance={"paper_id": paper_two_id},
                 status="extracted_candidate",
             ),
-            # A malformed canonical link must not make claim context cross-paper.
+            # 格式错误的 canonical link 不得使 claim context 跨论文串联。
             KnowledgeItem(
                 id=claim_id,
                 workspace_id=workspace_id,

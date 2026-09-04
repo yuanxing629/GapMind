@@ -1,4 +1,4 @@
-"""Pydantic schemas for invitation authentication."""
+"""邀请认证的 Pydantic schemas。"""
 
 from __future__ import annotations
 

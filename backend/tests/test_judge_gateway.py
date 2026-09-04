@@ -1,4 +1,4 @@
-"""Judgement gateway unit tests."""
+"""判断网关单元测试。"""
 
 from __future__ import annotations
 

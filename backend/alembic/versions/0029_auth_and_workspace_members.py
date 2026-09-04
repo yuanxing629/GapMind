@@ -1,7 +1,7 @@
-"""Add invitation authentication and explicit workspace membership.
+"""增加邀请认证和显式工作区成员关系。
 
-Revision ID: 0029_auth_and_workspace_members
-Revises: 0028_search_acl
+Revision ID：0029_auth_and_workspace_members
+Revises：0028_search_acl
 """
 
 from __future__ import annotations
@@ -148,7 +148,7 @@ def upgrade() -> None:
     op.create_index("ix_workspace_members_user_id", "workspace_members", ["user_id"])
     op.create_index("ix_workspace_members_workspace_id", "workspace_members", ["workspace_id"])
 
-    # Preserve existing content without making an administrator its owner.
+# 保留现有内容，不将其所有者改为管理员。
     op.execute(
         sa.text(
             """
@@ -197,8 +197,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # Restore the legacy owner sentinel before removing the compatibility
-    # identity. This is only a schema rollback; no content rows are deleted.
+# 在移除兼容身份前恢复旧版 owner sentinel。这只是 schema 回滚，不会删除任何内容行。
     for table in (
         "workspaces",
         "chat_conversations",

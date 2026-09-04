@@ -1,4 +1,4 @@
-"""Make Gap annotation version uniqueness correct for nullable lineage."""
+"""修正可空 lineage 下 Gap 标注版本的唯一性。"""
 
 from __future__ import annotations
 

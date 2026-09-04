@@ -1,9 +1,8 @@
-"""Knowledge extraction prompts (Phase 3).
+"""知识抽取提示词（Phase 3）。
 
-System prompt instructs the LLM to extract structured knowledge items
-from a paper's full text. The user prompt carries the paper text.
+系统提示词指导 LLM 从论文全文中抽取结构化知识项，用户提示词携带论文文本。
 
-Schema version: v1.0.0 (parsed_markdown input).
+Schema 版本：v1.0.0（parsed_markdown 输入）。
 """
 
 from __future__ import annotations
@@ -122,7 +121,7 @@ def build_user_prompt(
     year: int | None,
     paper_text: str,
 ) -> str:
-    """Build one untruncated extraction batch prompt."""
+    """构建一个不截断的抽取批次提示词。"""
     return USER_PROMPT_TEMPLATE.format(
         title=title,
         authors=", ".join(authors) if authors else "Unknown",

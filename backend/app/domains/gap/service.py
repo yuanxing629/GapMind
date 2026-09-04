@@ -1,4 +1,4 @@
-"""Persistence, conservative normalization, and deterministic board projection."""
+"""持久化、保守规范化和确定性棋盘投影。"""
 
 from __future__ import annotations
 
@@ -65,7 +65,7 @@ class GapService:
         return row
 
     def annotation_is_stale(self, annotation: PaperGapAnnotation) -> bool:
-        """Whether a newer knowledge context exists for this annotation's paper."""
+        """判断该标注所属论文是否存在更新的 knowledge context。"""
         paper = self.db.get(Paper, annotation.paper_id)
         if paper is None or paper.is_deleted:
             return False
@@ -175,8 +175,7 @@ class GapService:
                 ratio = SequenceMatcher(None, key, concept.normalization_key).ratio()
                 if ratio > best_ratio:
                     best, best_ratio = concept, ratio
-        # Conservative: uncertain pairs remain separate and can later be merged
-        # by an online adjudicator or a human reviewer.
+# 保守处理：不确定的配对保持分离，后续可由在线裁决器或人工审核者合并。
         if best is not None and best_ratio >= 0.92:
             if label not in best.aliases and label != best.canonical_label:
                 best.aliases = [*best.aliases, label]
@@ -206,10 +205,8 @@ class GapService:
         self, workspace_id: str, *, paper_ids: list[str] | None = None
     ) -> GapBoardSnapshot:
         annotations = self._latest_valid_annotations(workspace_id, paper_ids=paper_ids or [])
-        # Re-project assignments on every rebuild so taxonomy revisions are
-        # applied to existing valid annotations without regenerating model
-        # output.  Old unreferenced concepts remain auditable but are excluded
-        # from the snapshot below.
+# 每次重建时重新投影分配结果，使分类体系的修订可以应用到现有有效标注，
+# 而无需重新生成模型输出。旧的未引用概念仍可审计，但会从下面的快照中排除。
         for annotation in annotations:
             self.assign_annotation(annotation)
 
@@ -507,8 +504,7 @@ class GapService:
         for row in rows:
             current_run_id = current_run_ids.get(row.paper_id)
             if current_run_id is not None and row.knowledge_extraction_run_id != current_run_id:
-                # A successful knowledge run supersedes legacy or older gap
-                # output until the specialized extractor is run again.
+# 成功的知识抽取运行会覆盖旧版或历史 gap 输出，直到专用抽取器再次运行。
                 continue
             latest.setdefault(row.paper_id, row)
         return list(latest.values())

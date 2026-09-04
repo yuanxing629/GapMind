@@ -1,7 +1,7 @@
-"""Scope chat conversations to the authenticated owner.
+"""将 Chat 会话限定到已认证所有者。
 
-Revision ID: 0027_chat_conversation_owner
-Revises: 0026_paper_parse_quality
+Revision ID：0027_chat_conversation_owner
+Revises：0026_paper_parse_quality
 """
 
 from alembic import op

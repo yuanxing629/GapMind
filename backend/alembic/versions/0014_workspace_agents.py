@@ -1,4 +1,4 @@
-"""Add controlled workspace agents, steps, artifacts, and chat-origin plans."""
+"""增加受控工作区 Agent、步骤、Artifact 和来源于 Chat 的计划。"""
 
 from __future__ import annotations
 

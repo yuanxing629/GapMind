@@ -1,11 +1,10 @@
-"""Read-only A/B experiment for deterministic Chat retrieval facets.
+"""确定性 Chat retrieval facet 的只读 A/B 实验。
 
-This runner compares the current primary-only semantic query with an
-experimental primary-plus-facet candidate union.  It does not call an LLM,
-does not create Chat messages, and does not mutate the workspace.  The facet
-planner is intentionally not wired into production Chat by this script.
+该运行器比较当前仅 primary 的 semantic query 与实验性的 primary-plus-facet 候选并集。
+它不会调用 LLM、创建 Chat message 或修改 workspace。本脚本有意不将 facet planner 接入
+生产 Chat。
 
-Example (from the repository root)::
+示例（从仓库根目录运行）：
 
     backend\\.venv\\Scripts\\python.exe evaluation\\retrieval\\run_chat_facet_ab.py `
       --workspace-id <workspace-id> `
@@ -77,7 +76,7 @@ def _item_key(item: RetrievalResultItem) -> str:
 
 
 def _merge_items(responses: list[RetrievalResponse], top_k: int) -> list[RetrievalResultItem]:
-    """Merge experimental responses with chunk and paper diversity only."""
+    """仅以分块和论文多样性合并实验响应。"""
 
     best_by_chunk: dict[str, RetrievalResultItem] = {}
     for response in responses:
@@ -106,7 +105,7 @@ def _merge_items(responses: list[RetrievalResponse], top_k: int) -> list[Retriev
 
 
 def _item_snapshot(db, workspace_id: str, item: RetrievalResultItem) -> dict[str, Any]:
-    """Return provenance and offsets without copying retrieved text."""
+    """返回 provenance 和偏移，不复制检索文本。"""
 
     record = (
         find_chunk_record(

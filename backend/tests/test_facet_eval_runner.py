@@ -1,4 +1,4 @@
-"""Tests for read-only facet evaluation runner contracts."""
+"""只读 facet 评测运行器契约测试。"""
 
 from __future__ import annotations
 

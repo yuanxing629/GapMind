@@ -1,25 +1,24 @@
-"""Retrieval Gate evaluation runner.
+"""Retrieval Gate 评测运行器。
 
-Loads a GoldSet (see ``gold_set.py``), runs the three retrieval functions
-against a live workspace, and produces a JSON report that answers the
-Stage-2 Gate question (docs/phase3_smoke_validation_and_next_plan.md §6 V2):
+加载 GoldSet（见 ``gold_set.py``），在 live workspace 上运行三个 retrieval 函数，并生成
+回答 Stage-2 Gate 问题的 JSON 报告（docs/phase3_smoke_validation_and_next_plan.md §6 V2）：
 
     Semantic Search    Recall@10 ≥ 0.80
     Similar Work       Recall@10 ≥ 0.80
     Counter Evidence   Recall@10 ≥ 0.70
-    workspace leakage  = 0
-    every result traceable to a Paper + artifact
+    workspace 泄露     = 0
+    每条结果都可回链到 Paper + artifact
 
-Usage:
+用法：
 
-    # repo root (script inserts backend + evaluation onto sys.path itself)
+# 仓库根目录（脚本会自行将 backend + evaluation 加入 sys.path）
     python evaluation/retrieval/run_eval.py \
         --workspace-id <uuid> \
         --gold evaluation/retrieval/gold/demo_sig_ood_v1.json \
         [--minimal] [--top-k 10] [--output evaluation/retrieval/reports/demo_v1.json]
 
-``--minimal`` skips the LLM judge (cheap smoke; the real Gate must run the
-judge so counter-evidence roles are meaningful).
+``--minimal`` 跳过 LLM judge（低成本 smoke；真实 Gate 必须运行 judge，才能让
+counter-evidence role 有意义）。
 """
 
 from __future__ import annotations
@@ -31,7 +30,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-# --- sys.path: allow running from repo root OR backend/ without `-m` ---
+# --- sys.path：允许从仓库根目录或 backend/ 直接运行，无需 `-m` ---
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BACKEND_DIR = REPO_ROOT / "backend"
 for p in (str(BACKEND_DIR), str(REPO_ROOT)):
@@ -64,7 +63,7 @@ from evaluation.retrieval.metrics import (  # noqa: E402
     workspace_leakage,
 )
 
-# Stage-2 Gate thresholds (docs/phase3_smoke_validation_and_next_plan.md §6 V2).
+# Stage-2 Gate 阈值（docs/phase3_smoke_validation_and_next_plan.md §6 V2）。
 GATE_THRESHOLDS = {
     "semantic_search": 0.80,
     "similar_work": 0.80,
@@ -72,16 +71,15 @@ GATE_THRESHOLDS = {
 }
 
 
-# ------------------------------------------------------------ paper refs
+# ------------------------------------------------------------ 论文引用
 def resolve_paper_ref(db, workspace_id: str, paper_ref: str) -> Paper | None:
-    """Resolve a portable paper reference to a local Paper row.
+    """将可移植论文引用解析为本地 Paper 行。
 
-    Precedence:
-      1. exact local UUID match (``Paper.id``)
-      2. Semantic Scholar external ID match (``Paper.external_paper_id``)
-      3. title match (case-insensitive exact, then prefix)
-    All matches are workspace-scoped — a ref that exists in another
-    workspace is treated as unresolved (safer than leaking across scopes).
+优先级：
+1. 精确的本地 UUID 匹配（``Paper.id``）
+2. Semantic Scholar external ID 匹配（``Paper.external_paper_id``）
+3. 标题匹配（不区分大小写的精确匹配，然后是前缀匹配）
+所有匹配都限定在 workspace 内；存在于其他 workspace 的 ref 按未解析处理，以避免跨作用域泄露。
     """
     ref = paper_ref.strip()
     if not ref:
@@ -92,19 +90,19 @@ def resolve_paper_ref(db, workspace_id: str, paper_ref: str) -> Paper | None:
         Paper.is_deleted.is_(False),
     )
 
-    # 1. UUID
+    # 1. UUID：本地 ID
     paper = db.execute(base.where(Paper.id == ref)).scalars().first()
     if paper is not None:
         return paper
 
-    # 2. external ID
+    # 2. external ID：外部 ID
     paper = db.execute(
         base.where(Paper.external_paper_id == ref)
     ).scalars().first()
     if paper is not None:
         return paper
 
-    # 3. title (case-insensitive exact, then prefix)
+# 3. 标题（不区分大小写精确匹配，再尝试前缀）
     lowered = ref.lower()
     for candidate in db.execute(base).scalars().all():
         title = (candidate.title or "").strip()
@@ -118,7 +116,7 @@ def resolve_paper_ref(db, workspace_id: str, paper_ref: str) -> Paper | None:
 
 
 def resolve_many(db, workspace_id: str, refs: list[str]) -> dict[str, str | None]:
-    """Map each paper_ref → local UUID (or ``None`` if unresolved)."""
+    """将每个 paper_ref 映射到本地 UUID（无法解析时为 ``None``）。"""
     resolved: dict[str, str | None] = {}
     for ref in refs:
         paper = resolve_paper_ref(db, workspace_id, ref)
@@ -126,9 +124,9 @@ def resolve_many(db, workspace_id: str, refs: list[str]) -> dict[str, str | None
     return resolved
 
 
-# ------------------------------------------------------------ per-query
+# ------------------------------------------------------------ 单查询
 def _paper_ids(items: list[Any]) -> list[str]:
-    """Unique, ordered paper_ids from RetrievalResultItems."""
+    """从 RetrievalResultItems 中提取去重且有序的 paper_ids。"""
     seen: set[str] = set()
     out: list[str] = []
     for item in items:
@@ -140,12 +138,11 @@ def _paper_ids(items: list[Any]) -> list[str]:
 
 
 def _paper_workspace_ids(db, items: list[Any], target_workspace_id: str) -> list[str]:
-    """Workspace id of each retrieved item, resolved via the DB.
+    """通过数据库解析每个检索条目的 Workspace id。
 
-    ``RetrievalResultItem`` carries ``paper_id`` but NOT ``workspace_id``
-    (workspace scoping happens inside the Milvus filter). To compute real
-    leakage we look each paper up; unknown / None paper_ids count as in-scope
-    (they cannot have crossed the workspace boundary by construction).
+    ``RetrievalResultItem`` 携带 ``paper_id``，但不携带 ``workspace_id``（workspace 限定在
+    Milvus filter 内完成）。为计算真实泄露情况，我们逐个查找 paper；未知或 None 的
+    paper_id 按范围内处理（按构造方式它们不可能跨过 workspace 边界）。
     """
     paper_ids = [getattr(item, "paper_id", None) for item in items]
     present = [pid for pid in paper_ids if pid]
@@ -226,7 +223,7 @@ def run_counter_evidence(db, workspace_id: str, q: CounterEvidenceQuery, top_k: 
         exclude_paper_ids={source.id},
     )
     pids = _paper_ids(resp.items)
-    # Role-correct recall is diagnostic only (Stage-2 threshold is on paper recall).
+# 角色正确召回仅用于诊断（Stage-2 阈值针对论文召回）。
     role_paper_ids = {pid for ref, pid in resolved_gold.items() if pid}
     roles_by_paper: dict[str, str] = {
         resolved_gold[r.paper_ref]: r.role
@@ -256,7 +253,7 @@ def run_counter_evidence(db, workspace_id: str, q: CounterEvidenceQuery, top_k: 
     }
 
 
-# ------------------------------------------------------------ aggregation
+# ------------------------------------------------------------ 聚合
 def _aggregate(entries: list[dict], keys: tuple[str, ...]) -> dict[str, float | None]:
     out: dict[str, float | None] = {}
     for key in keys:
@@ -301,7 +298,7 @@ def _run(db, gold: GoldSet, workspace_id: str, args: argparse.Namespace) -> int:
     print(f"Workspace: {workspace_id} | Top-K: {top_k} | Minimal: {minimal}")
     print(f"Freeze: {gold.freeze.model_dump()}")
 
-    # Resolve the paper manifest once (workspace-scoped) so unresolved refs are loud.
+# 一次性解析论文清单（按 workspace 限定），使无法解析的引用明确暴露。
     all_refs = {
         q.target_paper_ref for q in gold.semantic_search
     } | {
@@ -357,7 +354,7 @@ def _run(db, gold: GoldSet, workspace_id: str, args: argparse.Namespace) -> int:
             diversity=agg["diversity"],
             leakage=agg["leakage"],
         )
-        # Add diagnostic counts
+# 添加诊断计数
         report["gate"][name]["queries"] = len(valid_entries)
         report["gate"][name]["resolved_queries"] = len(valid_entries)
         report["gate"][name]["unresolved_queries"] = len(entries) - len(valid_entries)
@@ -365,7 +362,7 @@ def _run(db, gold: GoldSet, workspace_id: str, args: argparse.Namespace) -> int:
     overall_passed = all(report["gate"][name]["passed"] for name in report["gate"])
     report["gate_passed"] = overall_passed
 
-    # Print
+# 打印
     print("\n=== Gate verdict ===")
     for name, block in report["gate"].items():
         status = "PASS" if block["passed"] else "FAIL"
@@ -373,7 +370,7 @@ def _run(db, gold: GoldSet, workspace_id: str, args: argparse.Namespace) -> int:
               f"(threshold {block['recall_threshold']}) leakage={block['workspace_leakage']}")
     print(f"  overall: {'PASS' if overall_passed else 'FAIL'}")
 
-    # Save
+# 保存
     output_path = Path(args.output) if args.output else (
         Path(__file__).parent / "reports" / f"{gold.case_id}_{time.strftime('%Y%m%d_%H%M%S')}.json"
     )

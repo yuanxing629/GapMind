@@ -1,4 +1,4 @@
-"""Controlled Agent API tests; no external model, Milvus, Redis, or Docker calls."""
+"""受控 Agent API 测试；不调用外部模型、Milvus、Redis 或 Docker。"""
 
 from __future__ import annotations
 
@@ -64,10 +64,10 @@ class FakeGateway:
         else:
             self.file_calls += 1
             if self.invalid_first_file and self.file_calls == 1:
-                # truncated mid-string, like a max_tokens cut: no closing braces
+# 在字符串中途截断，类似 max_tokens 截断：没有闭合括号
                 return FakeResponse('{"files": [{"path": "README.md", "content": "tru')
             if self.fail_paths:
-                # match the exact target-file spec line, e.g. 目标文件：{"path": "README.md", ...}
+                # 匹配精确的目标文件说明行，例如：目标文件：{"path": "README.md", ...}
                 import re as _re
 
                 match = _re.search(r'目标文件：(\{.*?\})\n', user_prompt)
@@ -466,15 +466,15 @@ def test_code_agent_requires_plan_and_generates_safe_downloadable_files(
     AgentService(db_session, gateway=gateway).execute(run_id)
     detail = client.get(f"/api/v1/workspaces/{workspace['id']}/agent-runs/{run_id}").json()
     assert detail["status"] == "succeeded"
-    # escape path dropped, README/requirements generated even though the file
-    # payload only carries train.py (per-file calls fall back to any returned file)
+# escape 路径丢失；即使文件载荷只有 train.py，也应生成 README/requirements
+#（逐文件调用会回退到任意返回的文件）。
     assert {item["filename"] for item in detail["artifacts"]} == {
         "README.md",
         "requirements.txt",
         "src/train.py",
         "code_rubric.md",
     }
-    # evidence passport (Phase A5): refs are validated against real evidence ids
+# evidence passport（Phase A5）：引用必须通过真实 evidence id 校验
     train_artifact = next(item for item in detail["artifacts"] if item["filename"] == "src/train.py")
     assert train_artifact["metadata"]["evidence_refs"] == ["E1"]
     assert detail["result"]["blueprint"]["files"] == [
@@ -486,8 +486,7 @@ def test_code_agent_requires_plan_and_generates_safe_downloadable_files(
     steps = {step["stage"]: step for step in detail["steps"]}
     assert steps["module_design"]["summary"].startswith("蓝图：1 个模块")
     assert steps["static_review"]["sequence"] == 6
-    # static review is split into delivery blockers and improvement items;
-    # no test file means 3/3 blockers and 2/3 improvement checks pass.
+# 静态审查分为交付阻塞项和改进项；没有测试文件时，3/3 阻塞项和 2/3 改进项通过。
     assert steps["static_review"]["summary"] == "交付完整性检查：阻断项 3/3，改进项 2/3"
     checks = detail["result"]["static_review"]["checks"]
     check_names = {check["name"]: check["passed"] for check in checks}
@@ -499,9 +498,9 @@ def test_code_agent_requires_plan_and_generates_safe_downloadable_files(
     assert check_names["test_present"] is False
     assert check_names["imports_covered_by_requirements"] is True
     assert check_names["syntax_valid"] is True  # Phase B-removal: pure-AST syntax gate
-    # rubric self-check (A4): counts mirror the fake payload
+# rubric 自检（A4）：计数与 fake 载荷一致
     assert detail["result"]["rubric"] == {"covered": 3, "partial": 1, "missing": 1}
-    # known_gaps (A4 follow-up): structured partial/missing items, one per plan entry
+# known_gaps（A4 后续）：结构化记录 partial/missing 条目，每个 plan 条目一项
     assert detail["result"]["known_gaps"] == [
         {"dimension": "validation_step", "target": "train", "status": "partial", "note": "入口存在"},
         {"dimension": "validation_step", "target": "evaluate", "status": "missing", "note": "未实现"},
@@ -511,7 +510,7 @@ def test_code_agent_requires_plan_and_generates_safe_downloadable_files(
     )
     assert rubric_artifact["filename"] == "code_rubric.md"
     assert "❌ 未覆盖" in rubric_artifact["content"]
-    # blueprint prompt is the only "design" call; each file is its own generation call
+# blueprint prompt 是唯一的“design”调用；每个文件单独调用生成
     design_calls = [c for c in gateway.calls if "只做设计" in c]
     assert len(design_calls) == 1
     gen_calls = [c for c in gateway.calls if "只生成指定的这一个文件" in c]
@@ -744,9 +743,9 @@ def test_code_agent_recovers_from_truncated_file_json(
     assert sorted(item["filename"] for item in detail["artifacts"] if item["artifact_type"] == "code") == [
         "README.md", "requirements.txt"
     ]
-    # the retry carries the brevity directive instead of resending verbatim
+# retry 携带简洁指令，而不是逐字重新发送
     assert any("大幅精简" in c for c in gateway.calls)
-    # blueprint + 2 README attempts + requirements + rubric
+# blueprint + 2 次 README 尝试 + requirements + rubric
     assert detail["result"]["token_usage"]["llm_calls"] == 5
 
 
@@ -830,8 +829,7 @@ def test_code_rag_facets_label_evidence(client, db_session: Session, monkeypatch
     AgentService(db_session, gateway=gateway).execute(run_id)
     run = AgentService(db_session).get(workspace["id"], run_id)
     evidence = run.context_snapshot["evidence"]
-    # facets are the primary source; the single-query fallback only kicks in when
-    # every facet search comes back empty
+# facet 是主要来源；只有所有 facet 搜索都为空时才启用单 query 回退
     assert len(evidence) == 4
     assert "chunk-1" not in {entry["chunk_id"] for entry in evidence}
     by_chunk = {entry["chunk_id"]: entry for entry in evidence}
@@ -840,7 +838,7 @@ def test_code_rag_facets_label_evidence(client, db_session: Session, monkeypatch
     assert "setup" in by_chunk["chunk-setup"]["facets"]
     assert "preprocess" in by_chunk["chunk-pre"]["facets"]
     assert all(entry["is_code_grounding"] for entry in evidence)
-    # fallback branch: every facet search fails -> single-query evidence is used
+# 回退分支：所有 facet 搜索失败 -> 使用单 query evidence
     def failed(workspace_id=None, query="", top_k=None, use_reranker=None):
         if any(marker in query for marker in ("方法步骤", "公式", "实验设置", "数据预处理")):
             return RetrievalResponse(workspace_id=workspace_id, status="failed", items=[])
@@ -938,12 +936,12 @@ def test_code_agent_survives_single_file_generation_failure(
     AgentService(db_session, gateway=gateway).execute(run_id)
     detail = client.get(f"/api/v1/workspaces/{workspace['id']}/agent-runs/{run_id}").json()
     assert detail["status"] == "succeeded"
-    # README generation kept failing (invalid JSON): run survives with the rest
+# README 生成持续失败（JSON 无效）：run 仍使用其余结果完成
     assert {item["filename"] for item in detail["artifacts"] if item["artifact_type"] == "code"} == {
         "src/train.py", "requirements.txt"
     }
     assert "README.md" in {g["path"] for g in detail["result"]["file_errors"]}
-    # ZIP contains only the successfully generated files, never a placeholder
+# ZIP 只包含成功生成的文件，绝不包含占位文件
     bundle = client.get(f"/api/v1/workspaces/{workspace['id']}/agent-runs/{run_id}/bundle")
     with zipfile.ZipFile(io.BytesIO(bundle.content)) as zf:
         names = zf.namelist()
@@ -990,8 +988,7 @@ def test_agent_workspace_isolation(
         client.get(f"/api/v1/workspaces/{other['id']}/agent-runs/{created['id']}").status_code
         == 404
     )
-    # the code-execution sandbox was removed (08-19): there is no validate
-    # endpoint anymore, so an unknown path stays 404
+# code-execution sandbox 已移除（08-19）：不再有 validate 端点，因此未知路径保持 404
     assert (
         client.post(f"/api/v1/workspaces/{workspace['id']}/agent-runs/{created['id']}/validate")
         .status_code

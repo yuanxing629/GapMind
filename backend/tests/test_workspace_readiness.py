@@ -1,11 +1,10 @@
-"""W0 research readiness tests.
+"""W0 研究就绪度测试。
 
-Covers WorkspaceReadinessService (five dimensions + recommended next action)
-directly against an ORM-seeded SQLite session, plus the HTTP endpoint.
+直接针对 ORM 初始化的 SQLite session 覆盖 WorkspaceReadinessService（五个维度 + recommended
+next action），并覆盖 HTTP endpoint。
 
-The Milvus chunk count is deliberately best-effort; tests patch it with a
-fake so `count_by_workspace` returns a known value (and to prove Milvus
-outage degrades to None).
+Milvus chunk count 有意采用 best-effort；测试用 fake 替换它，使 `count_by_workspace` 返回
+已知值（并证明 Milvus outage 会降级为 None）。
 """
 
 from __future__ import annotations
@@ -22,12 +21,12 @@ from app.domains.task.models import Task
 from app.domains.workspace.models import Workspace
 from app.domains.workspace.readiness import WorkspaceReadinessService
 
-# ------------------------------------------------------------------------- helpers
+# ------------------------------------------------------------------------- 辅助函数
 
 
 @pytest.fixture
 def fake_milvus(monkeypatch):
-    """Stub MilvusClient so readiness chunk counting is fast and deterministic."""
+    """替换 MilvusClient，使 readiness 分块计数快速且确定。"""
 
     class FakeMilvus:
         def __init__(self, **kwargs):
@@ -129,7 +128,7 @@ def _dim(readiness: dict, key: str) -> dict:
     return next(d for d in readiness["dimensions"] if d["key"] == key)
 
 
-# ------------------------------------------------------------------- dimension states
+# ------------------------------------------------------------------- 维度状态
 
 
 def test_empty_workspace_all_blocked_and_recommends_add_papers(db_session: Session, fake_milvus):
@@ -152,7 +151,7 @@ def test_corpus_ready_with_parsed_paper(db_session: Session, fake_milvus):
     r = _readiness(db_session, ws)
 
     assert _dim(r, "corpus")["ready"] is True
-    # retrieval is not ready yet (nothing extracted): its blocking points at activity
+# retrieval 尚未就绪（没有抽取内容），其阻塞步骤指向活动状态
     retrieval = _dim(r, "retrieval")
     assert retrieval["ready"] is False
     assert retrieval["blocking_actions"][0]["href"].endswith("/activity")
@@ -169,14 +168,14 @@ def test_retrieval_knowledge_discover_ready_flow(db_session: Session, fake_milvu
     assert _dim(r, "knowledge")["ready"] is True
     assert _dim(r, "discover")["ready"] is True  # profile_set + retrieval + knowledge
     assert _dim(r, "research")["ready"] is False
-    # no confirmed opportunity yet -> recommend running Discover
+# 尚无已确认 opportunity -> 建议运行 Discover
     rec = r["recommended_next_action"]
     assert rec["title"] == "运行 Discover 并确认机会"
     assert rec["href"].endswith("/discover")
 
 
 def test_recommend_review_knowledge_when_none_confirmed(db_session: Session, fake_milvus):
-    """Unreviewed extracted knowledge is surfaced before running Discover."""
+    """运行 Discover 前展示尚未审核的抽取知识。"""
     ws = _ws(db_session)
     _paper(db_session, ws)
     _knowledge(db_session, ws, status="extracted_candidate")  # not yet reviewed
@@ -196,7 +195,7 @@ def test_research_ready_and_all_green(db_session: Session, fake_milvus):
     r = _readiness(db_session, ws)
 
     assert all(d["ready"] for d in r["dimensions"])
-    # confirmed opportunity is not pending -> recommend research center
+# 已确认 opportunity 不处于 pending -> 建议进入 research center
     rec = r["recommended_next_action"]
     assert rec["title"] == "进入研究中心"
     assert rec["href"].endswith("/plans")
@@ -229,7 +228,7 @@ def test_waiting_state_with_active_pipeline_task(db_session: Session, fake_milvu
     assert corpus["ready"] is False
     assert corpus["waiting"] is True
     assert corpus["blocking_actions"] == []
-    # waiting dimension -> recommend activity center instead of a blocking action
+# waiting 维度 -> 建议进入 activity center，而不是给出阻塞操作
     rec = r["recommended_next_action"]
     assert rec["title"] == "查看处理进度"
     assert rec["href"].endswith("/activity")
@@ -254,12 +253,12 @@ def test_pending_run_marks_discover_waiting(db_session: Session, fake_milvus):
     _run(db_session, ws, status="waiting_for_user")
     r = _readiness(db_session, ws)
 
-    # discover is ready; a waiting run still reports waiting (informational)
+# discover 已就绪；等待中的 run 仍报告 waiting（信息性状态）
     assert _dim(r, "discover")["ready"] is True
     assert r["counts"]["pending_runs"] == 1
 
 
-# ------------------------------------------------------------------------ counts
+# ------------------------------------------------------------------------ 计数
 
 
 def test_counts_accuracy(db_session: Session, fake_milvus):
@@ -293,7 +292,7 @@ def test_counts_accuracy(db_session: Session, fake_milvus):
 
 
 def test_milvus_outage_degrades_chunk_count(db_session: Session, monkeypatch):
-    """Milvus failure must not break readiness - chunks degrade to None."""
+    """Milvus 失败不能破坏 readiness，分块数量降级为 None。"""
 
     def boom(*args, **kwargs):
         raise RuntimeError("milvus down")
@@ -308,7 +307,7 @@ def test_milvus_outage_degrades_chunk_count(db_session: Session, monkeypatch):
     assert r["recommended_next_action"]["title"] == "添加论文"
 
 
-# ------------------------------------------------------------------------- HTTP
+# ------------------------------------------------------------------------- HTTP 接口
 
 
 def test_readiness_endpoint(client, db_session: Session, fake_milvus):

@@ -11,13 +11,12 @@ import {
 import { useNavigate } from "react-router-dom";
 
 /**
- * P1.5: research-lifecycle module entry cards (Discover → Plan → Execute →
- * Analyze → Publish → Respond), mirroring the standalone index.html overview.
+ * P1.5：科研生命周期模块入口卡片（Discover → Plan → Execute →
+ * Analyze → Publish → Respond），与独立 index.html 概览保持一致。
  *
- * 2026-08-20: stage direct-entry. Corpus-bound modules (Discover / Plan /
- * Execute) require a workspace; the user-material modules (Analyze / Publish /
- * Respond) deep-link into the assistant with their mode preselected — with a
- * workspace for evidence grounding, or standalone (independent mode) without.
+ * 2026-08-20：增加直接入口。语料绑定模块（Discover / Plan /
+ * Execute）需要工作区；用户材料模块（Analyze / Publish /
+ * Respond）会以预选模式深链到助手——有工作区时使用证据 grounding，没有工作区时使用独立模式。
  */
 
 interface LifecycleModule {
@@ -38,7 +37,7 @@ const MODULES: LifecycleModule[] = [
   { key: "respond", title: "Respond", subtitle: "审稿回复", description: "逐条回应审稿意见，依据回链证据", icon: <SendOutlined />, workspaceBound: false },
 ];
 
-// module key -> assistant ChatMode for direct entry (user-material modules)
+// 模块键 -> 直接入口使用的 assistant ChatMode（用户材料模块）
 const MODE_BY_KEY: Record<string, "analyze" | "write" | "respond"> = {
   analyze: "analyze",
   publish: "write",
@@ -51,7 +50,7 @@ export default function LifecycleModules({ workspaceId }: { workspaceId?: string
 
   const openModule = (module: LifecycleModule) => {
     if (module.key === "discover" || module.key === "plan") {
-      // Corpus-bound modules need a workspace (paper evidence).
+      // 语料绑定模块需要工作区（论文证据）。
       if (!workspaceId) {
         message.info("研究机会发现/研究计划需要课题空间（论文语料）");
         navigate("/workspaces");
@@ -61,7 +60,7 @@ export default function LifecycleModules({ workspaceId }: { workspaceId?: string
       return;
     }
     if (module.key === "execute") {
-      // code generation requires a confirmed research plan (workspace-bound)
+      // 代码生成需要已确认的研究计划（绑定工作区）。
       if (!workspaceId) {
         message.info("代码生成需要课题空间中的研究计划");
         navigate("/workspaces");
@@ -70,8 +69,7 @@ export default function LifecycleModules({ workspaceId }: { workspaceId?: string
       navigate(`/workspaces/${workspaceId}/assistant?mode=code_generation`);
       return;
     }
-    // user-material modules: direct entry with the mode preselected;
-    // standalone (independent mode) when no workspace is picked
+    // 用户材料模块：以预选模式直接进入；未选择工作区时使用独立模式。
     const mode = MODE_BY_KEY[module.key];
     navigate(workspaceId ? `/workspaces/${workspaceId}/assistant?mode=${mode}` : `/chat/new?mode=${mode}`);
   };

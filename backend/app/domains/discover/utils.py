@@ -1,9 +1,8 @@
-"""Shared pure helpers for the discover domain (MA-1).
+"""discover domain 共用的纯辅助函数（MA-1）。
 
-Carved out so critic.py / synthesis.py / external_retrieval.py each import the
-same ``parse_json`` / ``retrieval_payload`` instead of duplicating them. This
-module is a leaf: it imports only stdlib + ``retrieval.schemas``, so none of
-the sibling service modules depend on it in a way that creates a cycle.
+本模块被拆出后，critic.py / synthesis.py / external_retrieval.py 可以共用同一份
+``parse_json`` / ``retrieval_payload``，无需重复实现。它是叶子模块：只导入标准库和
+``retrieval.schemas``，不会被同级 service 模块以循环依赖的方式引用。
 """
 
 from __future__ import annotations
@@ -16,7 +15,7 @@ from app.domains.retrieval.schemas import RetrievalResultItem
 
 
 def parse_json(content: str) -> dict[str, Any] | None:
-    """Parse an LLM JSON response; tolerate a code-fence / extra text fallback."""
+    """解析 LLM JSON 响应，并容忍代码围栏/额外文本回退。"""
     try:
         value = json.loads(content)
     except json.JSONDecodeError:
@@ -31,7 +30,7 @@ def parse_json(content: str) -> dict[str, Any] | None:
 
 
 def retrieval_payload(item: RetrievalResultItem) -> dict[str, Any]:
-    """Compact retrieval item used in synthesis/critic prompts and audit trails."""
+    """用于 synthesis/critic prompt 和审计轨迹的精简检索条目。"""
     return {
         "paper_id": item.paper_id,
         "title": item.paper_title,
@@ -43,12 +42,11 @@ def retrieval_payload(item: RetrievalResultItem) -> dict[str, Any]:
 
 
 def accumulate_tokens(run, response) -> None:
-    """Accumulate LLM token usage onto a DiscoverRun (W6-3 audit).
+    """将 LLM token 使用量累计到 DiscoverRun（W6-3 审计）。
 
-    Adds the response's prompt/completion tokens to
-    ``run.stage_summaries["token_usage"]`` so the LLM cost of a run can be
-    aggregated from the run row. Safe for both gateway response objects
-    (``.prompt_tokens``) and plain dicts. No-op when usage is unavailable.
+    将 response 的 prompt/completion token 数量加入
+    ``run.stage_summaries["token_usage"]``，使 run 的 LLM 成本可以从数据库行汇总。
+    同时兼容 gateway response 对象（``.prompt_tokens``）和普通 dict；没有 usage 时不做处理。
     """
     prompt = getattr(response, "prompt_tokens", None)
     completion = getattr(response, "completion_tokens", None)

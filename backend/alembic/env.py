@@ -1,7 +1,6 @@
-"""Alembic environment.
+"""Alembic 环境。
 
-Reads the DB URL from app settings and uses sync SQLAlchemy engine for
-`--autogenerate` support.
+从应用配置读取数据库 URL，并使用同步 SQLAlchemy engine 支持 `--autogenerate`。
 """
 
 from __future__ import annotations
@@ -16,7 +15,7 @@ from app.db.models import Base  # noqa: F401  (registers models on Base.metadata
 
 config = context.config
 
-# Inject DB URL from settings so alembic.ini can stay generic.
+# 从配置注入数据库 URL，使 alembic.ini 保持通用。
 config.set_main_option("sqlalchemy.url", settings.database_url)
 
 if config.config_file_name is not None:
@@ -26,7 +25,7 @@ target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:
-    """Run migrations in 'offline' mode (emit SQL to stdout)."""
+    """以“offline”模式运行迁移（将 SQL 输出到 stdout）。"""
     url = config.get_main_option("sqlalchemy.url")
     context.configure(
         url=url,
@@ -40,7 +39,7 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    """Run migrations in 'online' mode (connect to DB)."""
+    """以“online”模式运行迁移（连接数据库）。"""
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",

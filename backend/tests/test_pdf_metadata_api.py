@@ -1,4 +1,4 @@
-"""Tests for PDF metadata extraction + attach-PDF-to-existing flow."""
+"""PDF 元数据提取与为已有论文附加 PDF 流程测试。"""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ def _create_workspace(client: TestClient, name: str = "WS") -> dict:
 
 
 def _make_pdf_with_metadata(title: str, author: str, year: int) -> bytes:
-    """Build an in-memory PDF with embedded metadata using PyMuPDF."""
+    """使用 PyMuPDF 构造带嵌入元数据的内存 PDF。"""
     import fitz
 
     doc = fitz.open()
@@ -39,7 +39,7 @@ def _make_pdf_no_metadata() -> bytes:
     return doc.tobytes()
 
 
-# -------------------------------------------------------- pdf_metadata unit
+# -------------------------------------------------------- pdf_metadata 单元测试
 def test_extract_metadata_reads_title_authors_year() -> None:
     pdf = _make_pdf_with_metadata("My Great Paper", "Alice; Bob", 2024)
     meta = extract_metadata(pdf)
@@ -87,13 +87,12 @@ def test_extract_metadata_invalid_pdf_returns_empty() -> None:
     assert meta.page_count == 0
 
 
-# ---------------------------------------------------- auto-fill on upload
+# ---------------------------------------------------- 上传时自动填充
 def test_upload_auto_fills_metadata_from_pdf(client: TestClient) -> None:
     ws = _create_workspace(client)
     pdf = _make_pdf_with_metadata("Auto Filled Title", "Alice; Bob", 2023)
 
-    # User supplies ONLY the file - no title/authors/year. Backend should
-    # fill them from the PDF metadata.
+# 用户只提供文件，不提供 title/authors/year。后端应从 PDF 元数据填充这些字段。
     resp = client.post(
         f"/api/v1/workspaces/{ws['id']}/papers/upload",
         files={"file": ("auto.pdf", pdf, "application/pdf")},
@@ -109,7 +108,7 @@ def test_upload_user_supplied_values_override_pdf_metadata(client: TestClient) -
     ws = _create_workspace(client)
     pdf = _make_pdf_with_metadata("PDF Title", "PDF Author", 2020)
 
-    # User supplies explicit title/authors/year - those should win.
+# 用户明确提供 title/authors/year，这些值应优先保留。
     resp = client.post(
         f"/api/v1/workspaces/{ws['id']}/papers/upload",
         files={"file": ("x.pdf", pdf, "application/pdf")},
@@ -136,18 +135,17 @@ def test_upload_no_metadata_falls_back_to_filename(client: TestClient) -> None:
     assert body["year"] is None
 
 
-# ---------------------------------------------- attach PDF to existing
+# ---------------------------------------------- 为已有论文附加 PDF
 def test_attach_pdf_to_metadata_only_paper(client: TestClient) -> None:
     ws = _create_workspace(client)
-    # Create a paper with metadata only.
+# 创建只有元数据的论文。
     paper = client.post(
         f"/api/v1/workspaces/{ws['id']}/papers",
         json={"title": "Manual Title", "authors": ["Existing Author"]},
     ).json()
     assert paper["primary_artifact_id"] is None
 
-    # Now attach a PDF with different metadata. Since the paper already has
-    # title/authors, those are NOT overwritten; only empty fields get filled.
+# 现在附加元数据不同的 PDF。由于论文已有 title/authors，不应覆盖它们；只填充空字段。
     pdf = _make_pdf_with_metadata("PDF Title", "PDF Author", 2024)
     resp = client.post(
         f"/api/v1/workspaces/{ws['id']}/papers/{paper['id']}/upload-pdf",
@@ -156,13 +154,13 @@ def test_attach_pdf_to_metadata_only_paper(client: TestClient) -> None:
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["primary_artifact_id"] is not None
-    # Existing metadata preserved.
+# 已有元数据保留。
     assert body["title"] == "Manual Title"
     assert body["authors"] == ["Existing Author"]
-    # Year was empty -> filled from PDF.
+# Year 为空 -> 从 PDF 填充。
     assert body["year"] == 2024
 
-    # Timeline records the attach event.
+# Timeline 记录附加事件。
     timeline = client.get(f"/api/v1/workspaces/{ws['id']}/timeline").json()
     types = [e["event_type"] for e in timeline["items"]]
     assert "paper.pdf_attached" in types
@@ -170,7 +168,7 @@ def test_attach_pdf_to_metadata_only_paper(client: TestClient) -> None:
 
 def test_attach_pdf_fills_empty_fields(client: TestClient) -> None:
     ws = _create_workspace(client)
-    # Create a paper with only a title, no authors/year.
+# 创建只有 title、没有 authors/year 的论文。
     paper = client.post(
         f"/api/v1/workspaces/{ws['id']}/papers",
         json={"title": "T"},

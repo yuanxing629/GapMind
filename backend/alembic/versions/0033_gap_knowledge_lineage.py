@@ -1,4 +1,4 @@
-"""Record knowledge-context lineage for specialized gap extraction."""
+"""记录专用 Gap 抽取的知识上下文 lineage。"""
 
 from __future__ import annotations
 

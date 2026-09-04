@@ -1,4 +1,4 @@
-"""Versioned model instruction for specialized gap extraction."""
+"""专用 gap 抽取的版本化模型指令。"""
 
 PROMPT_VERSION = "gap-schema3-v3"
 

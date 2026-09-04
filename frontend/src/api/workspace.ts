@@ -25,7 +25,7 @@ export const workspaceApi = {
     return resp.data;
   },
   async independent(): Promise<Workspace> {
-    // P1.5: system workspace for standalone W7 agents when none is selected.
+// P1.5：未选择 workspace 时，standalone W7 agents 使用系统 workspace。
     const resp = await apiClient.get<Workspace>("/workspaces/independent");
     return resp.data;
   },

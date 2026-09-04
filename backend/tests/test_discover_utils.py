@@ -1,4 +1,4 @@
-"""Tests for shared discover utils (W6-3 token accounting + NUL hygiene)."""
+"""discover 共用 utils 测试（W6-3 token 统计 + NUL 清理）。"""
 
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ def test_accumulate_tokens_accepts_dict_and_noops_without_usage(db_session):
     run = _run(db_session)
     accumulate_tokens(run, {"prompt_tokens": 7, "completion_tokens": 3})
     assert run.stage_summaries["token_usage"]["total_tokens"] == 10
-    # No usage info -> no-op, no crash.
+# 没有 usage 信息 -> no-op，不崩溃。
     accumulate_tokens(run, SimpleNamespace(content="x"))
     assert run.stage_summaries["token_usage"]["total_tokens"] == 10
 
@@ -64,7 +64,7 @@ def test_retrieval_payload_compact(db_session):
 
 
 def test_synthesize_accumulates_tokens_into_run(db_session):
-    """A real LLM call path (synthesis) must accumulate token usage on the run."""
+    """真实 LLM 调用路径（synthesis）必须在运行记录中累计 token 用量。"""
     import json as _json
 
     from app.domains.discover.service import DiscoverService
@@ -106,7 +106,7 @@ def test_synthesize_accumulates_tokens_into_run(db_session):
 
 
 def test_hit_to_result_item_strips_nul_bytes(db_session):
-    """Retrieval item text must never carry NUL bytes (PostgreSQL rejects them)."""
+    """检索项文本不能携带 NUL 字节（PostgreSQL 会拒绝它们）。"""
     from app.domains.retrieval.service import _hit_to_result_item
 
     nul = chr(0)

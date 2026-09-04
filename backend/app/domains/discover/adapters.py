@@ -1,9 +1,8 @@
-"""Default adapter implementations for the Discover ports.
+"""Discover ports 的默认 adapter 实现。
 
-These are thin wrappers that forward to the production modules
-(retrieval service, Semantic Scholar client, LLM gateway). Keeping the
-adapters in a separate module lets tests substitute Protocol-compatible
-fakes without monkey-patching the underlying libraries.
+这些是转发到生产模块（检索服务、Semantic Scholar 客户端、LLM gateway）的薄封装。
+将 adapter 单独放在本模块，使测试可以传入兼容 Protocol 的 fake，而无需对底层库做
+monkey-patch。
 """
 
 from __future__ import annotations
@@ -27,7 +26,7 @@ logger = get_logger(__name__)
 
 
 class RetrievalAdapter:
-    """Forward Discover's retrieval calls to the retrieval service."""
+    """将 Discover 的 retrieval 调用转发给 retrieval service。"""
 
     def __init__(self, db: Session | None = None) -> None:
         self.db = db
@@ -89,7 +88,7 @@ class RetrievalAdapter:
 
 
 class ExternalSearchAdapter:
-    """Forward external-paper search to the Semantic Scholar client."""
+    """将外部论文搜索转发给 Semantic Scholar 客户端。"""
 
     def __init__(self, client: SemanticScholarClient | None = None) -> None:
         self._client = client or SemanticScholarClient()
@@ -118,7 +117,7 @@ class ExternalSearchAdapter:
 
 
 class LLMGatewayAdapter:
-    """Forward LLM calls to the configured gateway."""
+    """将 LLM 调用转发给配置的 gateway。"""
 
     def chat_completion(
         self,
@@ -140,10 +139,10 @@ __all__ = ["RetrievalAdapter", "ExternalSearchAdapter", "LLMGatewayAdapter"]
 
 
 def assert_protocol(port: object, expected: type) -> None:
-    """Sanity-check a port binding at startup.
+    """在启动时执行 port binding 的基本检查。
 
-    ``runtime_checkable`` lets us do this cheaply — failing here beats
-    waiting for a runtime AttributeError three commits from now.
+    ``runtime_checkable`` 允许我们低成本完成检查；在这里失败比运行几轮后才遇到
+    AttributeError 更容易定位。
     """
     if not isinstance(port, expected):
         raise TypeError(

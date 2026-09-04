@@ -1,4 +1,4 @@
-"""Tests for Stage 3 external query construction + multi-query merging."""
+"""Stage 3 外部 query 构建和多 query 合并测试。"""
 
 from __future__ import annotations
 
@@ -63,7 +63,7 @@ def _knowledge_item(
 
 
 class _S2Fake:
-    """Canned per-query Semantic Scholar results."""
+    """预设的逐 query Semantic Scholar 结果。"""
 
     def __init__(self, per_query: dict[str, list[dict[str, Any]]]) -> None:
         self.per_query = per_query
@@ -91,7 +91,7 @@ class _NoopLLM:
 
 
 class _AxisLLM:
-    """Returns axis queries (+ optional exact lookups) for the query-generation call."""
+    """为 query-generation 调用返回研究轴 query（以及可选的精确查找）。"""
 
     def __init__(self, queries: list[str], exact_lookups: list[str] | None = None) -> None:
         self.queries = queries
@@ -117,7 +117,7 @@ def _service(db_session, external_search, llm=None) -> DiscoverService:
     )
 
 
-# ------------------------------------------------------------------ build queries
+# ------------------------------------------------------------------ 构建 queries
 def test_build_external_queries_primary_then_keywords(db_session) -> None:
     workspace_id = str(uuid4())
     run = _run(workspace_id, input_payload={"keywords": ["invariant rationalization", "counterfactual"]})
@@ -126,7 +126,7 @@ def test_build_external_queries_primary_then_keywords(db_session) -> None:
     assert queries[0] == "My research claim"
     assert "invariant rationalization" in queries
     assert "counterfactual" in queries
-    # dedup + cap
+# 去重 + 上限
     assert len(queries) == len(set(q.lower() for q in queries))
     assert len(queries) <= EXTERNAL_QUERY_MAX_TOTAL
 
@@ -138,7 +138,7 @@ def test_build_external_queries_adds_workspace_signals(db_session) -> None:
             _knowledge_item(workspace_id, "method", "PGIB", confidence=0.9, content={"description": "invariant rationale extraction"}),
             _knowledge_item(workspace_id, "claim", "IB improves OOD generalization", confidence=0.8, content={"statement": "IB improves OOD generalization"}),
             _knowledge_item(workspace_id, "task", "OOD detection", confidence=0.7),
-            # rejected and low-confidence items must be skipped
+# rejected 和低置信度条目必须跳过
             _knowledge_item(workspace_id, "method", "NoisyMethod", confidence=0.9, status="rejected"),
             _knowledge_item(workspace_id, "method", "LowConf", confidence=0.1),
         ]
@@ -159,16 +159,16 @@ def test_build_external_queries_adds_workspace_signals(db_session) -> None:
 def test_external_query_text_renders_by_type(db_session) -> None:
     workspace_id = str(uuid4())
     service = DiscoverService(db_session, external_search=_S2Fake({}), llm=_NoopLLM())
-    # multi-word method name is used as-is
+# 多词 method name 原样使用
     gnn = _knowledge_item(workspace_id, "method", "Graph Information Bottleneck", content={"description": "..."})
     assert service._external_query_text(gnn) == "Graph Information Bottleneck"
-    # mixed-case method name is used as-is
+# 混合大小写 method name 原样使用
     pgib = _knowledge_item(workspace_id, "method", "PGIB", content={"description": "invariant rationale"})
     assert service._external_query_text(pgib) == "PGIB"
-    # all-caps abbreviation expands from the description's leading noun phrase
+# 全大写缩写从 description 的首个名词短语展开
     irm = _knowledge_item(workspace_id, "method", "IRM", content={"description": "Invariant Risk Minimization finds a representation"})
     assert service._external_query_text(irm) == "Invariant Risk Minimization"
-    # claim renders as its statement
+# claim 渲染为其 statement
     claim = _knowledge_item(workspace_id, "claim", "same", content={"statement": "IB improves OOD generalization"})
     assert service._external_query_text(claim) == "IB improves OOD generalization"
     task = _knowledge_item(workspace_id, "task", "OOD detection", content={})
@@ -194,7 +194,7 @@ def test_external_query_signal_items_orders_and_filters(db_session) -> None:
     assert "Low" not in names
 
 
-# ------------------------------------------------------------------ axis queries (LLM)
+# ------------------------------------------------------------------ 研究轴 queries（LLM）
 def test_axis_queries_from_llm_parses_response(db_session) -> None:
     workspace_id = str(uuid4())
     llm = _AxisLLM(["graph information bottleneck", "explanation stability neural networks"])
@@ -203,7 +203,7 @@ def test_axis_queries_from_llm_parses_response(db_session) -> None:
     out, lookups = service._axis_queries_from_llm(run, "My research question")
     assert out == ["graph information bottleneck", "explanation stability neural networks"]
     assert lookups == []
-    # one LLM call with the research question in the user prompt
+# 在 user prompt 中携带研究问题，并只调用一次 LLM
     assert len(llm.messages) == 1
     assert "My research question" in llm.messages[0][-1]["content"]
 
@@ -234,7 +234,7 @@ def test_build_external_queries_falls_back_when_llm_bad_shape(db_session) -> Non
     workspace_id = str(uuid4())
     db_session.add(_knowledge_item(workspace_id, "method", "PGIB", confidence=0.9))
     db_session.commit()
-    # _NoopLLM returns {"roles": []} — a bad shape for axis queries → fallback
+# _NoopLLM 返回 {"roles": []}，不符合 axis query 结构 -> 回退
     service = _service(db_session, _S2Fake({}), _NoopLLM())
     run = _run(workspace_id)
     queries = service._build_external_queries(run, "Primary")
@@ -272,7 +272,7 @@ def test_external_query_signal_texts_renders_compact(db_session) -> None:
     assert "Existing methods ignore stability" in text
 
 
-# ------------------------------------------------------------------ merge & dedupe
+# ------------------------------------------------------------------ 合并与去重
 def test_external_verify_merges_and_dedupes_candidates(db_session) -> None:
     workspace_id = str(uuid4())
     primary = "GNN interpretability"
@@ -305,12 +305,11 @@ def test_external_verify_merges_and_dedupes_candidates(db_session) -> None:
         .order_by(DiscoverExternalCandidate.rank)
         .all()
     )
-    # RRF fusion (P2-4): p2 is surfaced by BOTH queries, so it outranks every
-    # single-query hit regardless of position; single-query hits then order by
-    # their in-query position (p1 pos1 < p4 pos2 < p3 pos3).
+# RRF fusion（P2-4）：p2 被两个 query 同时召回，因此无论位置如何都超过所有
+# 单 query 命中；单 query 命中再按 query 内位置排序（p1 pos1 < p4 pos2 < p3 pos3）。
     assert [c.external_paper_id for c in cands] == ["p2", "p1", "p4", "p3"]
     assert [c.rank for c in cands] == [1, 2, 3, 4]
-    # each candidate records the query that surfaced it
+# 每个候选记录召回它的 query
     assert cands[1].query == primary  # p1 only in the primary query
     assert cands[0].query == "PGIB: invariant rationale"  # p2 first seen under the extra query
     assert cands[3].query == primary  # p3 only in the primary query
@@ -322,7 +321,7 @@ def test_external_verify_merges_and_dedupes_candidates(db_session) -> None:
     service._stage(run, "external_search", 0.58, {**summary, "external_candidates": count})
     assert run.stage_summaries["external_search"]["status"] == "succeeded"
     assert run.stage_summaries["external_search"]["executed"] is True
-    # role judge ran against the research question (primary), not the extra query
+# role judge 针对研究问题（primary）运行，而不是额外 query
     assert llm.messages
     assert primary in llm.messages[0][-1]["content"]
     assert "PGIB" not in llm.messages[0][-1]["content"].split("CANDIDATES:")[0]
@@ -456,7 +455,7 @@ def test_external_verify_marks_primary_failure_as_warning(db_session) -> None:
     assert summary["query_records"][1]["purpose"] == "counter_evidence"
 
 
-# ------------------------------------------------------------------ exact-name lookup
+# ------------------------------------------------------------------ 精确名称查找
 def test_title_verified_matches_words(db_session) -> None:
     service = DiscoverService(db_session, external_search=_S2Fake({}), llm=_NoopLLM())
     assert service._title_verified("Graph Information Bottleneck", "Graph Information Bottleneck")
@@ -491,18 +490,18 @@ def test_external_verify_precise_lookup_prepends_verified(db_session) -> None:
         .order_by(DiscoverExternalCandidate.rank)
         .all()
     )
-    # Verified lookup prepended; unmatched lookup skipped.
+# 已验证查找结果置顶；未匹配查找跳过。
     assert [c.external_paper_id for c in cands] == ["pGIB", "p1", "p2"]
     assert cands[0].query == "exact: Graph Information Bottleneck"
     assert count == 3
-    # Lookup made an extra S2 call with the exact name.
+# Lookup 使用精确名称额外发起一次 S2 调用。
     assert any(call["query"] == "Graph Information Bottleneck" for call in fake.calls)
 
 
 def test_axis_query_prompt_requires_counter_evidence_and_evaluation_axes(db_session) -> None:
-    """P2-4: the axis-decomposition prompt must hard-require the counter-evidence
-    and evaluation angles — without the mandate the LLM skips them and the
-    external gate misses critique literature entirely (recall 0.286 case)."""
+    """P2-4：轴分解提示词必须硬性要求反证和评测角度。
+
+    没有该要求时 LLM 会跳过这些角度，外部门禁会完全漏掉批评性文献（召回率 0.286 的案例）。"""
     workspace_id = str(uuid4())
     llm = _AxisLLM(["graph information bottleneck", "explanation stability"])
     service = _service(db_session, _S2Fake({}), llm)

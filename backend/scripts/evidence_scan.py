@@ -1,20 +1,17 @@
-"""Scan a paper's parsed_markdown for passages relevant to a claim.
+"""扫描论文的 parsed_markdown，查找与主张相关的段落。
 
-This is a manual-review helper for the RG-8 counter-evidence gold
-confirmation (docs/rg8_counter_evidence_gold_review.md). It finds the
-passages of a target paper most likely to support/qualify/contradict a
-given claim, so a human can quickly judge whether the gold annotation is
-correct — WITHOUT having to read the whole paper.
+这是 RG-8 反证 Gold 确认的人工复核辅助工具
+（docs/rg8_counter_evidence_gold_review.md）。它找到目标论文中最可能
+支持/限定/反驳给定主张的段落，使人可以快速判断 Gold 标注是否正确，
+无需阅读整篇论文。
 
-Method: naive keyword overlap. The claim is split into keywords (stopwords
-removed, case-folded), then each markdown paragraph is scored by how many
-distinct keywords it contains. The top passages are printed with section
-context and char offsets so the reviewer can jump to the原文.
+方法：朴素关键词重叠。将主张拆分为关键词（移除停用词并统一大小写），
+然后根据每个 Markdown 段落包含的不同关键词数量评分。打印排名靠前的段落及章节上下文和字符偏移，
+便于复核者跳转到原文。
 
-This is intentionally simple — it's a *locator*, not a judge. The human
-still decides whether the passage actually qualifies/contradicts the claim.
+该工具刻意保持简单——它是*定位器*而不是判断器。段落是否真的限定/反驳主张，仍由人工决定。
 
-Usage (from backend/):
+用法（从 backend/ 目录运行）：
 
     .venv/Scripts/python.exe scripts/evidence_scan.py \
         --workspace-id 123100ea-e75b-4110-9048-1f5b92668c32 \
@@ -62,7 +59,7 @@ def _keywords(claim: str) -> list[str]:
 
 
 def _split_paragraphs(md: str) -> list[tuple[int, str]]:
-    """Split markdown into (char_offset, text) paragraphs."""
+    """将 Markdown 拆分为（char_offset、text）段落。"""
     out: list[tuple[int, str]] = []
     for m in re.finditer(r"(?m)^[^\n]+(?:\n(?![#\n])[^\n]+)*", md):
         text = m.group(0).strip()
@@ -113,7 +110,7 @@ def main() -> int:
         scored.sort(key=lambda x: x[0], reverse=True)
         print(f"== Top {args.top} most relevant passages ==")
         for rank, (n_hits, offset, text, hits) in enumerate(scored[: args.top], 1):
-            # find section heading before this offset
+# 查找此偏移之前的章节标题
             heading = ""
             for hm in re.finditer(r"(?m)^##+\s+(.*)", md):
                 if hm.start() < offset:

@@ -1,19 +1,15 @@
-"""Cross-domain ports for the Discover service.
+"""Discover service 的跨 domain ports。
 
-The Discover pipeline coordinates retrieval (workspace + external), an
-external-paper search client, and an LLM gateway. Without these ports,
-``DiscoverService`` would import concrete modules from three other
-domains — making it hard to:
+Discover pipeline 需要协调检索（workspace + external）、外部论文搜索客户端和 LLM gateway。
+如果没有这些 port，``DiscoverService`` 就必须直接导入另外三个 domain 的具体模块，导致：
 
-  * unit-test the orchestration without bringing up Milvus + an LLM;
-  * swap the LLM or the external-search provider (the next chat-agent
-    iteration may need LangChain / Anthropic / OpenAI alongside the remote
-    Chat Completions provider);
-  * trace exactly which call path a given Discover run took.
+* 无需启动 Milvus + LLM 即可对编排流程做单元测试；
+* 可替换 LLM 或外部搜索 provider（后续 chat-agent iteration 可能需要在远程
+  Chat Completions provider 之外接入 LangChain / Anthropic / OpenAI）；
+* 精确追踪某次 Discover run 经过的调用路径。
 
-A ``Port`` here is a ``typing.Protocol`` describing the surface that
-``DiscoverService`` depends on. ``adapters.py`` ships the production
-implementations; tests can pass any object that satisfies the protocol.
+这里的 ``Port`` 是描述 ``DiscoverService`` 所依赖接口面的 ``typing.Protocol``。
+``adapters.py`` 提供生产实现；测试可以传入任何满足该 protocol 的对象。
 """
 
 from __future__ import annotations
@@ -25,7 +21,7 @@ from app.domains.retrieval.schemas import RetrievalResponse
 
 @runtime_checkable
 class RetrievalPort(Protocol):
-    """Subset of the retrieval service used by Discover."""
+    """Discover 使用的 retrieval service 子集。"""
 
     def semantic_search(
         self,
@@ -66,7 +62,7 @@ class RetrievalPort(Protocol):
 
 @runtime_checkable
 class ExternalSearchPort(Protocol):
-    """Search-external-candidates client (Semantic Scholar for now)."""
+    """外部候选搜索客户端（当前使用 Semantic Scholar）。"""
 
     def search(
         self,
@@ -86,7 +82,7 @@ class ExternalSearchPort(Protocol):
 
 @runtime_checkable
 class LLMGatewayPort(Protocol):
-    """Minimal LLM surface — the Discover pipeline only calls chat completion."""
+    """最小 LLM 接口——Discover 流程只调用 chat completion。"""
 
     def chat_completion(
         self,

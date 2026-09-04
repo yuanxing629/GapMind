@@ -83,13 +83,13 @@
       font-feature-settings: "cv11", "ss01";
     }
 
-    /* ====== App Layout ====== */
+    /* ====== App Layout：应用布局 ====== */
     .app {
       display: flex;
       min-height: 100vh;
     }
 
-    /* ====== Sidebar ====== */
+    /* ====== Sidebar：侧边栏 ====== */
     .sidebar {
       width: var(--sidebar-width);
       background: var(--bg);
@@ -202,7 +202,7 @@
       flex-shrink: 0;
     }
 
-    /* Nav */
+    /* Nav：导航 */
     .nav {
       flex: 1;
       padding: 0 8px;
@@ -336,7 +336,7 @@
       margin-top: 2px;
     }
 
-    /* ====== Main ====== */
+    /* ====== Main：主内容区 ====== */
     .main {
       flex: 1;
       display: flex;
@@ -344,7 +344,7 @@
       min-width: 0;
     }
 
-    /* Top bar */
+    /* Top bar：顶部栏 */
     .topbar {
       height: var(--topbar-height);
       background: rgba(255, 255, 255, 0.85);
@@ -442,7 +442,7 @@
       gap: 2px;
     }
 
-    /* AI Status pill in topbar */
+    /* 顶部栏中的 AI 状态标签 */
     .ai-status {
       display: inline-flex;
       align-items: center;
@@ -503,7 +503,7 @@
       margin: 0 4px;
     }
 
-    /* ====== Content ====== */
+    /* ====== Content：内容区 ====== */
     .content {
       padding: 28px 40px 80px;
       max-width: 1440px;
@@ -511,7 +511,7 @@
       margin: 0 auto;
     }
 
-    /* ====== HERO: AI Discovery ====== */
+    /* ====== 首屏：AI Discovery ====== */
     .hero {
       display: grid;
       grid-template-columns: 1fr 1.2fr;
@@ -519,7 +519,7 @@
       margin-bottom: 28px;
     }
 
-    /* Left: AI Discovery Summary */
+    /* 左侧：AI Discovery 摘要 */
     .hero-discovery {
       background: var(--bg-card);
       border: 1px solid var(--border);
@@ -702,7 +702,7 @@
       border-color: rgba(255, 255, 255, 0.2);
     }
 
-    /* Right: Top Research Opportunity */
+    /* 右侧：Top Research Opportunity */
     .hero-opportunity {
       background: linear-gradient(135deg, #0A0A0B 0%, #1E1E23 100%);
       border-radius: var(--radius-lg);
@@ -865,7 +865,7 @@
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     }
 
-    /* ====== Section ====== */
+    /* ====== Section：区块 ====== */
     .section {
       margin-bottom: 32px;
     }
@@ -920,7 +920,7 @@
       background: var(--primary-subtle);
     }
 
-    /* ====== Quick Actions with AI Status ====== */
+    /* ====== Quick Actions with AI Status：带 AI 状态的快捷操作 ====== */
     .quick-actions {
       display: grid;
       grid-template-columns: repeat(6, 1fr);
@@ -1084,7 +1084,7 @@
       }
     }
 
-    /* ====== Two Column: Workspace + AI Copilot ====== */
+    /* ====== 双栏：Workspace + AI Copilot ====== */
     .grid-2 {
       display: grid;
       grid-template-columns: 1.3fr 1fr;
@@ -1126,7 +1126,7 @@
       justify-content: center;
     }
 
-    /* Active Workspace (data center) */
+    /* 当前 Workspace（数据中心） */
     .workspace-intel {
       padding: 22px;
     }
@@ -1308,7 +1308,7 @@
       flex-shrink: 0;
     }
 
-    /* AI Copilot */
+    /* AI Copilot：AI 助手 */
     .ai-copilot {
       padding: 22px;
       background: linear-gradient(180deg, var(--bg-card), #FBFBFE);
@@ -1497,7 +1497,7 @@
       opacity: 0.6;
     }
 
-    /* ====== Research Intelligence Row ====== */
+    /* ====== Research Intelligence Row：研究智能行 ====== */
     .intelligence-grid {
       display: grid;
       grid-template-columns: repeat(5, 1fr);
@@ -1605,7 +1605,7 @@
       line-height: 1.4;
     }
 
-    /* ====== Timeline ====== */
+    /* ====== Timeline：时间线 ====== */
     .timeline-section {
       background: var(--bg-card);
       border: 1px solid var(--border);
@@ -1724,7 +1724,7 @@
       line-height: 1.4;
     }
 
-    /* ====== Floating AI Button ====== */
+    /* ====== Floating AI Button：悬浮 AI 按钮 ====== */
     .fab {
       position: fixed;
       bottom: 24px;
@@ -1761,7 +1761,7 @@
       box-shadow: 0 0 6px #5B6CFF;
     }
 
-    /* Scrollbar */
+    /* Scrollbar：滚动条 */
     .sidebar::-webkit-scrollbar {
       width: 6px;
     }
@@ -1779,7 +1779,7 @@
       background: var(--border-strong);
     }
 
-    /* Selection */
+    /* Selection：选中状态 */
     ::selection {
       background: var(--primary-light);
       color: var(--primary-hover);
@@ -1789,7 +1789,7 @@
 
 <body>
   <div class="app">
-    <!-- ============== SIDEBAR ============== -->
+    <!-- ============== 侧边栏 ============== -->
     <aside class="sidebar">
       <div class="brand">
         <div class="brand-mark">
@@ -1925,9 +1925,9 @@
       </div>
     </aside>
 
-    <!-- ============== MAIN ============== -->
+    <!-- ============== 主区域 ============== -->
     <main class="main">
-      <!-- Top bar -->
+      <!-- 顶部栏 -->
       <div class="topbar">
         <div class="breadcrumb">
           <span>Yuan Xing Lab</span>
@@ -1965,12 +1965,12 @@
         </div>
       </div>
 
-      <!-- Content -->
+      <!-- 内容区 -->
       <div class="content">
 
-        <!-- ============== HERO: AI Discovery + Top Opportunity ============== -->
+        <!-- ============== 首屏：AI Discovery + 顶部机会 ============== -->
         <div class="hero">
-          <!-- LEFT: AI Discovery Summary -->
+          <!-- 左侧：AI Discovery 摘要 -->
           <div class="hero-discovery">
             <div class="hero-greeting">
               <span>Friday · July 18 · 19:20</span>
@@ -2035,7 +2035,7 @@
             </div>
           </div>
 
-          <!-- RIGHT: Top Research Opportunity -->
+          <!-- 右侧：顶部研究机会 -->
           <div class="hero-opportunity">
             <div class="opp-eyebrow">Top Research Opportunity Today</div>
             <h2 class="opp-title">Prototype-based Dynamic GNN Explanation</h2>
@@ -2081,7 +2081,7 @@
           </div>
         </div>
 
-        <!-- ============== Quick Actions with AI Status ============== -->
+        <!-- ============== 带 AI 状态的快捷操作 ============== -->
         <div class="section">
           <div class="section-header">
             <div>
@@ -2190,10 +2190,10 @@
           </div>
         </div>
 
-        <!-- ============== Active Workspace + AI Copilot ============== -->
+        <!-- ============== 当前 Workspace + AI Copilot ============== -->
         <div class="section">
           <div class="grid-2">
-            <!-- Active Workspace (data center) -->
+            <!-- 当前 Workspace（数据中心） -->
             <div class="panel workspace-intel">
               <div class="panel-header">
                 <div class="panel-title">
@@ -2269,7 +2269,7 @@
               </div>
             </div>
 
-            <!-- AI Copilot (proactive, not chat) -->
+            <!-- AI Copilot（主动式，不是聊天） -->
             <div class="panel ai-copilot">
               <div class="copilot-head">
                 <div class="ai-avatar">
@@ -2343,7 +2343,7 @@
           </div>
         </div>
 
-        <!-- ============== Today's Research Intelligence ============== -->
+        <!-- ============== 今日研究情报 ============== -->
         <div class="section">
           <div class="section-header">
             <div>
@@ -2401,7 +2401,7 @@
           </div>
         </div>
 
-        <!-- ============== Research Timeline ============== -->
+        <!-- ============== 研究时间线 ============== -->
         <div class="section">
           <div class="timeline-section">
             <div class="section-header" style="margin-bottom: 14px;">
@@ -2496,7 +2496,7 @@
     </main>
   </div>
 
-  <!-- Floating AI Button -->
+  <!-- 浮动 AI 按钮 -->
   <button class="fab" title="Open AI Assistant (⌘J)">
     <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
       <path d="M12 2L9.5 7.5 4 8.5l4 4-1 6L12 16l5 2.5-1-6 4-4-5.5-1z" />
@@ -2504,7 +2504,7 @@
   </button>
 
   <script>
-    // Light interactivity — purely cosmetic for prototype feel
+    // 轻量交互——仅用于原型的视觉效果
     document.querySelectorAll('.action-card').forEach(card => {
       card.addEventListener('click', () => {
         const title = card.querySelector('.action-title').textContent.trim();
@@ -2536,7 +2536,7 @@
       console.log('[GapMind] Open AI assistant');
     });
 
-    // ⌘K to focus search
+    // 使用 ⌘K 聚焦搜索框
     document.addEventListener('keydown', (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();

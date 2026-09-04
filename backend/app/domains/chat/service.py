@@ -1,4 +1,4 @@
-"""Application service for ordinary and workspace-grounded conversations."""
+"""普通对话与工作区 grounded 对话的应用 service。"""
 
 from __future__ import annotations
 
@@ -46,9 +46,8 @@ from app.gateway.llm import LLMGateway, LLMResponse, get_llm_gateway
 
 logger = get_logger(__name__)
 
-# A chat stream whose client disconnected mid-flight is marked failed by the
-# finally-guard in _stream_complete; rows older than this threshold that are
-# still "generating" are treated as dead leftovers (pre-guard rows).
+# 如果聊天流在执行中客户端断开，_stream_complete 中的 finally 保护会将其标记为失败；
+# 超过此阈值仍处于 "generating" 的行视为已失效的遗留行（保护逻辑加入前创建的行）。
 STALE_GENERATING_SECONDS = 15 * 60
 PLAN_REFERENCE_PATTERN = re.compile(r"(?:此|这|该)(?:个)?研究计划|当前研究计划|这个计划")
 CONFIRMED_OPPORTUNITY_STATUSES = {"confirmed", "edited_confirmed"}
@@ -154,7 +153,7 @@ class ChatRetrievalError(RuntimeError):
 
 
 def make_conversation_title(content: str) -> str:
-    """Create a deterministic title without spending another LLM request."""
+    """生成确定性标题，不额外消耗一次 LLM 请求。"""
     normalized = re.sub(r"\s+", " ", content).strip()
     if not normalized:
         return "新对话"
@@ -452,10 +451,9 @@ class ChatService:
         )
         if active is None:
             return
-        # P0.5-1 hardening: a stream whose client vanished mid-flight can leave
-        # a row stuck in "generating" (rows created before the finally-guard
-        # existed stay stuck forever). Treat rows untouched for longer than
-        # STALE_GENERATING_SECONDS as dead so the conversation is not bricked.
+# P0.5-1 加固：客户端在流式处理中消失可能使一行永久停留在 "generating" 状态
+# （finally 保护加入前创建的行会一直卡住）。将超过 STALE_GENERATING_SECONDS 未更新
+# 的行视为失效，避免整个 conversation 被阻塞。
         stale_for = None
         if active.updated_at is not None:
             updated_at = active.updated_at
@@ -483,11 +481,9 @@ class ChatService:
     def _build_context(self, messages: Iterable[ChatMessage], content: str) -> list[dict[str, Any]]:
         context_reversed: list[dict[str, Any]] = []
         total_chars = 0
-        # ``_completed_messages`` already returns the latest N rows in
-        # chronological order. Fill the history budget from the newest turn
-        # backwards, then restore chronology for the LLM. The old forward pass
-        # could spend the whole budget on stale turns and omit the user's most
-        # recent intent.
+# ``_completed_messages`` 已按时间顺序返回最新的 N 行。从最新一轮开始向前填充
+# history budget，然后为 LLM 恢复时间顺序。旧的正向遍历可能把整个预算消耗在
+# 过时对话上，遗漏用户最近的意图。
         for message in reversed(list(messages)):
             if message.role not in {"user", "assistant"} or message.status != "completed":
                 continue
@@ -502,7 +498,7 @@ class ChatService:
     def _prepare_images(
         self, images: list[dict[str, str]] | None
     ) -> list[PreparedImage]:
-        """Decode and validate browser data URLs before creating a message."""
+        """在创建消息前解码并校验浏览器 data URL。"""
 
         if not images:
             return []
@@ -555,7 +551,7 @@ class ChatService:
     def _persist_images(
         self, message: ChatMessage, images: list[PreparedImage]
     ) -> list[str]:
-        """Persist chat images and return normalized data URLs for this request."""
+        """持久化聊天图片，并返回本次请求的规范化 data URL。"""
 
         if not images:
             return []
@@ -585,7 +581,7 @@ class ChatService:
             raise ChatInputError("图片保存失败，请稍后重试") from exc
 
     def _image_data_urls(self, message: ChatMessage) -> list[str]:
-        """Read persisted images for retrying the message that originally used them."""
+        """读取已持久化的图片，用于重试最初使用它们的消息。"""
 
         return [self._image_data_url(image) for image in message.images]
 
@@ -609,7 +605,7 @@ class ChatService:
         *,
         actor_id: str | None = None,
     ) -> tuple[Path, ChatMessageImage]:
-        """Resolve one image only after checking conversation ownership."""
+        """仅在检查会话归属后解析单张图片。"""
 
         conversation = self.get_conversation(conversation_id, actor_id=actor_id)
         image = self.db.scalar(
@@ -819,7 +815,7 @@ class ChatService:
         return conversation, user_message, assistant
 
 
-    # ------------------------------------------------------------ streaming (P0.5-1)
+# ------------------------------------------------------------ 流式处理（P0.5-1）
     def stream_send_new(
         self,
         content: str,
@@ -835,7 +831,7 @@ class ChatService:
         graph_node_limit: int | None = None,
         graph_edge_limit: int | None = None,
     ) -> Generator[dict[str, Any], None, None]:
-        """Stream a new-conversation message. Yields event dicts (see _stream_complete)."""
+        """流式处理新会话消息，产出事件字典（见 _stream_complete）。"""
         content = self._validate_content(content)
         prepared_images = self._prepare_images(images)
         if workspace_id:
@@ -879,7 +875,7 @@ class ChatService:
         graph_node_limit: int | None = None,
         graph_edge_limit: int | None = None,
     ) -> Generator[dict[str, Any], None, None]:
-        """Stream a message into an existing conversation. Yields event dicts."""
+        """将消息流式写入已有会话，产出事件字典。"""
         content = self._validate_content(content)
         prepared_images = self._prepare_images(images)
         conversation = self.get_conversation(conversation_id, actor_id=actor_id)
@@ -922,11 +918,11 @@ class ChatService:
         graph_node_limit: int | None = None,
         graph_edge_limit: int | None = None,
     ) -> Generator[dict[str, Any], None, None]:
-        """Stream LLM tokens for a message, persisting on completion.
+        """为消息流式输出 LLM token，并在完成时持久化。
 
-        Yields ``{"type": ...}`` events: ``start`` (ids), ``evidence`` (retrieval
-        citations), ``token`` (one delta per event), ``done`` (final content), or
-        ``error``. Structured-format callers keep using ``_complete``.
+    生成 ``{"type": ...}`` 事件：``start``（ID）、``evidence``（检索引用）、
+    ``token``（每个事件一个增量）、``done``（最终内容）或 ``error``。
+    结构化格式调用方继续使用 ``_complete``。
         """
         assistant = self.db.get(ChatMessage, assistant_id)
         conversation = self.db.get(ChatConversation, conversation_id)
@@ -966,12 +962,9 @@ class ChatService:
             yield {"type": "error", "message": str(exc)}
             return
         except ChatRetrievalError as exc:
-            # Streaming responses have already started by the time the
-            # generator body runs, so the central HTTP exception handler
-            # cannot turn this into a structured error response. Emit the
-            # documented SSE error event instead of closing the connection
-            # while the browser still shows the optimistic message as
-            # "generating".
+# generator body 执行时流式响应已经开始，因此中心 HTTP 异常处理器无法再将其转换为
+# 结构化错误响应。此时应发送文档规定的 SSE error event，而不是在浏览器仍显示乐观
+# 消息为 "generating" 时直接关闭连接。
             yield {
                 "type": "error",
                 "message": str(exc),
@@ -1067,9 +1060,8 @@ class ChatService:
             interrupted = False
             yield {"type": "done", "content": content}
         finally:
-            # P0.5-1 hardening: a client disconnect mid-stream raises
-            # GeneratorExit at a yield point; without this guard the row stays
-            # "generating" forever and blocks the whole conversation.
+# P0.5-1 加固：客户端在流式处理中断开会在 yield 点抛出 GeneratorExit；没有此保护时，
+# 该行会永久停留在 "generating"，并阻塞整个 conversation。
             if interrupted and assistant.status == "generating":
                 try:
                     self._mark_failed(assistant, "流式响应中断：客户端提前断开")
@@ -1086,12 +1078,11 @@ class ChatService:
         *,
         model_override: str | None = None,
     ) -> CitationQualityResult:
-        """Validate one answer and allow at most one bounded marker repair.
+        """校验一条回答，最多允许一次有界的标记修复。
 
-        This gate only repairs citation/source boundaries. It never retrieves
-        new material and never invents a citation. If the repaired answer is
-        still mechanically invalid, return a deterministic evidence-insufficiency
-        message instead of persisting an answer with a broken provenance chain.
+    该门禁只修复引用/来源边界。它不会检索新材料，也不会编造引用。
+    如果修复后的回答仍然无法通过机械校验，则返回确定性的证据不足消息，
+    而不是持久化来源链已损坏的回答。
         """
 
         grounded = bool(evidence)
@@ -1360,7 +1351,7 @@ class ChatService:
         graph_node_limit: int | None,
         graph_edge_limit: int | None,
     ) -> dict[str, Any]:
-        """Run bounded GraphRAG diagnostics without changing answer context."""
+        """运行有界 GraphRAG 诊断，但不改变回答上下文。"""
 
         enabled = (
             retrieval_mode in {"hybrid", "graph"}
@@ -1418,11 +1409,9 @@ class ChatService:
                     "truncation_reason": projection.truncation_reason,
                     "fallback": True,
                     "fallback_reason": "graph_timeout",
-                    # The projection is synchronous in this phase, so a
-                    # post-completion budget breach does not invalidate the
-                    # already workspace- and endpoint-validated diagnostic
-                    # paths.  Keep them visible for audit, but retain the
-                    # dense-only fallback and never add them to the answer.
+                    # 本阶段投影是同步执行的，因此完成后的预算超限不会使已经通过
+                    # workspace 和端点校验的诊断路径失效。保留路径供审计查看，
+                    # 但仍使用 dense-only fallback，且绝不将其加入回答。
                     "paths": [path.model_dump(mode="json") for path in projection.paths],
                 }
             return {
@@ -1487,7 +1476,7 @@ class ChatService:
     def context_options(
         self, workspace_id: str, *, actor_id: str | None = None
     ) -> dict[str, list[dict[str, str]]]:
-        """List only current-workspace plan/report/code context candidates."""
+        """仅列出当前工作区的 plan/report/code 上下文候选。"""
 
         workspace = WorkspaceService(self.db).get(workspace_id, actor_id=actor_id)
         plans = self._eligible_plans(workspace.id)
@@ -1731,8 +1720,7 @@ class ChatService:
                 marker = f"[C{code_index}] 代码草案，未运行验证"
                 code_index += 1
             content = self._postgres_safe_text(artifact.content)
-            # Do not let an embedded report citation accidentally become a
-            # citation to this chat's paper evidence ranks.
+# 不要让嵌入 report 中的 citation 意外变成对本次 Chat 论文 evidence rank 的引用。
             content = re.sub(r"\[E\d+\]", "[来源内部标记]", content)
             remaining = budget - total_chars
             if remaining <= 0:
@@ -1794,7 +1782,7 @@ class ChatService:
 
     @staticmethod
     def _prompt_char_count(context: list[dict[str, Any]]) -> int:
-        """Count prompt characters without persisting the prompt contents."""
+        """统计提示词字符数，不持久化提示词内容。"""
 
         total = 0
         for message in context:
@@ -1829,12 +1817,11 @@ class ChatService:
 
     @staticmethod
     def _postgres_safe_text(value: object | None) -> str:
-        """Remove NUL bytes that PostgreSQL rejects in text and JSON values.
+        """移除 PostgreSQL 在文本和 JSON 值中拒绝的 NUL 字节。
 
-        PDF extraction can preserve embedded ``0x00`` characters inside an
-        otherwise valid chunk.  They are not meaningful prose, so removing
-        them at the persistence boundary keeps evidence offsets and source
-        artifacts auditable while preventing an entire Agent run from failing.
+    PDF 抽取可能在原本有效的分块中保留嵌入的 ``0x00`` 字符。
+    它们不是有意义的 prose，因此在持久化边界移除它们，既保持证据偏移和来源 Artifact 可审计，
+    也避免整个 Agent 运行失败。
         """
 
         return str(value or "").replace("\x00", "")
@@ -1871,7 +1858,7 @@ class ChatService:
 
     @staticmethod
     def _clip_context_text(text: str, max_chars: int) -> str:
-        """Bound a named context source without dropping its provenance header."""
+        """限制命名上下文来源的长度，同时保留其 provenance 标头。"""
 
         if max_chars <= 0:
             return ""
@@ -1885,11 +1872,10 @@ class ChatService:
         system_message: dict[str, Any],
         context: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
-        """Apply one total prompt budget while preserving the current question.
+        """应用统一的提示词总预算，同时保留当前问题。
 
-        Source blocks are independently capped before this function. The
-        remaining budget belongs to dialogue history and is filled from newest
-        to oldest, preserving chronological order in the final prompt.
+    来源块在进入本函数前已分别限长。剩余预算用于对话历史，并按从新到旧填充，
+    以保持最终 prompt 的时间顺序。
         """
 
         if not context:

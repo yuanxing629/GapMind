@@ -1,4 +1,4 @@
-"""HTTP API for workspace-scoped paper recommendations."""
+"""工作区级论文推荐的 HTTP API。"""
 
 from __future__ import annotations
 
@@ -52,7 +52,7 @@ def list_recommendations(
     service: RecommendationService = Depends(_service),  # noqa: B008
     client: SemanticScholarClient = Depends(_client),  # noqa: B008
 ) -> PaperRecommendationListRead:
-    """Return cached recommendations, generating the first batch on demand."""
+    """返回缓存推荐，必要时按需生成第一批。"""
     if service.needs_generation(workspace_id):
         return _read(service.refresh(workspace_id, client))
     return _read(service.current(workspace_id))

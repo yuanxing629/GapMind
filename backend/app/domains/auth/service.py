@@ -1,4 +1,4 @@
-"""Authentication services with server-side sessions and one-time tokens."""
+"""基于服务端 session 和一次性 token 的认证 service。"""
 
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ WORKSPACE_ROLES = {"viewer", "editor", "owner"}
 
 
 class AuthServiceError(Exception):
-    """An expected authentication failure suitable for an HTTP response."""
+    """适合转换为 HTTP 响应的预期认证失败。"""
 
     def __init__(self, code: str, message: str, status_code: int = 400) -> None:
         super().__init__(message)
@@ -44,11 +44,10 @@ class AuthServiceError(Exception):
 
 
 class LoginRateLimiter:
-    """Small process-local fallback limiter for login attempts.
+    """进程内轻量登录尝试回退限制器。
 
-    Production deployments should point all API workers at the same Redis
-    rate-limit layer. The local fallback still protects a single worker and
-    keeps tests and offline development independent of Redis availability.
+    生产部署应让所有 API worker 指向同一个 Redis 限流层。
+    本地回退仍可保护单个 worker，并使测试和离线开发不依赖 Redis 可用性。
     """
 
     _lock = threading.Lock()
@@ -80,8 +79,8 @@ class LoginRateLimiter:
             client.close()
             return True
         except Exception:
-            # Redis is an operational dependency, but a local process can
-            # still fail closed enough for development if Redis is restarting.
+# Redis 是运行时依赖，但 Redis 重启时，本地进程仍可在开发环境中以 fail closed
+# 方式安全运行。
             pass
         with cls._lock:
             values = [
@@ -162,7 +161,7 @@ class AuthService:
     def __init__(self, db: Session) -> None:
         self.db = db
 
-    # --------------------------------------------------------------- identities
+# --------------------------------------------------------------- 身份
     def get_user(self, user_id: str) -> User | None:
         return self.db.get(User, user_id)
 
@@ -212,7 +211,7 @@ class AuthService:
         self.db.flush()
         return user
 
-    # ---------------------------------------------------------------- sessions
+# ---------------------------------------------------------------- 会话
     def create_session(
         self,
         user_id: str,
@@ -253,7 +252,7 @@ class AuthService:
         user = self.db.get(User, session.user_id)
         if user is None or user.status != "active":
             return None
-        # Avoid a write on every request while still extending activity state.
+# 避免每次请求都写入，同时仍然延长 activity state。
         if _aware(session.last_seen_at) + timedelta(minutes=1) <= now:
             session.last_seen_at = now
             self.db.commit()
@@ -313,7 +312,7 @@ class AuthService:
             self.revoke_all_sessions(user_id)
         self.audit(admin_id, f"user_{status}", user_id)
 
-    # ---------------------------------------------------------------- invites
+# ---------------------------------------------------------------- 邀请
     def create_invite(
         self,
         *,
@@ -409,8 +408,7 @@ class AuthService:
             select(UserRole.user_id).where(UserRole.user_id == user.id, UserRole.role == USER_ROLE)
         ):
             self.db.add(UserRole(user_id=user.id, role=USER_ROLE))
-        # Invitations create an account only. Workspaces are personal and can
-        # be accessed only after this user creates them.
+# 邀请只负责创建账户。Workspace 属于个人，只有用户创建后才能访问。
         invite.accepted_at = utcnow()
         self.db.commit()
         self.db.refresh(user)
@@ -429,7 +427,7 @@ class AuthService:
             self.db.commit()
             self.audit(admin_id, "invite_revoked", invite.id)
 
-    # ------------------------------------------------------------ password flow
+# ------------------------------------------------------------ 密码流程
     def create_password_reset(self, email: str) -> str | None:
         normalized = normalize_email(email)
         user = self.db.scalar(
@@ -489,7 +487,7 @@ class AuthService:
         self.revoke_all_sessions(user_id)
         self.audit(user_id, "password_changed", user_id)
 
-    # ------------------------------------------------------------------ audit
+# ------------------------------------------------------------------ 审计
     def audit(self, user_id: str | None, event_type: str, target_id: str | None = None) -> None:
         self.db.add(
             AuthAuditEvent(

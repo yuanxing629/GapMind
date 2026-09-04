@@ -2,9 +2,9 @@
   --gm-bg: #f5f7fa;
   --gm-text: #213547;
   --gm-layout-bg: #f5f7fa;
-  /* P0.5-4 dark-theme token set (see docs/0818_dark_theme_fix_plan.md §3.1).
-     Surfaces/borders/text tiers mirror antd v5 dark tokens so hand-written
-     CSS stays in the same elevation rhythm as antd components. */
+  /* P0.5-4 dark-theme token set（见 docs/0818_dark_theme_fix_plan.md §3.1）。
+     surface、border 和 text 层级对齐 antd v5 dark token，使手写 CSS 与 antd 组件保持
+     相同的层次节奏。 */
   --gm-surface: #fff;
   --gm-surface-2: #fbfcfe;
   --gm-surface-3: #f7f8fa;
@@ -23,7 +23,7 @@
   --gm-cell-hover-bg: #fbfcff;
   --gm-cell-fixed-bg: #f8fafd;
   --gm-thead-fixed-bg: #edf3fa;
-  /* user chat bubble: light=soft blue bg + deep blue ink; dark=inverted */
+  /* 用户聊天气泡：light=浅蓝背景 + 深蓝文字；dark=反转。 */
   --gm-user-bubble-bg: #eaf3ff;
   --gm-user-bubble-ink: #164477;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
@@ -513,8 +513,8 @@ body,
 .gm-chat-message-body { padding: 9px 13px; border-radius: 12px; line-height: 1.58; overflow-wrap: anywhere; }
 .gm-chat-message.is-user .gm-chat-message-body { color: var(--gm-user-bubble-ink); background: var(--gm-user-bubble-bg); }
 .gm-chat-message.is-assistant .gm-chat-message-body { width: 100%; background: var(--gm-surface-3); }
-/* antd Typography sets its own themed color, which would override the inherited
-   bubble ink and render white-on-light-blue in dark mode; pin it to the bubble ink */
+/* antd Typography 使用自己的主题颜色，会覆盖继承的气泡文字颜色，并在 dark mode 中
+   形成浅蓝背景上的白字；这里固定使用气泡文字颜色。 */
 .gm-chat-message.is-user .gm-chat-plain-text { color: var(--gm-user-bubble-ink); }
 .gm-chat-plain-text { white-space: pre-wrap; margin: 0; }
 .gm-chat-markdown { overflow-x: auto; }
@@ -601,7 +601,7 @@ body,
 .gm-assistant-general-card { background: var(--gm-surface-2); }
 .gm-assistant-general-card .ant-typography { margin-bottom: 4px; }
 
-/* Research-gap opportunity matrix */
+/* Research-gap opportunity matrix：研究空白机会矩阵。 */
 .gm-gap-board-page {
   --gap-ink: var(--gm-ink);
   --gap-muted: var(--gm-text-secondary);
@@ -726,8 +726,8 @@ body,
 .gm-gap-cell-action.ant-btn { align-self: flex-start; height: auto; margin-top: auto; padding: 7px 0 0; color: var(--cell-accent); font-size: 11px; font-weight: 650; }
 .gm-gap-cell-action.ant-btn .anticon { font-size: 10px; }
 
-/* P0.5-4 dark theme: complex gradients and light-first gap cells get explicit
-   dark variants (accent hues are kept; only the base surfaces dim). */
+/* P0.5-4 dark theme：复杂渐变和以浅色为基础的 gap cell 使用显式 dark variant
+   （保留 accent 色调，只调暗基础 surface）。 */
 [data-theme="dark"] .gm-assistant-hero {
   color: rgba(255, 255, 255, .88);
   background: linear-gradient(135deg, rgba(22, 119, 255, .12) 0%, #1a1a1a 55%, rgba(82, 196, 26, .07) 100%);
@@ -842,9 +842,8 @@ body,
 .gm-lifecycle-module:hover { border-color: rgba(22, 119, 255, .42); box-shadow: 0 8px 20px rgba(22, 119, 255, .1); transform: translateY(-2px); }
 .gm-lifecycle-module-icon { display: inline-grid; width: 34px; height: 34px; place-items: center; color: #1677ff; background: rgba(22, 119, 255, .11); border-radius: 9px; font-size: 17px; }
 
-/* Home shell: a quieter, reference-led navigation register. The global
-   navigation only exposes the places researchers return to most often; the
-   lifecycle is intentionally grouped as a working sequence. */
+/* Home shell：更安静、以参考内容为主的导航结构。全局导航只展示研究者最常返回的位置；
+   lifecycle 有意按工作顺序分组。 */
 .gm-sider {
   overflow-y: auto;
   background: var(--gm-surface) !important;
@@ -1114,9 +1113,8 @@ body,
   .gm-active-workspace-activity-item > .ant-typography { display: none; }
 }
 
-/* Keep the application shell and its two reading surfaces independent. The
-   browser viewport stays fixed while the sidebar and main content own their
-   own scroll positions. */
+/* 保持 application shell 与两个阅读 surface 相互独立。浏览器 viewport 保持固定，sidebar
+   和 main content 分别拥有自己的滚动位置。 */
 .gm-app-layout {
   height: 100vh;
   min-height: 0;
@@ -1245,7 +1243,7 @@ body,
   }
 }
 
-/* The assistant is a reading-first surface, so reclaim the shell's chrome and outer padding. */
+/* assistant 是 reading-first surface，因此收回 shell 的 chrome 和外层 padding。 */
 .gm-app-layout--chat .gm-topbar {
   height: 48px;
   padding-inline: 20px;

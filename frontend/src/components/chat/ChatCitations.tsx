@@ -6,7 +6,7 @@ import { buildEvidenceExcerpt, type EvidenceOffsetSpan } from "../evidenceExcerp
 
 const { Paragraph, Text } = Typography;
 
-// P0.5-2: keep the evidence list compact — show a few by default, the rest on demand.
+// P0.5-2：保持证据列表紧凑——默认展示少量，其余按需展开。
 const MAX_VISIBLE = 3;
 
 function highlightedSource(context: ChatEvidenceContext, expanded: boolean): { node: ReactNode; canExpand: boolean } {
@@ -37,7 +37,7 @@ export default function ChatCitations({ conversationId, messageId, citations }: 
   const [loading, setLoading] = useState(false);
   const [context, setContext] = useState<ChatEvidenceContext | null>(null);
   const [expandedSource, setExpandedSource] = useState(false);
-  // Per-citation expanded state so "展开" can toggle back to "收起".
+  // 为每条引用分别记录展开状态，使“展开”可以切换回“收起”。
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [showAll, setShowAll] = useState(false);
   const sorted = useMemo(() => [...citations].sort((a, b) => a.rank - b.rank), [citations]);

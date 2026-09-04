@@ -1,22 +1,18 @@
-"""Workspace research readiness aggregation (W0).
+"""工作区科研就绪度聚合（W0）。
 
-Single source of truth for "can I run Discover / why not / where to go next".
+作为“能否运行 Discover / 为什么不能 / 下一步去哪里”的唯一事实来源。
 
-Five dimensions - corpus, retrieval, knowledge, discover, research - each
-report ``ready`` / ``waiting`` / ``blocked`` plus human-explainable blocking
-actions that point at the page which unblocks them. The overview progress bar
-is driven entirely by this endpoint; every count here is a real
-``func.count()`` (not a paginated frontend total) so the numbers agree across
-pages.
+五个维度——corpus、retrieval、knowledge、discover、research——分别报告
+``ready`` / ``waiting`` / ``blocked``，并提供指向解除阻塞页面的可理解操作。
+概览进度条完全由此端点驱动；这里的每个计数都是真实的 ``func.count()``
+（不是前端分页总数），因此各页面上的数字保持一致。
 
-Design notes:
-- Dimension states: ``ready`` (usable), ``waiting`` (prerequisites exist but a
-  background pipeline task is still running - not a user blocking action),
-  ``blocked`` (user must act; blocking_actions explains what and where).
-- ``recommended_next_action`` is the first non-ready dimension's first
-  blocking action - the single "what to do next" the overview page shows.
-- Milvus chunk count is best-effort: a Milvus outage degrades to ``None``
-  instead of failing the whole readiness endpoint (W5 degradation spirit).
+设计说明：
+- 维度状态：``ready``（可用）、``waiting``（前置条件已满足但后台流水线任务仍在运行，
+  不是需要用户处理的阻塞项）、``blocked``（用户必须操作；blocking_actions 说明原因和位置）。
+- ``recommended_next_action`` 是首个非 ready 维度的首个阻塞操作，即概览页展示的唯一“下一步做什么”。
+- Milvus 分块数量采用尽力获取策略：Milvus 故障时降级为 ``None``，而不是让整个就绪度端点失败
+  （遵循 W5 降级原则）。
 """
 
 from __future__ import annotations
@@ -32,27 +28,27 @@ from app.domains.paper.models import Paper
 from app.domains.task.models import Task
 from app.domains.workspace.models import Workspace
 
-# Status semantics kept in sync with discover/service.py + task domain.
+# 状态语义与 discover/service.py 及 task domain 保持同步。
 TERMINAL_RUN_STATUSES = {"succeeded", "failed", "cancelled"}
 WAITING_RUN_STATUSES = {"waiting_for_user", "waiting_for_fulltext"}
 PIPELINE_PENDING_STATUSES = {"queued", "running", "waiting_for_user"}
 CLOSED_OPPORTUNITY_STATUSES = {"confirmed", "edited_confirmed", "rejected"}
 CONFIRMED_OPPORTUNITY_STATUSES = {"confirmed", "edited_confirmed"}
-# Background pipeline tasks that signal "the system is still working".
+# 表示“系统仍在处理”的后台流水线任务。
 PIPELINE_TASK_TYPES = ("parse_pdf", "extract_knowledge", "embed_chunks")
-# Knowledge states that are produced by extraction but not yet human-confirmed.
+# 抽取已产生但尚未人工确认的知识状态。
 KNOWLEDGE_PENDING_STATUSES = ("extracted_candidate", "evidence_backed_proposal")
 
 
 class WorkspaceReadinessService:
-    """Aggregate per-workspace research readiness into one explainable object."""
+    """将工作区科研就绪度聚合为一个可解释对象。"""
 
     def __init__(self, db: Session) -> None:
         self.db = db
 
-    # ------------------------------------------------------------------ entry
+# ------------------------------------------------------------------ 入口
     def get_readiness(self, workspace: Workspace) -> dict[str, Any]:
-        """Return the full readiness document for a workspace."""
+        """返回工作区的完整就绪度文档。"""
         counts = self._counts(workspace.id)
         profile_set = self._profile_set(workspace)
         dimensions = [
@@ -69,14 +65,14 @@ class WorkspaceReadinessService:
             "recommended_next_action": self._recommended(dimensions, counts, workspace.id),
         }
 
-    # ----------------------------------------------------------------- counts
+# ----------------------------------------------------------------- 计数
     def _counts(self, workspace_id: str) -> dict[str, int]:
         def count(q: Any) -> int:
             return int(self.db.execute(q).scalar() or 0)
 
         papers_q = Paper.workspace_id == workspace_id
-        # Opportunity counts must match list_opportunities: an opportunity
-        # whose Discover run was soft-deleted is hidden from the UI.
+# Opportunity 计数必须与 list_opportunities 一致：Discover run 已软删除的
+# opportunity 对 UI 隐藏。
         visible_opportunities = (
             select(ResearchOpportunity.id, ResearchOpportunity.status)
             .outerjoin(DiscoverRun, ResearchOpportunity.discover_run_id == DiscoverRun.id)
@@ -149,8 +145,8 @@ class WorkspaceReadinessService:
                     ),
                 )
             ),
-            # Opportunity counts must match list_opportunities: an opportunity
-            # whose Discover run was soft-deleted is hidden from the UI.
+# Opportunity 计数必须与 list_opportunities 一致：Discover run 已软删除的
+# opportunity 对 UI 隐藏。
             "opportunities": count(
                 select(func.count()).select_from(visible_opportunities)
             ),
@@ -180,7 +176,7 @@ class WorkspaceReadinessService:
         }
 
     def _indexed_chunks(self, workspace_id: str) -> int | None:
-        """Best-effort Milvus chunk count; degrade to None on outage."""
+        """尽力获取 Milvus 分块数量；服务故障时降级为 None。"""
         try:
             from app.domains.retrieval.milvus_client import MilvusClient
 
@@ -196,7 +192,7 @@ class WorkspaceReadinessService:
             or any(q.strip() for q in workspace.active_questions)
         )
 
-    # ------------------------------------------------------------- dimensions
+# ------------------------------------------------------------- 维度
     def _corpus(self, c: dict[str, int], workspace_id: str) -> dict[str, Any]:
         ready = c["parsed_papers"] >= 1
         waiting = (not ready) and c["papers"] > 0 and c["active_tasks"] > 0
@@ -272,7 +268,7 @@ class WorkspaceReadinessService:
             blocking,
         )
 
-    # ---------------------------------------------------------------- helpers
+# ---------------------------------------------------------------- 辅助函数
     @staticmethod
     def _dimension(
         key: str,
@@ -301,11 +297,10 @@ class WorkspaceReadinessService:
         counts: dict[str, int],
         workspace_id: str,
     ) -> dict[str, str]:
-        """First blocked capability dimension's first action - the next step.
+        """返回首个阻塞能力维度的首个操作，即下一步。
 
-        The ``research`` dimension is intentionally excluded from this loop:
-        "no confirmed result yet" does not block the loop - it is simply the
-        loop's next step, surfaced after the capability dimensions are ready.
+        ``research`` 维度刻意排除在此循环之外：“尚无已确认结果”不会阻塞流程，
+        它只是能力维度就绪后展示的下一步。
         """
         for dim in dimensions:
             if dim["key"] == "research":
@@ -327,7 +322,7 @@ class WorkspaceReadinessService:
                     "href": first["href"],
                     "label": first["action"],
                 }
-        # Capability dimensions are ready - keep the HITL loop moving.
+# 能力维度已就绪，继续推进 HITL 闭环。
         if counts["pending_knowledge"] > 0 and counts["confirmed_items"] == 0:
             return {
                 "title": "审核确认知识",

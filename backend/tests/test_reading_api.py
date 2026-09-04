@@ -1,4 +1,4 @@
-"""Integration tests for the reading library and page-level annotations."""
+"""阅读库与页面级标注集成测试。"""
 
 from __future__ import annotations
 

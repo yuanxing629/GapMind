@@ -1,4 +1,4 @@
-"""Add fine-tuned gap annotations, canonical concepts, and board snapshots."""
+"""增加微调 Gap 标注、规范概念和棋盘快照。"""
 
 from __future__ import annotations
 

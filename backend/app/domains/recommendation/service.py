@@ -1,4 +1,4 @@
-"""Generate and persist explainable paper recommendations."""
+"""生成并持久化可解释的论文推荐。"""
 
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ class RecommendationNotFoundError(Exception):
 
 
 class RecommendationService:
-    """Workspace recommendation cache and ranking logic for the MVP."""
+    """MVP 的 workspace 推荐缓存与排序逻辑。"""
 
     def __init__(self, db: Session) -> None:
         self.db = db

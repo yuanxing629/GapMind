@@ -1,28 +1,22 @@
-"""Split long parsed-markdown documents into LLM-sized batches.
+"""将较长的 parsed-markdown 文档切分为适合 LLM 的批次。
 
-The extraction prompt targets the whole paper, but the configured remote
-model's context window
-forces us to chunk. The strategy here:
+抽取 prompt 面向整篇论文，但配置的远程模型 context window 要求我们分批处理。策略如下：
 
-  * keep paragraphs / headings (``\n## ``, ``\n\n``) intact at split
-    boundaries so the LLM doesn't lose semantic structure;
-  * tail batches always end on a real document character offset — never
-    silently drop the last paragraph;
-  * overlap batches by ``overlap_chars`` so cross-batch entity resolution
-    still works (a method mentioned at the tail of batch N can reappear
-    in batch N+1).
+* 切分时保持段落/标题（``\n## ``, ``\n\n``）边界完整，避免 LLM 丢失语义结构；
+* 尾部批次始终结束在真实文档字符偏移处，绝不静默丢弃最后一段；
+* 按 ``overlap_chars`` 重叠批次，使跨批次实体解析仍然有效（批次 N 尾部提及的方法可以
+  在批次 N+1 中再次出现）。
 
-The function is intentionally side-effect free — pure string math — so it
-can be unit-tested without spinning up a DB or an LLM client.
+该函数有意不产生副作用，只执行纯字符串计算，因此无需启动 DB 或 LLM client 即可进行
+单元测试。
 """
 
 from __future__ import annotations
 
-# Why these defaults:
-#   * ``max_chars`` (40 000): a bounded slice for the configured remote model
-#     while leaving room for the prompt scaffold and the JSON response.
-#   * ``overlap_chars`` (1 000): large enough to re-surface a tail method,
-#     small enough not to balloon token spend.
+# 默认值说明：
+#   * ``max_chars``（40 000）：为配置的远程模型提供有界文本切片，同时为提示词
+#     骨架和 JSON 响应留出空间。
+#   * ``overlap_chars``（1 000）：足以重新呈现段尾方法，又不会明显增加 token 消耗。
 DEFAULT_MAX_CHARS = 40_000
 DEFAULT_OVERLAP_CHARS = 1_000
 
@@ -33,11 +27,10 @@ def split_extraction_batches(
     max_chars: int = DEFAULT_MAX_CHARS,
     overlap_chars: int = DEFAULT_OVERLAP_CHARS,
 ) -> list[tuple[int, str]]:
-    """Return ``[(start_offset, batch_text), ...]`` covering ``text``.
+    """返回覆盖 ``text`` 的 ``[(start_offset, batch_text), ...]``。
 
-    Each tuple's ``start_offset`` is the absolute character position of
-    ``batch_text[0]`` in the original document, so callers can resolve
-    evidence spans back to the master text.
+    每个 tuple 的 ``start_offset`` 是 ``batch_text[0]`` 在原始文档中的绝对字符位置，
+    因此调用方可以将 evidence span 回链到主文档。
     """
     if len(text) <= max_chars:
         return [(0, text)]

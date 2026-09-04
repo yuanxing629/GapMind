@@ -1,7 +1,7 @@
-"""SQLAlchemy declarative base.
+"""SQLAlchemy 声明式基类。
 
-All domain models inherit from `Base` so Alembic can autodetect them via the
-`app.db.models` import in `alembic/env.py`.
+所有领域模型都继承 `Base`，使 Alembic 可以通过
+通过在 `alembic/env.py` 导入 `app.db.models` 完成自动发现。
 """
 
 from __future__ import annotations
@@ -17,16 +17,14 @@ from sqlalchemy import String as _String
 
 
 class Base(DeclarativeBase):
-    """Declarative base for all ORM models."""
+    """所有 ORM 模型的 declarative base。"""
 
 
 class UUIDString(TypeDecorator):
-    """Store UUIDs as 36-char strings for cross-DB portability.
+    """将 UUID 以 36 字符字符串保存，保证跨数据库可移植性。
 
-    PostgreSQL has a native UUID type, but using strings keeps the schema
-    portable and avoids dialect-specific issues during MVP. Both bind and
-    result values are strings - ORM models declare these columns as
-    `Mapped[str]` and Pydantic schemas treat them as `str`.
+    PostgreSQL 原生支持 UUID 类型，但使用字符串可以保持 schema 可移植，并避免 MVP 阶段的方言差异。
+    绑定值和结果值都是字符串，ORM 模型将这些列声明为 `Mapped[str]`，Pydantic schema 将其视为 `str`。
     """
 
     impl = _String(36)
@@ -37,7 +35,7 @@ class UUIDString(TypeDecorator):
             return None
         if isinstance(value, UUID):
             return str(value)
-        # Accept strings that may or may not be valid UUIDs; normalize if valid.
+# 接受可能有效或无效的 UUID 字符串；有效时进行标准化。
         try:
             return str(UUID(str(value)))
         except (ValueError, AttributeError, TypeError):
@@ -50,7 +48,7 @@ class UUIDString(TypeDecorator):
 
 
 class TimestampMixin:
-    """Common created_at / updated_at columns."""
+    """共用的 created_at / updated_at 字段。"""
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -61,7 +59,7 @@ class TimestampMixin:
 
 
 class UUIDPKMixin:
-    """UUID primary key column named `id`."""
+    """名为 `id` 的 UUID 主键字段。"""
 
     id: Mapped[str] = mapped_column(
         UUIDString(),

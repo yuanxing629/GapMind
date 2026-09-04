@@ -1,4 +1,4 @@
-"""Add workspace grounding and persisted citations to AI chat."""
+"""为 AI Chat 增加工作区 grounding 和持久化引用。"""
 
 from __future__ import annotations
 

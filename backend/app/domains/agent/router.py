@@ -1,4 +1,4 @@
-"""Workspace-scoped Agent API."""
+"""按 workspace 限定的 Agent API。"""
 
 from __future__ import annotations
 
@@ -111,9 +111,8 @@ def confirm_agent(workspace_id: str, run_id: str, service: AgentService = Depend
 @router.get("/{run_id}/artifacts/{artifact_id}")
 def download_artifact(workspace_id: str, run_id: str, artifact_id: str, service: AgentService = Depends(_service)) -> Response:
     artifact = service.artifact(workspace_id, run_id, artifact_id)
-    # RFC 5987: URL-encode the filename so non-ASCII names download correctly;
-    # also expose a plain ASCII header the frontend can read without parsing
-    # Content-Disposition quoting.
+            # RFC 5987：对 filename 进行 URL 编码，确保非 ASCII 名称可以正确下载；
+            # 同时暴露 plain ASCII header，前端无需解析 Content-Disposition 引号。
     filename = artifact.filename.split("/")[-1]
     return Response(
         content=artifact.content,
@@ -166,7 +165,7 @@ def download_bundle(
                 indent=2,
             ),
         )
-        # include the research plan the code was generated from (complete snapshot)
+        # 包含生成该代码所依据的 research plan（完整快照）
         plan_id = str((run.result or {}).get("research_plan_id") or "")
         plan = db.get(ResearchPlan, plan_id) if plan_id else None
         if plan and plan.workspace_id == workspace_id:

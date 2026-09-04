@@ -1,8 +1,7 @@
-"""Tests for the Discover multi-agent orchestration (MA workstream).
+"""Discover 多 Agent 编排测试（MA workstream）。
 
-Covers the AgentRun/AgentStep observability layer and the CriticAgent:
-find-or-create AgentRun keyed by the Discover task, monotonic AgentStep
-recording, critic review parsing/fallback, and verdict down-weighting.
+覆盖 AgentRun/AgentStep 可观测层和 CriticAgent，包括按 Discover task 查找或创建 AgentRun、
+单调记录 AgentStep、critic 审查解析/回退以及按 verdict 降低权重。
 """
 
 from __future__ import annotations
@@ -70,7 +69,7 @@ class _NoopLLM:
 
 
 class _CriticLLM:
-    """Returns critic reviews; records the user prompt for assertions."""
+    """返回 critic reviews，并记录 user prompt 供断言使用。"""
 
     def __init__(self, reviews: list[dict[str, Any]]) -> None:
         self.reviews = reviews
@@ -87,7 +86,7 @@ class _BoomLLM:
 
 
 class _FakeRetrieval:
-    """Retrieval port fake whose counter-evidence search returns canned items."""
+    """Retrieval port fake，其 counter-evidence 搜索返回预设条目。"""
 
     def __init__(self, counter_items: list[RetrievalResultItem] | None = None) -> None:
         self.counter_items = counter_items or []
@@ -131,7 +130,7 @@ def _workspace(db_session, workspace_id: str) -> None:
     db_session.commit()
 
 
-# ------------------------------------------------------------------ AgentRun / AgentStep
+# ------------------------------------------------------------------ AgentRun / AgentStep：运行与步骤
 def test_discover_agent_run_find_or_create_is_idempotent(db_session) -> None:
     workspace_id = str(uuid4())
     _workspace(db_session, workspace_id)
@@ -209,7 +208,7 @@ def test_run_agent_steps_returns_handoff_for_task(db_session) -> None:
     assert steps[1].sequence == 2
 
 
-# ------------------------------------------------------------------ CriticAgent
+# ------------------------------------------------------------------ CriticAgent：批评代理
 def test_critic_review_parses_verdicts(db_session) -> None:
     workspace_id = str(uuid4())
     _workspace(db_session, workspace_id)
@@ -302,14 +301,14 @@ def test_apply_critic_reviews_downweights_weak_candidates(db_session) -> None:
     assert candidates[2]["critic_review"]["verdict"] == "reject"
 
 
-# ------------------------------------------------------------------ narrowing loop
+# ------------------------------------------------------------------ narrowing loop：收窄循环
 def test_narrowing_obstacle_requires_strong_counter(db_session) -> None:
     workspace_id = str(uuid4())
     _workspace(db_session, workspace_id)
     service = _service(db_session)
-    # strong contradicts → obstacle
+# 强 contradicts -> obstacle
     assert service._narrowing_obstacle(RetrievalResponse(workspace_id=workspace_id, purpose="counter_evidence", status="succeeded", items=[_counter_item("contradicts", 0.8)]))
-    # weak / unknown → not an obstacle
+# 弱结果 / unknown -> not an obstacle
     assert not service._narrowing_obstacle(RetrievalResponse(workspace_id=workspace_id, purpose="counter_evidence", status="succeeded", items=[_counter_item("contradicts", 0.3)]))
     assert not service._narrowing_obstacle(RetrievalResponse(workspace_id=workspace_id, purpose="counter_evidence", status="succeeded", items=[_counter_item("overlaps", 0.9)]))
     assert not service._narrowing_obstacle(RetrievalResponse(workspace_id=workspace_id, purpose="counter_evidence", status="succeeded", items=[]))
@@ -376,7 +375,7 @@ def test_narrowing_pass_skips_keep_and_reject(db_session) -> None:
     assert candidates[2]["narrowing_pass"]["outcome"] == "direction_clear"
 
 
-# ------------------------------------------------------------------ Evidence Passport
+# ------------------------------------------------------------------ Evidence Passport：证据护照
 def test_build_evidence_manifest_aggregates_counts(db_session) -> None:
     workspace_id = str(uuid4())
     _workspace(db_session, workspace_id)
@@ -430,7 +429,7 @@ def test_build_evidence_manifest_aggregates_counts(db_session) -> None:
     assert manifest.evidence_freshness == "current"
     assert manifest.evidence_checked_at is not None
     assert len(manifest.items) == 4
-    # the manifest is a snapshot, not tied to a new table
+# manifest 是快照，不绑定新表
     assert db_session.get(type(opp), opp.id) is not None
 
 
@@ -473,8 +472,8 @@ def test_evidence_freshness_uses_revalidation_snapshot_age(db_session) -> None:
 
 
 def test_find_evidence_span_strips_nul_from_query(db_session) -> None:
-    """PostgreSQL rejects NUL in LIKE parameters; _find_evidence_span must
-    strip NUL bytes from the retrieved chunk text before querying."""
+    """PostgreSQL 拒绝 LIKE 参数中的 NUL；_find_evidence_span 必须
+    在查询前从检索到的分块文本中移除 NUL 字节。"""
     workspace_id = str(uuid4())
     _workspace(db_session, workspace_id)
     paper_id = str(uuid4())
@@ -502,6 +501,6 @@ def test_find_evidence_span_strips_nul_from_query(db_session) -> None:
         judgement="supports",
         source_scope="workspace",
     )
-    span = service._find_evidence_span(item, workspace_id)  # must not raise
+    span = service._find_evidence_span(item, workspace_id)  # 不应抛出异常
     assert span is not None
     assert span.text == span_text

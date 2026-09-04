@@ -1,4 +1,4 @@
-"""Knowledge Pydantic schemas (read-only for Phase 1b)."""
+"""Knowledge 的 Pydantic schemas（Phase 1b 只读）。"""
 
 from __future__ import annotations
 
@@ -90,7 +90,7 @@ class KnowledgeRelationListResponse(BaseModel):
 
 
 class KnowledgeGraphNodeRead(BaseModel):
-    """A knowledge item projected as a graph node."""
+    """投影为 graph 节点的知识条目。"""
 
     id: str
     label: str
@@ -122,7 +122,7 @@ class KnowledgeGraphNodeRead(BaseModel):
 
 
 class KnowledgeGraphEdgeRead(BaseModel):
-    """A relation projected as a graph edge."""
+    """投影为 graph 边的关系。"""
 
     id: str
     source: str
@@ -142,7 +142,7 @@ class KnowledgeGraphEdgeRead(BaseModel):
 
 
 class KnowledgeGraphResponse(BaseModel):
-    """Workspace-scoped graph projection for the Knowledge UI."""
+    """面向 Knowledge UI 的工作区级 graph 投影。"""
 
     workspace_id: str
     nodes: list[KnowledgeGraphNodeRead] = Field(default_factory=list)
@@ -192,7 +192,7 @@ GraphRAGReviewStatus = Literal["confirmed", "candidate", "rejected"]
 
 
 class GraphRAGSeedRead(BaseModel):
-    """A dense hit adapted into a bounded graph seed."""
+    """由 dense 命中适配得到的有界 graph seed。"""
 
     node_id: str
     node_kind: GraphRAGNodeKind
@@ -204,7 +204,7 @@ class GraphRAGSeedRead(BaseModel):
 
 
 class GraphRAGNodeRead(BaseModel):
-    """A request-scoped graph node with explicit provenance identity."""
+    """当前请求范围内、带有明确 provenance 身份的 graph 节点。"""
 
     id: str
     kind: GraphRAGNodeKind
@@ -221,7 +221,7 @@ class GraphRAGNodeRead(BaseModel):
 
 
 class GraphRAGEvidenceRead(BaseModel):
-    """Evidence re-retrieved from PostgreSQL for a graph path."""
+    """为 graph 路径从 PostgreSQL 重新检索得到的 Evidence。"""
 
     evidence_span_id: str
     workspace_id: str
@@ -236,13 +236,13 @@ class GraphRAGEvidenceRead(BaseModel):
     relation: str = "supports"
     confidence: float = 0.0
     review_status: GraphRAGReviewStatus = "candidate"
-    # Diagnostic-only score used to keep graph evidence tied to the current
-    # question; it is not a scientific confidence or confirmation status.
+    # 仅用于诊断的分数，用来保持 graph evidence 与当前问题关联；
+    # 它不是 scientific confidence，也不是确认状态。
     query_relevance_score: float = Field(default=0.0, ge=0.0, le=1.0)
 
 
 class GraphRAGEdgeRead(BaseModel):
-    """A validated graph edge; source and target must be in the path nodes."""
+    """经过校验的 graph 边；source 和 target 必须存在于路径节点中。"""
 
     id: str
     type: str
@@ -256,7 +256,7 @@ class GraphRAGEdgeRead(BaseModel):
 
 
 class GraphRAGPathRead(BaseModel):
-    """A bounded, auditable path; this is not a persisted scientific fact."""
+    """有界且可审计的路径；它不是持久化的 scientific fact。"""
 
     path_id: str
     workspace_id: str
@@ -298,7 +298,7 @@ class EvidenceSpanListResponse(BaseModel):
 
 
 class EvidenceContextRead(BaseModel):
-    """Parsed-markdown source plus the spans to highlight in the UI."""
+    """parsed-markdown 源文本及 UI 需要高亮的范围。"""
 
     workspace_id: str
     paper_id: str
@@ -356,9 +356,9 @@ class ExtractionRejectionCreate(BaseModel):
     evidence_preview: str | None = None
 
 
-# ----------------------------------------------------------------- create schemas (Phase 3)
+# ----------------------------------------------------------------- 创建 schemas（Phase 3）
 class KnowledgeItemCreate(BaseModel):
-    """Body for creating a knowledge item (agent extraction or user input)."""
+    """创建知识条目的请求体（agent 抽取或用户输入）。"""
 
     workspace_id: str
     paper_id: str | None = None
@@ -375,7 +375,7 @@ class KnowledgeItemCreate(BaseModel):
 
 
 class KnowledgeItemReview(BaseModel):
-    """Human-in-the-loop review action for one Knowledge Item."""
+    """单个 Knowledge Item 的 Human-in-the-loop 审核操作。"""
 
     action: Literal["confirm", "edit", "reject"]
     canonical_name: str | None = Field(default=None, min_length=1, max_length=512)
@@ -425,13 +425,12 @@ class EvidenceSpanCreate(BaseModel):
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
 
 
-# ---------------------------------------------------- strict extraction output
+# ---------------------------------------------------- 严格抽取输出
 class EvidencePointer(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     start_char: int = Field(ge=0)
-    # LLM offsets are hints only. Zero is accepted and repaired from the
-    # exact evidence_text before anything is persisted.
+# LLM 偏移仅作提示。允许为零，并在持久化前根据精确 evidence_text 修复。
     end_char: int = Field(ge=0)
 
 
@@ -560,8 +559,7 @@ class ExtractionRelation(BaseModel):
 
     source_type: KnowledgeType
     source_name: str = Field(min_length=1)
-    # Relation names are normalized after validation. Unknown values reject
-    # only that relation, never otherwise valid extracted items.
+# 关系名称在校验后规范化。未知值只拒绝该关系，不影响其他有效抽取条目。
     relation: str = Field(min_length=1, max_length=64)
     target_type: KnowledgeType
     target_name: str = Field(min_length=1)

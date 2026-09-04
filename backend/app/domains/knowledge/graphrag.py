@@ -1,9 +1,8 @@
-"""PostgreSQL-first, bounded GraphRAG projection.
+"""PostgreSQL-first 的有界 GraphRAG 投影。
 
-This module deliberately has no vector-store or Neo4j dependency.  Dense
-retrieval supplies paper/chunk seeds; this read-only projection follows only
-bounded, workspace-scoped relationships and re-reads evidence spans from
-PostgreSQL.  The result is diagnostic context, not a persisted fact.
+本模块刻意不依赖向量库或 Neo4j。Dense retrieval 提供 paper/chunk seed；此只读
+投影只沿有界、按 workspace 限定的关系扩展，并从 PostgreSQL 重新读取 evidence
+span。结果是诊断上下文，不是持久化事实。
 """
 
 from __future__ import annotations
@@ -54,10 +53,9 @@ SAFE_RELATION_TYPES = frozenset(
     }
 )
 
-# Graph paths are diagnostic candidates, but the evidence shown for a path
-# must still have a measurable connection to the current question.  Keep the
-# first pass deterministic and local: dense retrieval has already paid for the
-# query embedding, so this filter avoids a second provider call in shadow mode.
+# Graph 路径是诊断候选，但路径展示的证据仍必须与当前问题存在可度量的关联。
+# 首轮保持确定性和本地执行：dense retrieval 已经完成 query embedding，
+# 因此该过滤器可避免 shadow 模式下再次调用 provider。
 GRAPH_RAG_MIN_EVIDENCE_RELEVANCE = 0.15
 _QUERY_STOPWORDS = frozenset(
     {
@@ -79,14 +77,14 @@ _CJK_RUN_RE = re.compile(r"[\u3400-\u9fff]+")
 
 
 def _compact_text(value: str | None) -> str:
-    """Normalize text for safe exact/substring comparisons."""
+    """标准化文本，用于安全的精确或子串比较。"""
 
     normalized = unicodedata.normalize("NFKC", value or "").lower()
     return "".join(char for char in normalized if char.isalnum())
 
 
 def _text_terms(value: str | None) -> set[str]:
-    """Extract stable English terms and CJK bigrams/trigrams."""
+    """提取稳定的英文词项以及 CJK 二元组/三元组。"""
 
     normalized = unicodedata.normalize("NFKC", value or "").lower()
     terms = {
@@ -109,13 +107,11 @@ def _evidence_relevance_score(
     query_text: str,
     dense_items: list[RetrievalResultItem],
 ) -> float:
-    """Score whether a graph evidence span is useful for the current query.
+    """评估 graph evidence span 对当前问题是否有用。
 
-    A span's presence inside a dense hit is not sufficient: one chunk can
-    contain several unrelated formulas or citations.  Use deterministic
-    lexical overlap with the question, plus a conservative entity/acronym
-    anchor for cross-paper paths.  This is intentionally a relevance gate,
-    not a claim of scientific truth.
+    span 出现在 dense hit 中并不充分：一个 chunk 可能包含多个不相关的公式或引用。
+    使用与问题的确定性词法重叠，并为跨 paper 路径加入保守的 entity/acronym
+    锚点。这里是相关性门槛，不代表 scientific truth。
     """
 
     if not query_text.strip():
@@ -128,9 +124,8 @@ def _evidence_relevance_score(
     query_terms = _text_terms(query_text)
     evidence_terms = _text_terms(span.text)
     shared_terms = query_terms & evidence_terms
-    # One generic word such as "graph" or "method" is not enough to make a
-    # long evidence span relevant.  Acronyms and exact entity anchors are
-    # handled separately below so short, cross-language questions still work.
+    # 单个“graph”或“method”等通用词不足以证明较长证据片段相关。
+    # Acronym 和精确 entity 锚点在下方单独处理，以支持简短的跨语言问题。
     lexical_score = (
         len(shared_terms) / len(query_terms)
         if len(shared_terms) >= 2 and query_terms
@@ -144,9 +139,9 @@ def _evidence_relevance_score(
     if query_acronyms & evidence_terms:
         lexical_score = max(lexical_score, 0.8)
 
-    # A shared canonical entity can be the reason a related paper is in the
-    # path.  Require the entity to occur in both the dense seed and this exact
-    # evidence span; the graph edge alone is never sufficient.
+    # 共享的 canonical entity 可能是相关论文进入路径的原因。
+    # 要求该 entity 同时出现在 dense seed 和当前 EvidenceSpan 中；
+    # 单独的 graph 边永远不足以作为依据。
     entity_name = _compact_text(item.canonical_name)
     if len(entity_name) >= 3 and entity_name in span_text:
         if any(
@@ -162,10 +157,10 @@ def _evidence_relevance_score(
 
 @dataclass
 class BoundedGraphProjection:
-    """Internal result used by Chat shadow diagnostics.
+    """供 Chat shadow 诊断使用的内部结果。
 
-    ``nodes``/``edges`` describe the compact graph topology. Item and
-    EvidenceSpan identities remain in the path and edge provenance payloads.
+    ``nodes``/``edges`` 描述紧凑的 graph 拓扑。Item 和 EvidenceSpan 身份保留在
+    路径及边的 provenance 载荷中。
     """
 
     projection_version: str
@@ -194,7 +189,7 @@ class BoundedGraphProjection:
 
 @dataclass(frozen=True)
 class _PathCandidate:
-    """A validated path waiting for deterministic budget packing."""
+    """等待确定性预算打包的已校验路径。"""
 
     path_id: str
     nodes: list[GraphRAGNodeRead]
@@ -306,13 +301,11 @@ def build_bounded_projection(
     node_limit: int = 32,
     edge_limit: int = 64,
 ) -> BoundedGraphProjection:
-    """Build a bounded graph from dense seeds and re-retrieve source spans.
+    """根据 dense seed 构建有界 graph，并重新检索 source span。
 
-    The SQL is intentionally split into bounded stages instead of an
-    unbounded recursive query: seed papers -> their entities -> at most one
-    more paper/entity hop.  Every table read is scoped by ``workspace_id``
-    and its soft-delete flag, and foreign-key identity is checked again while
-    assembling paths.
+    SQL 被刻意拆分为多个有界阶段，而不是使用无界递归查询：seed papers ->
+    entities -> 最多再扩展一跳 paper/entity。每次读取表都绑定 ``workspace_id``
+    并过滤软删除标记，组装路径时还会再次校验外键身份。
     """
 
     dense_items = list(dense_items)
@@ -343,23 +336,21 @@ def build_bounded_projection(
     paper_by_id = {paper.id: paper for paper in seed_papers}
     valid_seed_paper_ids = set(paper_by_id)
     seeds = [seed for seed in seeds if seed.paper_id in valid_seed_paper_ids]
-    # The output node budget is intentionally separate from SQL prefetch. A
-    # dense seed can touch many candidate mentions/items, and cutting those
-    # at ``node_limit * 4`` can discard the relevant EvidenceSpan before the
-    # lexical gate gets a chance to rank it. Keep the prefetch bounded, but
-    # large enough for the current workspace scale.
+    # 输出节点预算与 SQL 预取刻意分开。一个 dense seed 可能触达许多候选 mention/item，
+    # 若在 ``node_limit * 4`` 处截断，相关 EvidenceSpan 可能在进入词法门控排序前就
+    # 被丢弃。预取仍保持有界，但要足以覆盖当前 workspace 规模。
     prefetch_limit = min(512, max(256, node_limit * 16))
     query_truncated = False
 
     def fetch_bounded(statement, limit: int):
-        """Fetch one look-ahead row so truncation means data was omitted."""
+        """多取一行用于探测，从而确保截断意味着确实省略了数据。"""
         nonlocal query_truncated
         rows = list(db.scalars(statement.limit(limit + 1)))
         if len(rows) > limit:
             query_truncated = True
         return rows[:limit]
 
-    # Stage 1: only paper-local entity items and mentions can seed expansion.
+    # 阶段 1：只有论文局部的 entity item 和 mention 可以作为扩展 seed。
     item_rows = fetch_bounded(
         select(KnowledgeItem)
         .where(
@@ -389,7 +380,7 @@ def build_bounded_projection(
     }
     entity_ids.update(mention.canonical_entity_id for mention in mention_rows)
 
-    # Stage 2: one bounded reverse hop from entity to supporting papers.
+    # 阶段 2：从 entity 反向有界扩展一跳到 supporting paper。
     if max_hops >= 2 and entity_ids:
         related_mentions = fetch_bounded(
             select(PaperMention)
@@ -526,9 +517,8 @@ def build_bounded_projection(
             ),
         )
 
-    # Explicit relations are admitted only when both endpoints are active,
-    # paper-scoped entity items.  This intentionally excludes claims and
-    # limitations, preserving their paper-level context.
+    # 只有当两个端点都是活跃的、按论文限定的 entity item 时，才纳入显式关系。
+    # 这里刻意排除 claim 和 limitation，以保留它们的论文级上下文。
     relation_rows = (
         fetch_bounded(
             select(KnowledgeRelation)
@@ -566,9 +556,8 @@ def build_bounded_projection(
         if seed.paper_id:
             seed_by_paper[seed.paper_id].append(seed)
 
-    # A paper may contribute several dense chunks. Keep all of them in the
-    # seed list for auditability, but use only the best one in each path so
-    # repeated paper-local paths do not consume the bounded node budget.
+    # 一篇论文可能贡献多个 dense chunk。为便于审计，seed 列表保留全部 chunk，
+    # 但每条路径只使用最佳 chunk，避免重复的论文局部路径消耗有界节点预算。
     primary_seed_by_paper = {
         paper_id: min(
             paper_seeds,
@@ -602,8 +591,8 @@ def build_bounded_projection(
             (item_by_id[item_id].confidence for item_id in item_ids_for_pair),
             default=0.0,
         )
-        # Spend the bounded node budget on evidence-bearing paths first,
-        # then preserve dense seed order and deterministic tie-breaking.
+        # 优先将有界节点预算分配给带证据的路径，
+        # 然后保留 dense seed 顺序和确定性的平局处理规则。
         return (
             -evidence_relevance,
             seed_rank_by_paper.get(paper_id, 10**6),
@@ -623,9 +612,8 @@ def build_bounded_projection(
     truncated = query_truncated
     truncation_reason: str | None = "query_limit" if query_truncated else None
 
-    # Keep dense seeds in the diagnostic projection even when no graph edge
-    # can be found.  This makes "seed found, graph expansion empty" explicit
-    # instead of conflating it with an empty retrieval result.
+    # 即使找不到 graph 边，也保留诊断投影中的 dense seed。
+    # 这样可以明确表示“找到 seed，但 graph 扩展为空”，而不是与空检索结果混淆。
     for seed in seeds:
         paper = paper_by_id.get(seed.paper_id or "")
         nodes[seed.node_id] = GraphRAGNodeRead(
@@ -667,7 +655,7 @@ def build_bounded_projection(
         dense_score: float,
         confidence_score: float,
     ) -> None:
-        # A path is only accepted after local endpoint validation.
+        # 路径只有通过本地端点校验后才接受。
         path_node_ids = {node.id for node in path_nodes}
         if not path_node_ids:
             return
@@ -726,7 +714,7 @@ def build_bounded_projection(
     def candidate_sort_key(
         candidate: _PathCandidate,
     ) -> tuple[float, float, float, int, int, str]:
-        """Prefer useful evidence while keeping budget packing deterministic."""
+        """优先保留有用证据，同时保持预算打包的确定性。"""
 
         return (
             -candidate.evidence_relevance_score,
@@ -737,9 +725,8 @@ def build_bounded_projection(
             candidate.path_id,
         )
 
-    # Build paper -> entity -> item -> evidence paths.  The seed chunk is
-    # included only when it is in the same paper; no graph node is fabricated
-    # just because a search result label matched it.
+    # 构建 paper -> entity -> item -> evidence 路径。只有当 seed chunk 属于同一篇论文
+    # 时才纳入；不能仅因为检索结果的 label 匹配就伪造 graph 节点。
     pair_index = 0
     for (paper_id, entity_id), item_ids_for_pair in sorted(
         pair_items.items(),
@@ -776,9 +763,8 @@ def build_bounded_projection(
         selected_items = [item_by_id[item_id] for item_id in selected_item_ids]
         selected_evidence: list[GraphRAGEvidenceRead] = []
         for item in selected_items:
-            # One best span per item keeps the path concise. The complete
-            # EvidenceSpan identity remains available for source navigation,
-            # while adjacent spans no longer exhaust the node budget.
+            # 每个 item 只保留一个最佳 span，使路径保持简洁。完整 EvidenceSpan 身份
+            # 仍可用于 source navigation，同时避免相邻 span 耗尽节点预算。
             for span in evidence_by_item.get(item.id, [])[:1]:
                 selected_evidence.append(
                     _evidence_read(
@@ -790,17 +776,15 @@ def build_bounded_projection(
                     )
                 )
         if evidence_required and not selected_evidence:
-            # A graph relation without a question-relevant source span is a
-            # navigational candidate, not a useful shadow path. Excluding it
-            # also preserves the node budget for evidence-bearing paths.
+            # 没有问题相关 source span 的 graph relation 只是导航候选，不是有用的
+            # shadow 路径。排除它也能为带证据路径保留节点预算。
             continue
         pair_index += 1
         review_status = _review_status(
             [*pair_statuses[(paper_id, entity_id)], *(item.status for item in selected_items)]
         )
         if not selected_evidence:
-            # A confirmed item without a current source span is still only a
-            # navigational candidate at the path level.
+            # 即使 item 已确认，但没有当前 source span，在路径层面仍只是导航候选。
             review_status = "candidate"
         path_nodes: list[GraphRAGNodeRead] = []
         path_edges: list[GraphRAGEdgeRead] = []
@@ -866,10 +850,8 @@ def build_bounded_projection(
                 review_status=review_status,  # type: ignore[arg-type]
             )
         )
-        # Item and EvidenceSpan are provenance payloads rather than topology
-        # nodes in the shadow graph. Their identities and reviewed status stay
-        # on the path/edge fields above, while keeping repeated evidence from
-        # consuming the bounded topology budget.
+        # Item 和 EvidenceSpan 是 provenance 载荷，而不是 shadow graph 的拓扑节点。
+        # 它们的身份和审阅状态保留在上面的路径/边字段中，避免重复证据消耗有界拓扑预算。
         collect_candidate(
             f"path:{request_id}:{pair_index}",
             path_nodes,
@@ -886,8 +868,8 @@ def build_bounded_projection(
             ),
         )
 
-    # Add only safe entity-to-entity relation paths, retaining the original
-    # item/evidence IDs. Claims and limitations never reach this branch.
+    # 只添加安全的 entity-to-entity relation 路径，并保留原始 item/evidence ID。
+    # Claim 和 limitation 永远不会进入此分支。
     relation_index = pair_index
     seen_relation_signatures: set[tuple[str, str, str, tuple[str, ...]]] = set()
     for relation in relation_rows:
@@ -993,14 +975,12 @@ def build_bounded_projection(
             ),
         )
 
-    # Pack all eligible candidates globally.  A candidate that does not fit
-    # the remaining budget must not prevent a later, smaller and more
-    # relevant candidate from being emitted.
+    # 对所有符合条件的候选进行全局打包。无法装入剩余预算的候选不能阻止后续更小、
+    # 更相关的候选输出。
     for candidate in sorted(candidates, key=candidate_sort_key):
         emit_path(candidate)
 
-    # Defensive final validation: a broken edge must never escape this
-    # projection even if a future branch adds a new path builder.
+    # 防御性最终校验：即使未来分支增加新的路径构建器，损坏的边也绝不能离开此投影。
     valid_node_ids = set(nodes)
     edges = {
         edge_id: edge

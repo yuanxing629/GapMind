@@ -1,4 +1,4 @@
-"""Parser selection for the paper ingestion pipeline."""
+"""论文导入流水线的解析器选择。"""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from app.domains.artifact.pdf_parser import ParsedPdf, parse_pdf
 
 @dataclass(frozen=True)
 class DocumentParseResult:
-    """Parser-neutral result consumed by the existing parse task."""
+    """由现有 parse 任务消费的、与解析器无关的结果。"""
 
     parsed: ParsedPdf
     provider: str
@@ -25,7 +25,7 @@ class DocumentParseResult:
 
 
 def parse_document(content: bytes) -> DocumentParseResult:
-    """Parse with the configured provider, optionally falling back locally."""
+    """使用配置的 provider 解析，必要时回退到本地解析。"""
     if settings.parser_provider != "mineru_local":
         return DocumentParseResult(parsed=parse_pdf(content), provider="pymupdf")
 

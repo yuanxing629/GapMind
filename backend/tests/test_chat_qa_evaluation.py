@@ -1,4 +1,4 @@
-"""Tests for the offline Workspace Chat QA evaluation baseline."""
+"""离线 Workspace Chat QA 评测基线测试。"""
 
 from __future__ import annotations
 

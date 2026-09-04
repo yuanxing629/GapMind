@@ -1,4 +1,4 @@
-"""Integration tests for the Workspace HTTP API."""
+"""Workspace HTTP API 集成测试。"""
 
 from __future__ import annotations
 
@@ -66,7 +66,7 @@ def test_get_workspace_not_found(client: TestClient) -> None:
 
 
 def test_get_workspace_invalid_uuid_returns_404(client: TestClient) -> None:
-    # Non-UUID strings are treated as not-found (avoid leaking validation internals).
+# 非 UUID 字符串按 not-found 处理（避免泄露校验内部细节）。
     resp = client.get("/api/v1/workspaces/not-a-uuid")
     assert resp.status_code == 404
 
@@ -86,7 +86,7 @@ def test_list_workspaces_excludes_archived_and_deleted(client: TestClient) -> No
     assert ids == {a["id"]}
     assert body["total"] == 1
 
-    # include_archived returns A and B (but not soft-deleted C)
+# include_archived 返回 A 和 B（但不返回软删除的 C）
     resp = client.get("/api/v1/workspaces?include_archived=true")
     ids = {item["id"] for item in resp.json()["items"]}
     assert ids == {a["id"], b["id"]}
@@ -120,7 +120,7 @@ def test_update_workspace_partial(client: TestClient) -> None:
     body = resp.json()
     assert body["name"] == "New Name"
     assert body["keywords"] == ["a", "b"]
-    # Unspecified fields are preserved (exclude_unset=True at the schema level).
+# 未指定字段保持不变（schema 层使用 exclude_unset=True）。
     assert body["topic"] == "old topic"
 
 
@@ -158,11 +158,11 @@ def test_soft_delete_hides_from_list(client: TestClient) -> None:
     assert resp.status_code == 200
     assert resp.json() == {"id": created["id"], "deleted": True}
 
-    # No longer in default list.
+# 不再出现在默认列表中。
     body = client.get("/api/v1/workspaces").json()
     assert created["id"] not in {item["id"] for item in body["items"]}
 
-    # Direct GET also 404s because the row is soft-deleted.
+# 直接 GET 也返回 404，因为该行已软删除。
     resp = client.get(f"/api/v1/workspaces/{created['id']}")
     assert resp.status_code == 404
 

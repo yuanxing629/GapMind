@@ -1,4 +1,4 @@
-"""Pure, source-aware metrics for saved Workspace Chat answers."""
+"""面向已保存 Workspace Chat 回答的纯函数、来源感知指标。"""
 
 from __future__ import annotations
 
@@ -23,12 +23,11 @@ def _normalized_refs(refs: list[str]) -> set[str]:
 
 
 def assess_answer(question: ChatQAQuestion, observation: ChatQAObservation) -> dict[str, Any]:
-    """Evaluate one saved answer without interpreting or regenerating its text.
+    """评估一条已保存回答，不解释或重新生成其文本。
 
-    The marker parsers are imported from the Chat domain so the offline
-    evaluator and the API use the same ``[En]`` / ``[Pn]`` / ``[Dn]`` /
-    ``[Cn]`` contract.  ``human_verdict`` remains an explicit annotation: the
-    evaluator never infers factual correctness from an LLM response.
+    标记解析器从 Chat domain 导入，因此离线评估器和 API 使用相同的
+    ``[En]`` / ``[Pn]`` / ``[Dn]`` / ``[Cn]`` 契约。``human_verdict`` 仍然是显式标注：
+    评估器不会根据 LLM 响应推断事实正确性。
     """
 
     evidence_by_rank = {item.rank: item.paper_ref for item in observation.evidence}
@@ -99,11 +98,10 @@ def assess_answer(question: ChatQAQuestion, observation: ChatQAObservation) -> d
 
 
 def build_report(gold, observations) -> dict[str, Any]:
-    """Build a no-threshold report for a Gold Set and exported answers.
+    """为 Gold Set 和导出回答构建不设阈值的报告。
 
-    No relevance threshold is hidden here.  Until enough manually checked
-    examples exist, the report exposes coverage and judgement accuracy rather
-    than pretending that a single heuristic is a production quality gate.
+    这里不会隐藏任何相关性阈值。在有足够的人工复核样本之前，报告只展示覆盖率和判断准确率，
+    不会假装某个单一启发式规则可以成为生产质量门禁。
     """
 
     observation_by_query = {item.query_id: item for item in observations.observations}

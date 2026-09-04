@@ -1,4 +1,4 @@
-"""Persistence operations for the reading library."""
+"""阅读库的持久化操作。"""
 
 from __future__ import annotations
 
@@ -227,7 +227,7 @@ class ReadingService:
 
 
 def annotation_artifact_exists(db: Session, annotation: PaperAnnotation) -> bool:
-    """Small helper kept for future validation of annotation artifact versions."""
+    """为未来校验标注 artifact 版本保留的轻量辅助函数。"""
     if annotation.artifact_id is None:
         return True
     return db.get(Artifact, annotation.artifact_id) is not None

@@ -52,9 +52,8 @@ function relativeSpan(span: NormalizedEvidenceSpan, startOffset: number): Eviden
 }
 
 /**
- * Build a bounded view around one exact evidence span. Offsets are translated
- * to the returned excerpt, so callers can continue using the same highlighter
- * without searching for duplicated evidence text.
+ * 围绕一个精确 EvidenceSpan 构建有界视图。偏移量会转换为返回摘录中的位置，
+ * 因此调用方可以继续使用同一个高亮器，无需再次搜索重复的证据文本。
  */
 export function buildEvidenceExcerpt(
   content: string,

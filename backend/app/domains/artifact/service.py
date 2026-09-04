@@ -1,7 +1,7 @@
-"""Artifact service layer.
+"""Artifact service 层。
 
-Handles file persistence to local storage and DB record creation.
-Phase 1b only supports the upload path; deletion / list is added later.
+负责文件持久化到本地存储及创建数据库记录。
+Phase 1b 仅支持上传路径；删除/list 能力后续加入。
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ class ArtifactNotFoundError(Exception):
 
 
 class ArtifactQuotaExceededError(Exception):
-    """Raised before writing when a workspace storage quota would be exceeded."""
+    """写入前发现超出 workspace 存储配额时抛出的异常。"""
 
     def __init__(self, workspace_id: str, quota_bytes: int) -> None:
         super().__init__(f"Workspace storage quota exceeded: {workspace_id}")
@@ -37,25 +37,24 @@ class ArtifactQuotaExceededError(Exception):
 
 
 class ArtifactService:
-    """Manages file artifacts and their DB records."""
+    """管理文件 artifact 及其数据库记录。"""
 
     def __init__(self, db: Session) -> None:
         self.db = db
         self.storage_root = Path(settings.app_storage_dir).resolve()
 
-    # ------------------------------------------------------------ storage
+# ------------------------------------------------------------ 存储
     def _workspace_dir(self, workspace_id: str) -> Path:
-        """Return the legacy workspace-level storage dir, creating it if needed."""
+        """返回旧版 workspace 级存储目录，不存在时创建。"""
         self._validate_uuid(workspace_id)
-        # Use first 2 chars of UUID as a sharding subdirectory to avoid
-        # thousands of files in a single directory later.
+# 使用 UUID 的前 2 个字符作为分片子目录，避免后续所有文件集中在同一个目录中。
         shard = workspace_id[:2]
         path = self.storage_root / "workspaces" / shard / workspace_id / "artifacts"
         path.mkdir(parents=True, exist_ok=True)
         return path
 
     def _paper_dir(self, workspace_id: str, paper_id: str) -> Path:
-        """Return the paper-isolated artifact dir, creating it if needed."""
+        """返回论文隔离的 artifact 目录，不存在时创建。"""
         self._validate_uuid(workspace_id)
         self._validate_uuid(paper_id)
         shard = workspace_id[:2]
@@ -81,13 +80,11 @@ class ArtifactService:
         kind: str = "pdf",
         paper_id: str | None = None,
     ) -> Artifact:
-        """Persist uploaded bytes to disk and create an Artifact row.
+        """将上传字节持久化到磁盘，并创建 Artifact 行。
 
-        The on-disk filename is a random token (not the user-supplied name)
-        to avoid path traversal and filesystem encoding issues. The original
-        filename is preserved in `original_filename`. Paper-owned artifacts
-        are isolated under the paper directory when `paper_id` is provided;
-        callers without a paper keep the legacy workspace-level path.
+        磁盘文件名使用随机令牌（不是用户提供的名称），避免路径穿越和文件系统编码问题。
+        原始文件名保存在 `original_filename` 中。提供 `paper_id` 时，论文所属 Artifact
+        隔离在论文目录下；未关联论文的调用方继续使用旧版工作区级路径。
         """
         if not content:
             raise ValueError("Uploaded file is empty")
@@ -118,7 +115,7 @@ class ArtifactService:
         file_path = ws_dir / stored_name
         file_path.write_bytes(content)
 
-        # Store a relative path so the storage root can be relocated.
+# 保存相对路径，以便迁移 storage root。
         rel_path = str(file_path.relative_to(self.storage_root)).replace("\\", "/")
 
         artifact = Artifact(
@@ -143,7 +140,7 @@ class ArtifactService:
         )
         return artifact
 
-    # ----------------------------------------------------------------- read
+# ----------------------------------------------------------------- 读取
     def get(self, artifact_id: str) -> Artifact:
         self._validate_uuid(artifact_id)
         a = self.db.get(Artifact, artifact_id)
@@ -174,16 +171,16 @@ class ArtifactService:
             q = q.where(Artifact.file_path.startswith(prefix))
         return list(self.db.execute(q).scalars().all())
 
-    # --------------------------------------------------------------- delete
+# --------------------------------------------------------------- 删除
     def soft_delete(self, artifact_id: str) -> None:
         a = self.get(artifact_id)
         a.is_deleted = True
         self.db.commit()
         logger.info("artifact.soft_deleted", artifact_id=artifact_id)
 
-    # ------------------------------------------------------------- helpers
+# ------------------------------------------------------------- 辅助函数
     def resolve_abs_path(self, artifact: Artifact) -> Path:
-        """Return absolute on-disk path for an artifact."""
+        """返回 artifact 在磁盘上的绝对路径。"""
         return self.storage_root / artifact.file_path
 
     @staticmethod

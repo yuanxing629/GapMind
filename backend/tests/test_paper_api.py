@@ -1,4 +1,4 @@
-"""Integration tests for the Paper upload + Artifact + Timeline chain."""
+"""Paper 上传、Artifact 和 Timeline 链路的集成测试。"""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ def _pdf_bytes(content: str = "%PDF-1.4 fake pdf body") -> bytes:
     return content.encode("utf-8")
 
 
-# ----------------------------------------------------------------- upload
+# ----------------------------------------------------------------- 上传
 def test_upload_paper_creates_artifact_and_timeline(client: TestClient) -> None:
     ws = _create_workspace(client, "UploadWS")
     wid = ws["id"]
@@ -32,7 +32,7 @@ def test_upload_paper_creates_artifact_and_timeline(client: TestClient) -> None:
     assert paper["year"] == 2024
     assert paper["primary_artifact_id"] is not None
 
-    # Artifact is listed.
+# Artifact 会出现在列表中。
     arts = client.get(f"/api/v1/workspaces/{wid}/artifacts").json()
     assert len(arts) == 1
     assert arts[0]["id"] == paper["primary_artifact_id"]
@@ -40,12 +40,12 @@ def test_upload_paper_creates_artifact_and_timeline(client: TestClient) -> None:
     assert arts[0]["size_bytes"] > 0
     assert arts[0]["original_filename"] == "paper1.pdf"
 
-    # Timeline captured the upload event.
+# Timeline 记录了上传事件。
     timeline = client.get(f"/api/v1/workspaces/{wid}/timeline").json()
     types = [e["event_type"] for e in timeline["items"]]
     assert "paper.uploaded" in types
-    # Workspace.created is also recorded by the workspace creation flow? No -
-    # Phase 1b workspace service does not yet emit timeline. Only paper/task do.
+# Workspace.created 是否也由 workspace 创建流程记录？不是——Phase 1b workspace service
+# 尚未写入 timeline，当前只有 paper/task 会写入。
     assert "workspace.created" not in types
 
 
@@ -102,7 +102,7 @@ def test_upload_paper_falls_back_to_filename_as_title(client: TestClient) -> Non
     assert resp.json()["title"] == "GNNExplainer-paper"
 
 
-# ------------------------------------------------------ metadata-only create
+# ------------------------------------------------------ 仅元数据创建
 def test_create_paper_metadata_only(client: TestClient) -> None:
     ws = _create_workspace(client)
     resp = client.post(
@@ -114,12 +114,12 @@ def test_create_paper_metadata_only(client: TestClient) -> None:
     assert body["primary_artifact_id"] is None
     assert body["source"] == "manual"
 
-    # No artifact created.
+# 不应创建 artifact。
     arts = client.get(f"/api/v1/workspaces/{ws['id']}/artifacts").json()
     assert arts == []
 
 
-# --------------------------------------------------------------- list / get
+# --------------------------------------------------------------- 列表 / 获取
 def test_list_papers(client: TestClient) -> None:
     ws = _create_workspace(client)
     for i in range(3):
@@ -140,12 +140,12 @@ def test_get_paper_cross_workspace_404(client: TestClient) -> None:
         f"/api/v1/workspaces/{ws_a['id']}/papers",
         json={"title": "P"},
     ).json()
-    # Paper belongs to A; asking via B should 404.
+# Paper 属于 A，通过 B 查询应返回 404。
     resp = client.get(f"/api/v1/workspaces/{ws_b['id']}/papers/{paper['id']}")
     assert resp.status_code == 404
 
 
-# ------------------------------------------------------------------ update
+# ------------------------------------------------------------------ 更新
 def test_update_paper(client: TestClient) -> None:
     ws = _create_workspace(client)
     paper = client.post(
@@ -162,7 +162,7 @@ def test_update_paper(client: TestClient) -> None:
     assert body["year"] == 2024
 
 
-# ------------------------------------------------------------------ delete
+# ------------------------------------------------------------------ 删除
 def test_soft_delete_paper_hides_from_list(client: TestClient) -> None:
     ws = _create_workspace(client)
     paper = client.post(
@@ -202,7 +202,7 @@ def test_external_search_history_and_favorites_are_owner_scoped(
     assert client.post("/api/v1/papers/favorites", headers=alice, json=favorite_payload).status_code == 200
     assert client.get("/api/v1/papers/favorites", headers=bob).json() == []
 
-    # The same external paper can be favorited independently by another user.
+# 同一外部论文可以由另一用户独立收藏。
     assert client.post("/api/v1/papers/favorites", headers=bob, json=favorite_payload).status_code == 200
     assert len(client.get("/api/v1/papers/favorites", headers=alice).json()) == 1
     assert len(client.get("/api/v1/papers/favorites", headers=bob).json()) == 1
@@ -213,7 +213,7 @@ def test_external_search_history_and_favorites_are_owner_scoped(
     ).status_code == 404
 
 
-# --------------------------------------------------------------- timeline
+# --------------------------------------------------------------- timeline：时间线
 def test_timeline_records_paper_events(client: TestClient) -> None:
     ws = _create_workspace(client)
     paper = client.post(
@@ -232,7 +232,7 @@ def test_timeline_records_paper_events(client: TestClient) -> None:
     assert "paper.updated" in types
     assert "paper.deleted" in types
 
-    # Filter by subject_id works.
+# 按 subject_id 过滤有效。
     paper_events = client.get(
         f"/api/v1/workspaces/{ws['id']}/timeline",
         params={"subject_type": "paper", "subject_id": paper["id"]},

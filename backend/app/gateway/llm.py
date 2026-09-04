@@ -1,7 +1,7 @@
-"""LLM Gateway for OpenAI Chat Completions-compatible providers.
+"""兼容 OpenAI Chat Completions 的 LLM Gateway。
 
-Phase 0: skeleton with a minimal `chat_completion` method. Phase 2-3 will add
-structured-output extraction, retry, and token/cost tracking.
+Phase 0：提供最小 `chat_completion` 方法的骨架。Phase 2-3 将增加结构化输出抽取、重试
+以及 token/cost 跟踪。
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ logger = get_logger(__name__)
 
 @dataclass
 class LLMResponse:
-    """Normalized LLM response."""
+    """规范化的 LLM 响应。"""
 
     content: str
     model: str
@@ -30,15 +30,13 @@ class LLMResponse:
 
 
 class LLMGateway:
-    """Thin wrapper over OpenAI Chat Completions-compatible APIs.
+    """OpenAI Chat Completions 兼容 API 的轻量包装器。
 
-    The normal text path uses the remote endpoint. Image requests use the
-    separately configured vision endpoint and never fall back to the text-only
-    backup endpoint.
+    普通文本路径使用远程 endpoint。图像请求使用单独配置的 vision endpoint，绝不回退到
+    仅支持文本的 backup endpoint。
 
-    When a backup OpenAI-compatible endpoint is fully configured (key +
-    base_url + model), a text request falls over to it once. If the backup also
-    fails, the original primary error is raised.
+    当备用 OpenAI-compatible endpoint 已完整配置（key + base_url + model）时，文本请求
+    失败后会回退一次。如果备用 endpoint 也失败，则抛出原始 primary error。
     """
 
     def __init__(
@@ -128,10 +126,10 @@ class LLMGateway:
         stream: bool = False,
         allow_backup: bool = True,
     ) -> Any:
-        """Call the primary endpoint, fall over to the backup on failure.
+        """调用主端点，失败时回退到备用端点。
 
-        Streaming can only fail over before the first chunk is yielded; once
-        the stream has started, errors propagate to the caller.
+        Streaming 只能在产出第一个 chunk 之前执行 failover；流开始后，错误会直接传递给
+        调用方。
         """
         try:
             return client.chat.completions.create(**kwargs, stream=stream)
@@ -168,12 +166,11 @@ class LLMGateway:
         disable_thinking: bool = False,
         model_override: str | None = None,
     ) -> LLMResponse:
-        """Run a chat completion against the configured remote model.
+        """使用配置的远程模型执行 chat completion。
 
-        ``disable_thinking`` remains accepted so existing structured callers do
-        not need to change, but OpenAI Chat Completions has no provider-neutral
-        thinking switch. It is therefore intentionally not serialized as a
-        vendor-specific request field.
+        保留接受 ``disable_thinking``，使既有结构化调用方无需修改；但 OpenAI Chat
+        Completions 没有 provider-neutral 的 thinking 开关，因此不会将其序列化为
+        厂商特定的 request field。
         """
         request_model = model_override or self.model
         kwargs: dict[str, Any] = {
@@ -214,11 +211,10 @@ class LLMGateway:
         disable_thinking: bool = False,
         model_override: str | None = None,
     ) -> Generator[str, None, None]:
-        """Yield text deltas from a streaming chat completion (P0.5-1).
+        """从流式 chat completion 产出文本增量（P0.5-1）。
 
-        Mirror of ``chat_completion`` but with ``stream=True``; each yielded
-        string is one content delta. Structured-format callers should keep
-        using the non-streaming version.
+        这是 ``chat_completion`` 的流式版本，使用 ``stream=True``；每次 yield 一个
+        content delta。结构化格式的调用方应继续使用非流式版本。
         """
         request_model = model_override or self.model
         kwargs: dict[str, Any] = {
@@ -243,10 +239,9 @@ class LLMGateway:
                 yield delta
 
     def ping(self) -> bool:
-        """Lightweight connectivity check - returns True if API key is set.
+        """轻量连通性检查：已设置 API key 时返回 True。
 
-        A real network ping is deferred to Phase 2 to avoid spamming the API
-        during health checks.
+        真实网络 ping 延后到 Phase 2，以避免 health check 期间频繁请求 API。
         """
         return bool(self.api_key and self.base_url and self.model)
 
@@ -255,7 +250,7 @@ _gateway: LLMGateway | None = None
 
 
 def get_llm_gateway() -> LLMGateway:
-    """Singleton accessor for the LLM gateway."""
+    """LLM gateway 的单例访问器。"""
     global _gateway
     if _gateway is None:
         _gateway = LLMGateway()

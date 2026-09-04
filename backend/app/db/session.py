@@ -1,6 +1,6 @@
-"""SQLAlchemy session factory.
+"""SQLAlchemy 会话工厂。
 
-Kept separate from `base.py` to avoid circular imports during model loading.
+与 `base.py` 分离，以避免模型加载时出现循环导入。
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ SessionLocal: sessionmaker[Session] = sessionmaker(
 
 @contextmanager
 def session_scope() -> Generator[Session, None, None]:
-    """Context manager that commits on success, rolls back on exception."""
+    """成功时提交、异常时回滚的上下文管理器。"""
     db = SessionLocal()
     try:
         yield db

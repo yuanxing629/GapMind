@@ -1,4 +1,4 @@
-"""HTTP API for specialized extraction, board projection, and Discover handoff."""
+"""专用抽取、棋盘投影和 Discover 交接的 HTTP API。"""
 
 from __future__ import annotations
 

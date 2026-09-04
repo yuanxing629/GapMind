@@ -1,10 +1,9 @@
-"""OpportunityAgent (MA + W2): synthesis of candidate research opportunities.
+"""OpportunityAgent（MA + W2）：合成研究机会候选。
 
-Carved out of the monolithic DiscoverService (MA-1 maintenance refactor) so
-the LLM synthesis step (evidence → candidate proposals) is self-contained and
-individually testable. DiscoverService instantiates one and delegates its
-existing ``_synthesize_candidates`` / ``_normalize_candidate`` /
-``_fallback_candidate`` / ``_retrieval_payload`` methods to it.
+本模块从单体 DiscoverService 中拆出（MA-1 维护性重构），使 LLM synthesis 步骤
+（evidence → candidate proposals）自包含且可单独测试。DiscoverService 创建该服务，
+并将原有的 ``_synthesize_candidates`` / ``_normalize_candidate`` /
+``_fallback_candidate`` / ``_retrieval_payload`` 方法转发给它。
 """
 
 from __future__ import annotations
@@ -23,20 +22,19 @@ from app.gateway.llm import LLMGateway
 
 logger = get_logger(__name__)
 
-# System prompt used by OpportunityAgent synthesis. Kept as a module constant
-# so prompt changes are auditable and testable.
+# OpportunityAgent synthesis 使用的系统 prompt。保持为模块常量，便于审计和测试 prompt 变更。
 SYNTHESIS_SYSTEM_PROMPT = "你负责生成可审计的中文研究机会方案；证据原文必须保持不变。"
 
 
 
-# --------------------------------------------------------------------- helpers
+# --------------------------------------------------------------------- 辅助函数
 
 
 
 def normalize_candidate(
     value: dict[str, Any], gate: dict[str, Any], *, provider: str
 ) -> dict[str, Any]:
-    """Normalize one raw LLM candidate into the persisted opportunity shape."""
+    """将一条原始 LLM 候选规范化为持久化的 opportunity 结构。"""
 
     def score(key: str) -> float:
         try:
@@ -77,7 +75,7 @@ def fallback_candidate(
     counter: RetrievalResponse,
     gate: dict[str, Any],
 ) -> dict[str, Any]:
-    """Conservative rule-based candidate used when LLM synthesis fails (W5)."""
+    """LLM synthesis 失败时使用的保守规则候选（W5）。"""
     return normalize_candidate(
         {
             "title": "研究该论断成立与失效的边界条件",
@@ -92,14 +90,14 @@ def fallback_candidate(
     )
 
 
-# --------------------------------------------------------------------- service
+# --------------------------------------------------------------------- 服务
 
 
 class SynthesisService:
-    """OpportunityAgent synthesis orchestration.
+    """OpportunityAgent synthesis 编排。
 
-    Composed by ``DiscoverService``; callers should go through that facade so
-    existing tests using ``service._synthesize_candidates`` keep working.
+    由 ``DiscoverService`` 组合；调用方应通过该 facade 访问，以保持使用
+    ``service._synthesize_candidates`` 的既有测试正常运行。
     """
 
     def __init__(self, db: Session, llm: LLMGateway) -> None:
@@ -119,10 +117,9 @@ class SynthesisService:
         *,
         critic_feedback: list[str] | None = None,
     ) -> list[dict[str, Any]]:
-        """Generate candidate opportunities from workspace + external evidence.
+        """根据 workspace 和外部证据生成 opportunity 候选。
 
-        On LLM failure or a malformed response, degrades to a conservative
-        rule-based fallback candidate so the pipeline never fails (W5).
+        LLM 失败或响应格式错误时，降级为保守的基于规则的候选，使流水线不会失败（W5）。
         """
         evidence = {
             "supporting_evidence": [retrieval_payload(item) for item in supporting.items[:12]],

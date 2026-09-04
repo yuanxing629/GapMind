@@ -1,4 +1,4 @@
-"""Knowledge service layer (Phase 3: read + write)."""
+"""Knowledge service 层（Phase 3：读取 + 写入）。"""
 
 from __future__ import annotations
 
@@ -90,21 +90,20 @@ class ExtractionRunNotFoundError(Exception):
 
 
 class KnowledgeItemReviewError(ValueError):
-    """Raised when a human review payload is rejected by the service.
+    """人工审核载荷被 service 拒绝时抛出的异常。
 
-    Subclasses ``ValueError`` so existing callers that catch generic value
-    errors continue to work, but the new central exception handler maps it
-    to a 422 with error code ``invalid_review``.
+    继承 ``ValueError``，使捕获通用值错误的既有调用方继续工作；新的集中式异常处理器
+    会将其映射为 422，并使用错误码 ``invalid_review``。
     """
 
 
 class KnowledgeService:
-    """Knowledge queries + writes for Phase 3."""
+    """Phase 3 的 Knowledge 查询与写入。"""
 
     def __init__(self, db: Session) -> None:
         self.db = db
 
-    # -------------------------------------------------------- knowledge items
+# -------------------------------------------------------- 知识条目
     def get_item(self, item_id: str, *, workspace_id: str) -> KnowledgeItem:
         self._validate_uuid(item_id)
         item = self.db.scalar(
@@ -154,7 +153,7 @@ class KnowledgeService:
         total = int(self.db.execute(total_q).scalar() or 0)
         return items, total
 
-    # -------------------------------------------------------- relations
+# -------------------------------------------------------- 关系
     def list_relations(
         self,
         *,
@@ -194,10 +193,9 @@ class KnowledgeService:
         relation_type: str | None = None,
         limit: int = 250,
     ) -> tuple[list[KnowledgeItem], list[KnowledgeRelation], int, int]:
-        """Return a bounded graph projection for a workspace.
+        """返回 workspace 的有界 graph 投影。
 
-        Relations are restricted to the selected node set so the frontend
-        receives a self-contained graph and does not need to join IDs itself.
+        关系会限制在选中的节点集合内，使前端收到自包含图谱，无需自行连接 ID。
         """
         limit = max(1, min(limit, 500))
         item_query = select(KnowledgeItem).where(
@@ -262,7 +260,7 @@ class KnowledgeService:
         include_related_papers: bool = False,
         focus_node_id: str | None = None,
     ):
-        """Build an appendable graph batch with exact aggregate metadata."""
+        """构建带精确聚合元数据、可追加的 graph 批次。"""
 
         limit = max(1, min(limit, 200))
         offset = max(0, offset)
@@ -318,9 +316,8 @@ class KnowledgeService:
             include_entities=projection_mode != "claims",
             strict_paper_ids={paper_id} if paper_id and not include_related_papers else None,
         )
-        # Pagination advances the primary KnowledgeItem cursor. Structural
-        # nodes are attached to each batch, so has_more must never promise a
-        # page that the client cannot actually request.
+# 分页推进主 KnowledgeItem 游标。结构节点会附加到每个批次，因此 has_more
+# 不能承诺客户端实际上无法请求的下一页。
         has_more = offset + len(items) < total_knowledge
         return GraphProjection(
             nodes=nodes,
@@ -344,11 +341,10 @@ class KnowledgeService:
         limit: int = 100,
         relation_type: str | None = None,
     ):
-        """Return a bounded neighborhood for a graph node.
+        """返回 graph 节点的有界邻域。
 
-        Node IDs use ``paper:``, ``entity:``, ``mention:`` prefixes for the
-        structural layers; knowledge item IDs remain unprefixed for backward
-        compatibility with the original graph API.
+        结构层节点 ID 使用 ``paper:``、``entity:``、``mention:`` 前缀；
+        knowledge item ID 保持无前缀，以兼容原始 graph API。
         """
         from app.domains.knowledge.schemas import (
             KnowledgeGraphEdgeRead,
@@ -467,12 +463,10 @@ class KnowledgeService:
         focus_node_id: str | None = None,
         focus_depth: int = 1,
     ) -> GraphProjection:
-        """Project a workspace map around papers and shared canonical entities.
+        """围绕论文和共享 canonical entity 投影 workspace map。
 
-        This is deliberately a read-only projection over the existing paper,
-        knowledge-item, mention, relation, and evidence tables. Claims and
-        limitations are kept out of the cross-paper entity projection even if
-        a malformed or legacy row happens to carry a canonical entity id.
+        这是基于现有 paper、knowledge-item、mention、relation 和 evidence 表的只读投影。
+        即使异常或旧数据行带有 canonical entity id，claim 和 limitation 也会排除在跨论文实体投影之外。
         """
         from app.domains.knowledge.schemas import (
             KnowledgeGraphEdgeRead,
@@ -534,8 +528,7 @@ class KnowledgeService:
                 return False
             if min_confidence is not None and mention.confidence < min_confidence:
                 return False
-            # A status filter describes knowledge-item review state. Mentions
-            # are evidence locations and do not acquire that state on their own.
+# status 过滤器描述知识条目的审核状态。Mention 是证据位置，不会自行获得该状态。
             if status_filter and mention.knowledge_item_id not in matched_item_ids:
                 return False
             return True
@@ -903,8 +896,7 @@ class KnowledgeService:
                 if edge.source in focused_ids and edge.target in focused_ids
             ]
 
-        # Alternate entity and paper rows so a small first page still gives
-        # the workspace map both sides of its intended visual vocabulary.
+# 交替选择实体和论文行，使较小的第一页也能同时包含工作区地图预期的两类节点。
         entity_nodes = sorted(
             [node for node in nodes if node.node_kind == "canonical_entity"],
             key=lambda node: (
@@ -1079,9 +1071,8 @@ class KnowledgeService:
             ).scalars().all()
         ) if include_mentions and (paper_ids or entity_ids or forced_mention_id) else []
 
-        # A paper or forced mention can introduce structural endpoints that
-        # were not present on the primary KnowledgeItems. Load those endpoints
-        # before creating edges so every projection remains self-contained.
+# 论文或强制包含的 mention 可能引入主 KnowledgeItem 中不存在的结构端点。
+# 创建边之前先加载这些端点，确保每个投影都是自包含的。
         loaded_paper_ids = {paper.id for paper in papers}
         missing_paper_ids = {mention.paper_id for mention in mentions} - loaded_paper_ids
         if missing_paper_ids:
@@ -1605,7 +1596,7 @@ class KnowledgeService:
             return kind, raw_id
         return "knowledge", node_id
 
-    # -------------------------------------------------------- evidence
+# -------------------------------------------------------- 证据
     def list_evidence_for_item(
         self, item_id: str, *, workspace_id: str
     ) -> list[EvidenceSpan]:
@@ -1678,7 +1669,7 @@ class KnowledgeService:
         self.db.flush()
         return mention
 
-    # -------------------------------------------------------- writes (Phase 3)
+# -------------------------------------------------------- 写入（Phase 3）
     def get_or_create_canonical_entity(
         self,
         *,
@@ -1722,7 +1713,7 @@ class KnowledgeService:
         return entity
 
     def upsert_item(self, payload: KnowledgeItemCreate) -> KnowledgeItem:
-        """Create one paper-scoped item, idempotent within an extraction run."""
+        """创建一个论文级条目，并在一次抽取 run 内保持幂等。"""
         if payload.extraction_run_id and payload.item_key:
             existing = self.db.execute(
                 select(KnowledgeItem).where(

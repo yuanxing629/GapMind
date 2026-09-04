@@ -1,4 +1,4 @@
-# GraphRAG shadow evaluation
+# GraphRAG shadow 评测
 
 This directory is for Phase 0/1 observation replay. It deliberately does not
 create or modify a fixed Gold Set.

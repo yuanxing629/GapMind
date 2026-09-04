@@ -1,12 +1,11 @@
-"""Similar Work paper-level aggregation tests (RG-4 / D2).
+"""Similar Work 论文级聚合测试（RG-4 / D2）。
 
-The pipeline over-fetches from Milvus, then:
-  1. drops chunks in low-value sections (References / Acknowledgments etc.)
-  2. groups hits by paper and caps each paper at SIMILAR_WORK_MAX_CHUNKS_PER_PAPER
-  3. reranks the diversified candidate pool
+流水线先从 Milvus 过召回，然后：
+  1. 丢弃低价值章节中的 chunk（References / Acknowledgments 等）
+  2. 按论文分组，并将每篇论文限制为 SIMILAR_WORK_MAX_CHUNKS_PER_PAPER
+  3. 对多样化候选池 rerank
 
-These tests mock Milvus/embedding and verify the post-aggregation shape
-without needing a live Milvus instance.
+这些测试 mock Milvus/embedding，并在无需 live Milvus 实例的情况下验证聚合后的结构。
 """
 
 from __future__ import annotations
@@ -31,7 +30,7 @@ from app.domains.retrieval.service import (
 
 
 # ==================================================================
-# _paper_max_top_k (paper-level dedup for the final top-k)
+# _paper_max_top_k（最终 top-k 的论文级去重）
 # ==================================================================
 
 
@@ -86,12 +85,12 @@ def test_paper_max_empty_input() -> None:
 
 
 # ==================================================================
-# _hybrid_rerank_top_k (raw + rerank blend for similar work)
+# _hybrid_rerank_top_k（用于 similar work 的 raw + rerank 融合）
 # ==================================================================
 
 
 def test_hybrid_keeps_high_raw_low_rerank_paper_in_contention() -> None:
-    # p-a: high raw (0.9) but demoted by the cross-encoder; p-b the reverse.
+# p-a：raw 分数高（0.9）但被 cross-encoder 降权；p-b 相反。
     candidates = [
         {"chunk_id": "a1", "paper_id": "p-a", "score": 0.9, "text": "t", "section": "Method"},
         {"chunk_id": "b1", "paper_id": "p-b", "score": 0.6, "text": "t", "section": "Method"},
@@ -118,7 +117,7 @@ def test_hybrid_empty_input() -> None:
 
 
 # ==================================================================
-# _is_low_value_section
+# _is_low_value_section：低价值章节判断
 # ==================================================================
 
 
@@ -144,8 +143,7 @@ def test_low_value_section_passes_through_normal_sections() -> None:
 
 
 def test_low_value_sections_is_explicit() -> None:
-    # Snapshot: if we ever grow this list, we want a clear diff. Stable set of
-    # currently-recognised low-value sections.
+# 快照：如果将来扩展该列表，希望能看到清晰 diff。这里是当前识别的低价值章节稳定集合。
     assert LOW_VALUE_SECTIONS == frozenset({
         "references",
         "bibliography",
@@ -159,7 +157,7 @@ def test_low_value_sections_is_explicit() -> None:
 
 
 # ==================================================================
-# Service-level: paper aggregation + low-value filter
+# Service 级：论文聚合 + 低价值过滤
 # ==================================================================
 
 
@@ -173,8 +171,10 @@ class _FakeEmbedding:
 
 
 class _FakeMilvus:
-    """Replaces service.milvus_client. Returns hits verbatim per call (no dedup
-    or filtering — that happens in the aggregation step we're testing)."""
+    """替换 service.milvus_client，按调用原样返回命中项。
+
+    去重和过滤发生在本测试覆盖的聚合步骤中。
+    """
 
     def __init__(self, hits: list[dict]) -> None:
         self.hits = hits
@@ -184,11 +184,11 @@ class _FakeMilvus:
 
 
 def _patch(monkeypatch, hits: list[dict]) -> None:
-    """Patch milvus_client.search + embedding + reranker so we only exercise the aggregation step."""
+    """替换 Milvus 搜索、向量生成和重排器，仅测试聚合步骤。"""
     monkeypatch.setattr(service, "milvus_client", _FakeMilvus(hits))
     monkeypatch.setattr(service, "get_embedding_gateway", _FakeEmbedding)
 
-    # Bypass the reranker with a deterministic no-op that preserves input order.
+# 用保持输入顺序的确定性 no-op 绕过 reranker。
     class _NoopReranker:
         def rerank(self, query, documents, *, top_n):
             from types import SimpleNamespace
@@ -204,7 +204,7 @@ def _patch(monkeypatch, hits: list[dict]) -> None:
 
 @pytest.fixture
 def source_paper(db_session, tmp_path, monkeypatch):
-    """Create a real paper whose source chunks live in a storage Artifact."""
+    """创建一个源分块存储在 storage Artifact 中的真实论文。"""
     monkeypatch.setattr(settings, "app_storage_dir", str(tmp_path / "storage"))
     from app.domains.workspace.models import Workspace
 
@@ -280,7 +280,7 @@ def test_similar_work_drops_low_value_sections(monkeypatch, db_session, source_p
 
 def test_similar_work_caps_chunks_per_paper(monkeypatch, db_session, source_paper) -> None:
     workspace, paper = source_paper
-    # p-A has 4 high-quality hits, p-B has 1. Without cap, p-A dominates.
+# p-A 有 4 个高质量命中，p-B 有 1 个。不设上限时 p-A 会占据主导。
     hits = [
         _hit(f"a{i}", "p-A", score=0.9 - i * 0.05) for i in range(4)
     ] + [_hit("b1", "p-B", score=0.7)]
@@ -293,7 +293,7 @@ def test_similar_work_caps_chunks_per_paper(monkeypatch, db_session, source_pape
         db=db_session,
         use_reranker=True,
     )
-    # With cap=2: 2 from p-A + 1 from p-B = 3
+# cap=2 时：p-A 取 2 个 + p-B 取 1 个 = 3 个
     by_paper: dict[str, int] = {}
     for item in resp.items:
         by_paper[item.paper_id or ""] = by_paper.get(item.paper_id or "", 0) + 1
@@ -303,8 +303,10 @@ def test_similar_work_caps_chunks_per_paper(monkeypatch, db_session, source_pape
 
 
 def test_similar_work_falls_back_when_all_low_value(monkeypatch, db_session, source_paper) -> None:
-    """If every candidate is a low-value section chunk, return them anyway
-    rather than an empty Top-K (the section classifier can fail)."""
+    """如果所有候选都是低价值章节分块，仍然返回它们，而不是返回空的 Top-K。
+
+    章节分类器可能失败。
+    """
     workspace, paper = source_paper
     hits = [
         _hit("r1", "p-A", section="References", score=0.9),
@@ -319,17 +321,19 @@ def test_similar_work_falls_back_when_all_low_value(monkeypatch, db_session, sou
         db=db_session,
         use_reranker=True,
     )
-    # Both chunks come from the same paper → paper-level dedup keeps one result
-    # (the fallback guarantees a NON-empty Top-K, not per-chunk results).
+# 两个分块来自同一论文 → 论文级去重只保留一个结果
+#（回退保证 Top-K 非空，而不是保证每个分块都返回）。
     assert len(resp.items) == 1
     assert resp.items[0].paper_id == "p-A"
 
 
 def test_similar_work_paper_diversity(monkeypatch, db_session, source_paper) -> None:
-    """Over-fetch + per-paper cap should keep Top-10 paper-diverse when the
-    corpus supports it (no single paper can occupy >50% of Top-10)."""
+    """在语料允许时，过采样加单论文上限应保持 Top-10 的论文多样性。
+
+    单篇论文不能占据 Top-10 的 50% 以上。
+    """
     workspace, paper = source_paper
-    # 10 distinct papers, 3 chunks each → after cap (2/paper), each contributes 2.
+# 10 篇不同论文、每篇 3 个分块 → 应用上限（每篇 2 个）后每篇贡献 2 个。
     hits = []
     for p_idx in range(10):
         for c_idx in range(3):
@@ -345,16 +349,15 @@ def test_similar_work_paper_diversity(monkeypatch, db_session, source_paper) -> 
     )
     assert len(resp.items) == 10
     distinct_papers = len({item.paper_id for item in resp.items})
-    # Without cap, the highest-scoring paper alone could fill Top-10.
+# 不设上限时，最高分论文可能独占 Top-10。
     assert distinct_papers >= 5  # at least half the Top-10 are distinct papers
-    # Source paper must not appear.
+# 源论文不能出现。
     assert paper.id not in {item.paper_id for item in resp.items}
 
 
 def test_similar_work_source_paper_still_excluded(monkeypatch, db_session, source_paper) -> None:
     workspace, paper = source_paper
-    # Even if Milvus returned the source's chunks somehow, the source is
-    # excluded by the service contract.
+# 即使 Milvus 意外返回源论文分块，service 契约也会将源论文排除。
     hits = [
         _hit("src1", paper.id, score=0.99),  # MUST NOT appear
         _hit("o1", "p-other", score=0.5),

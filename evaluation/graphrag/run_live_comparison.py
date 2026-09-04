@@ -1,12 +1,10 @@
-"""Run a read-only dense vs SQL GraphRAG-shadow retrieval comparison.
+"""执行只读的 dense 与 SQL GraphRAG-shadow 检索对照。
 
-This runner uses the query text from an existing retrieval Gold Set but does
-not modify the Gold Set, call an LLM, write Chat messages, or change database
-state. Dense retrieval remains the only answer context. The GraphRAG side
-only measures the bounded PostgreSQL projection and its EvidenceSpan
-re-retrieval.
+该运行器使用现有 retrieval Gold Set 中的 query 文本，但不会修改 Gold Set、调用 LLM、写入
+Chat message 或改变数据库状态。Dense retrieval 仍是回答的唯一上下文。GraphRAG 侧只衡量
+有界 PostgreSQL projection 及其 EvidenceSpan re-retrieval。
 
-Run from the repository root:
+从仓库根目录运行：
 
     backend\\.venv\\Scripts\\python.exe evaluation\\graphrag\\run_live_comparison.py \
         --workspace-id <workspace-uuid> \
@@ -26,10 +24,8 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BACKEND_ROOT = REPO_ROOT / "backend"
-# The application is normally launched from backend/, where the default
-# ``./storage`` resolves correctly. This evaluator is documented from the
-# repository root, so pin the relative default to the same canonical store
-# without overriding an explicit deployment setting.
+# 应用通常从 backend/ 启动，此时默认 ``./storage`` 可以正确解析。本评测器从
+# 仓库根目录运行，因此将相对默认路径固定到同一个规范存储位置，但不覆盖显式部署设置。
 os.environ.setdefault("APP_STORAGE_DIR", str(BACKEND_ROOT / "storage"))
 for import_root in (str(REPO_ROOT), str(BACKEND_ROOT)):
     if import_root not in sys.path:
@@ -105,9 +101,8 @@ def _dense_evidence_stats(db, workspace_id: str, items: list[Any]) -> dict[str, 
         failure_reasons[reason] = failure_reasons.get(reason, 0) + 1
 
     def stored_text_matches(item_text: str, canonical_text: str) -> bool:
-        # Milvus stores the first 8,000 characters to stay below its VARCHAR
-        # limit. Identity is still established by chunk_id and artifact_id;
-        # this check catches stale vectors without rejecting valid truncation.
+# Milvus 只保存前 8,000 个字符以低于 VARCHAR 限制。身份仍由 chunk_id 和
+# artifact_id 确定；该检查用于捕获过期向量，不会拒绝有效截断。
         return item_text == canonical_text or (
             len(item_text) == 8000 and canonical_text.startswith(item_text)
         )
@@ -302,8 +297,7 @@ def _aggregate(entries: list[dict[str, Any]]) -> dict[str, Any]:
             "dropped_path_count": graph_dropped_path_count,
             "dropped_path_reasons": graph_dropped_path_reasons,
             "paths_with_evidence": graph_paths_with_evidence,
-            # Keep the macro average for query-level comparison and expose
-            # the micro rate so the denominator is unambiguous.
+# 保留 query 级对照所需的宏平均，并暴露微平均比率，使分母明确。
             "path_evidence_hit_rate": mean(graph_hit_rates) if graph_hit_rates else None,
             "path_evidence_hit_rate_micro": (
                 graph_paths_with_evidence / graph_path_count

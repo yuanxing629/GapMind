@@ -1,26 +1,23 @@
-"""Stage 3 external novelty Gate runner.
+"""Stage 3 外部新颖性 Gate 运行器。
 
-Loads an external gold set, runs the *real* external-search path
-(``DiscoverService._build_external_queries`` + ``_external_verify``) against a
-live workspace, and checks whether each gold external paper is recalled within
-the top-K merged candidates.
+加载 external gold set，在 live workspace 上运行*真实*的 external-search path
+（``DiscoverService._build_external_queries`` + ``_external_verify``），并检查每篇 gold
+external paper 是否在 top-K 合并候选中被召回。
 
-Gate criterion (mirrors Stage-2 thresholds):
+Gate criterion（与 Stage-2 阈值一致）：
 
-    gold external counter/overlap/qualify papers in top-K merged candidates
-    Recall@K >= threshold (default 0.8, K default 10)
+    top-K 合并候选中的 gold external counter/overlap/qualify paper
+    Recall@K >= threshold（默认 0.8，K 默认 10）
 
-The runner uses the production ``DiscoverService`` with the real
-``SemanticScholarClient`` adapter, so it exercises the same multi-query merge,
-dedupe-by-external-paper-id, and rank assignment the Discover Agent uses. The
-LLM role-judge is stubbed (roles stay heuristic) because the Gate criterion is
-*recall of the candidate* — role refinement only rewrites the role field.
+运行器使用生产环境的 ``DiscoverService`` 和真实的 ``SemanticScholarClient`` adapter，因此
+会执行 Discover Agent 使用的相同 multi-query merge、按 external-paper-id 去重和 rank 分配。
+LLM role-judge 使用 stub（role 保持 heuristic），因为 Gate criterion 是
+*候选召回*——角色优化只重写 role 字段。
 
-A verification ``DiscoverRun`` is persisted (trigger_type="verification") so
-the surfaced candidates are auditable in the demo workspace; pass ``--cleanup``
-to delete the run + candidates after reporting.
+持久化一个 verification ``DiscoverRun``（trigger_type="verification"），使展示的候选在
+demo workspace 中可审计；报告后传入 ``--cleanup`` 可删除该 run 和候选。
 
-Usage (run from ``backend/`` so ``.env`` is loaded — mirrors run_eval.py):
+用法（从 ``backend/`` 运行以加载 ``.env``，与 run_eval.py 一致）：
 
     python ..\\evaluation\\external\\verify_external_gate.py \\
         --workspace-id <uuid> \\
@@ -39,7 +36,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-# --- sys.path: allow running from repo root OR backend/ without `-m` ---
+# --- sys.path：允许从仓库根目录或 backend/ 直接运行，无需 `-m` ---
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BACKEND_DIR = REPO_ROOT / "backend"
 for p in (str(BACKEND_DIR), str(REPO_ROOT)):
@@ -63,7 +60,7 @@ from app.domains.discover.service import DiscoverService  # noqa: E402
 
 
 class _NoopLLM:
-    """Stub LLM — role refinement is irrelevant to candidate recall."""
+    """Stub LLM——角色优化与候选召回无关。"""
 
     def chat_completion(self, messages, **kwargs):
         return SimpleNamespace(content=json.dumps({"roles": []}))
@@ -86,7 +83,7 @@ def _run(db, gold: dict[str, Any], workspace_id: str, args: argparse.Namespace) 
     print(f"Workspace: {workspace_id} | Top-K: {top_k} | Threshold: {threshold} | Gold papers: {len(gold_papers)}")
     print(f"Research question: {research_question}")
 
-    # A verification DiscoverRun is persisted so candidates are auditable.
+# 持久化一个校验用 DiscoverRun，使候选可审计。
     run = DiscoverRun(
         workspace_id=workspace_id,
         trigger_type="verification",
@@ -106,8 +103,7 @@ def _run(db, gold: dict[str, Any], workspace_id: str, args: argparse.Namespace) 
     llm = None if args.real_llm else _NoopLLM()  # None → real LLMGatewayAdapter
     service = DiscoverService(db, llm=llm)
     if args.queries:
-        # Pipeline-only verification: bypass query generation so the Gate can
-        # isolate retrieval/merge/role defects from query-construction defects.
+# 仅校验流水线：绕过 query 生成，使 Gate 可以将检索/合并/角色缺陷与 query 构建缺陷隔离。
         queries = [q.strip() for q in args.queries.split(",") if q.strip()]
         exact_lookups: list[str] = []
     else:
@@ -154,7 +150,7 @@ def _run(db, gold: dict[str, Any], workspace_id: str, args: argparse.Namespace) 
     recall = recall_at_k(gold_ids, candidate_ids, top_k)
     mrr = mrr_at_k(gold_ids, candidate_ids, top_k)
 
-    # Which queries actually surfaced gold papers (diagnostic).
+# 哪些 query 实际召回了 gold 论文（诊断信息）。
     gold_by_query: dict[str, list[str]] = {}
     for entry in per_paper:
         if entry["recalled"] and entry["source_query"]:

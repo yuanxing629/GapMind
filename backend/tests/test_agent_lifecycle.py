@@ -1,9 +1,8 @@
-"""W7 full-lifecycle agent tests: Analyze / Write / Respond.
+"""W7 Agent 全生命周期测试：Analyze / Write / Respond。
 
-These reuse the controlled AgentRun/AgentStep/AgentArtifact protocol. They end
-in "succeeded" with a markdown artifact in agent_artifacts (never
-auto-promoted). A bound plan enables workspace evidence; independent mode uses
-only user-provided material and never fabricates a workspace citation.
+这些测试复用受控的 AgentRun/AgentStep/AgentArtifact protocol。测试最终以 "succeeded" 结束，
+并在 agent_artifacts 中保存 markdown artifact（不会自动提升）。绑定 plan 时可以使用
+workspace 证据；independent mode 只使用用户提供的材料，绝不伪造 workspace 引用。
 """
 
 from __future__ import annotations
@@ -225,7 +224,7 @@ def test_respond_agent_produces_rebuttal(client, db_session: Session):
 
 
 def test_analyze_standalone_without_plan(client, db_session: Session):
-    """P1: analyze executes in the system independent workspace without a plan."""
+    """P1：analyze 在没有 plan 时于系统 independent workspace 中执行。"""
     workspace, conversation = _independent_conversation(client)
     started = _start(
         client,

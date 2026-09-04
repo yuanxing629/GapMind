@@ -1,4 +1,4 @@
-"""HTTP endpoints for invitation-based authentication."""
+"""基于邀请认证的 HTTP 端点。"""
 
 from __future__ import annotations
 
@@ -75,7 +75,7 @@ def _auth_user(db: Session, user_id: str) -> AuthUserRead:
     service = AuthService(db)
     user = service.get_user(user_id)
     if user is None:
-        # The development-only X-User-ID/Bearer compatibility path has no row.
+# 仅用于开发的 X-User-ID/Bearer 兼容路径没有对应数据库行。
         return AuthUserRead(
             id=user_id,
             display_name="本地开发用户",
@@ -203,8 +203,8 @@ def forgot_password(
         token = AuthService(db).create_password_reset(payload.email)
     except AuthServiceError as exc:
         _raise_auth_error(exc)
-    # Production sends this token through the configured email provider in the
-    # deployment layer. Local development exposes it so the flow is testable.
+# 生产环境会在部署层通过已配置的 email provider 发送此 token。
+# 本地开发环境将其暴露出来，以便测试整个流程。
     return ForgotPasswordResponse(
         message="如果该邮箱存在，我们会发送密码重置链接",
         debug_token=token if settings.is_dev else None,

@@ -1,4 +1,4 @@
-"""Tests for the no-threshold Chat calibration diagnostic."""
+"""无阈值 Chat 校准诊断测试。"""
 
 from __future__ import annotations
 

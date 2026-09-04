@@ -1,7 +1,7 @@
-"""Milvus client wrapper for paper chunk vectors.
+"""论文分块向量的 Milvus 客户端包装器。
 
-Manages the `gapmind_paper_chunks` collection: creation, insertion,
-search, and cleanup. All operations are workspace-scoped.
+管理 `gapmind_paper_chunks` collection，包括创建、写入、搜索和清理。所有操作都限定在
+workspace 范围内。
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ logger = get_logger(__name__)
 COLLECTION_NAME = f"{settings.milvus_collection_prefix}paper_chunks"
 EMBEDDING_DIM = settings.embedding_dimension  # 1024 for BGE-M3
 
-# HNSW index params (good recall/speed tradeoff for <1M vectors)
+# HNSW 索引参数（适用于少于 1M 向量时的召回率/速度折中）
 HNSW_M = 16
 HNSW_EF_CONSTRUCTION = 256
 HNSW_EF_SEARCH = 128
@@ -32,7 +32,7 @@ _client: MilvusClient | None = None
 
 
 def get_milvus_client() -> MilvusClient:
-    """Singleton Milvus connection."""
+    """Milvus 连接单例。"""
     global _client
     if _client is None:
         uri = f"http://{settings.milvus_host}:{settings.milvus_port}"
@@ -42,7 +42,7 @@ def get_milvus_client() -> MilvusClient:
 
 
 def ensure_collection() -> None:
-    """Create the paper_chunks collection + indexes if not exists, then load."""
+    """如果不存在则创建 paper_chunks collection 和索引，然后加载。"""
     client = get_milvus_client()
 
     if client.has_collection(COLLECTION_NAME):
@@ -107,7 +107,7 @@ def ensure_collection() -> None:
         schema=schema,
     )
 
-    # Build all indexes via IndexParams (pymilvus >= 2.4 API)
+# 通过 IndexParams 构建全部索引（pymilvus >= 2.4 API）
     index_params = client.prepare_index_params()
     index_params.add_index(
         field_name="embedding",
@@ -133,7 +133,7 @@ def ensure_collection() -> None:
 
 
 def insert_chunks(records: list[dict[str, Any]]) -> int:
-    """Insert chunk records into Milvus. Returns count inserted."""
+    """将分块记录写入 Milvus，返回写入数量。"""
     if not records:
         return 0
     client = get_milvus_client()
@@ -153,21 +153,19 @@ def search(
     exclude_paper_ids: set[str] | None = None,
     section: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Vector similarity search within a workspace.
+    """在 workspace 内执行向量相似度搜索。
 
-    ``exclude_paper_ids`` is pushed down into the Milvus ``filter``
-    expression (``paper_id not in [...]``) so excluded papers never enter
-    the recall pool at all — not merely filtered after ranking. This is a
-    correctness requirement for counter-evidence: a claim's source paper
-    must be excluded *at recall time*, or its own chunks would crowd out
-    genuinely countering evidence.
+    ``exclude_paper_ids`` 会下推到 Milvus 的 ``filter`` 表达式
+    （``paper_id not in [...]``），因此被排除的论文不会进入召回池，而不是只在排序后
+    过滤。这是 counter-evidence 的正确性要求：claim 的来源论文必须在*召回时*排除，
+    否则其自身 chunk 可能挤掉真正的反证。
 
-    Returns list of dicts with fields + score, sorted by relevance desc.
+    返回包含字段和 score 的 dict 列表，并按相关性降序排列。
     """
     client = get_milvus_client()
     ensure_collection()
 
-    # Build filter expression
+# 构建过滤表达式
     filters = [f'workspace_id == "{workspace_id}"']
     if paper_id:
         filters.append(f'paper_id == "{paper_id}"')
@@ -206,7 +204,7 @@ def search(
 
 
 def count_by_workspace(workspace_id: str) -> int:
-    """Count indexed chunks for a workspace."""
+    """统计 workspace 中已索引的分块数量。"""
     client = get_milvus_client()
     ensure_collection()
     result = client.query(
@@ -224,7 +222,7 @@ def get_existing_chunk_ids(
     *,
     workspace_id: str | None = None,
 ) -> set[str]:
-    """Get indexed chunk IDs for one paper, optionally workspace-scoped."""
+    """获取一篇论文的已索引分块 ID，可选按 workspace 限定。"""
     client = get_milvus_client()
     ensure_collection()
     filters = [f'paper_id == "{paper_id}"']
@@ -240,7 +238,7 @@ def get_existing_chunk_ids(
 
 
 def delete_by_paper(paper_id: str, *, workspace_id: str | None = None) -> None:
-    """Remove vectors for one paper, optionally constrained to its workspace."""
+    """移除一篇论文的向量，可选按 workspace 限定。"""
     client = get_milvus_client()
     ensure_collection()
     filters = [f'paper_id == "{paper_id}"']
@@ -254,7 +252,7 @@ def delete_by_paper(paper_id: str, *, workspace_id: str | None = None) -> None:
 
 
 def ping() -> bool:
-    """Check Milvus connectivity."""
+    """检查 Milvus 连通性。"""
     try:
         client = get_milvus_client()
         client.list_collections()

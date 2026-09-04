@@ -1,16 +1,16 @@
-"""Workspace HTTP API router.
+"""Workspace HTTP API 路由。
 
-Endpoints:
-  POST   /api/v1/workspaces                       create
-  GET    /api/v1/workspaces                       list (paginated, archived excluded by default)
-  GET    /api/v1/workspaces/{id}                  get one
-  PATCH  /api/v1/workspaces/{id}                  update
-  POST   /api/v1/workspaces/{id}/archive          archive
-  POST   /api/v1/workspaces/{id}/unarchive        unarchive
-  DELETE /api/v1/workspaces/{id}                  soft delete (returns 200 + {"deleted": true})
+接口：
+  POST   /api/v1/workspaces                       创建
+  GET    /api/v1/workspaces                       列表（分页，默认排除已归档）
+  GET    /api/v1/workspaces/{id}                  获取单个 workspace
+  PATCH  /api/v1/workspaces/{id}                  更新
+  POST   /api/v1/workspaces/{id}/archive          归档
+  POST   /api/v1/workspaces/{id}/unarchive        取消归档
+  DELETE /api/v1/workspaces/{id}                  软删除（返回 200 + {"deleted": true}）
 
-Domain exceptions raised here are translated into HTTP responses by the
-central handler registered in ``app.core.exception_handlers``.
+这里抛出的 domain exception 会由注册在 ``app.core.exception_handlers`` 中的集中处理器
+转换为 HTTP 响应。
 """
 
 from __future__ import annotations
@@ -83,7 +83,7 @@ def get_independent_workspace(
     service: WorkspaceService = Depends(_get_service),
     user_id: str = Depends(get_current_user),
 ) -> WorkspaceRead:
-    """System independent workspace for standalone W7 agents (no workspace selected)."""
+    """standalone W7 agent 使用的系统 independent workspace（未选择 workspace）。"""
     return WorkspaceRead.model_validate(service.get_or_create_independent(owner_id=user_id))
 
 
@@ -111,10 +111,10 @@ def get_workspace_readiness(
     db: Session = Depends(get_db),
     user_id: str = Depends(get_current_user),
 ) -> WorkspaceReadiness:
-    """Research readiness for one workspace (W0): five dimensions + next action.
+    """单个 workspace 的研究就绪度（W0）：五个维度和下一步操作。
 
-    Single source of truth for the overview progress bar and "why not /
-    where to go" explanations. Raises 404 if the workspace is missing.
+    概览进度条和“为什么未就绪 / 下一步去哪里”说明的单一事实来源。workspace 不存在时
+    返回 404。
     """
     workspace = workspace_service.get(workspace_id, actor_id=user_id)
     return WorkspaceReadiness.model_validate(

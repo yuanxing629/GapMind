@@ -442,9 +442,8 @@ export default function KnowledgeGraph({ workspaceId }: { workspaceId: string })
   const [filtersCollapsed, setFiltersCollapsed] = useState(false);
   const [showRelationLabels, setShowRelationLabels] = useState(false);
   const [showLowConfidence, setShowLowConfidence] = useState(false);
-  // P2: hide the redundant canonical-entity layer in the semantic views by
-  // default (many same-named items pointing at one same-named entity node).
-  // Evidence view always keeps it as part of the provenance chain.
+  // P2：语义视图默认隐藏冗余的 canonical-entity 层
+  // （多个同名项指向一个同名实体节点）。Evidence 视图始终保留它作为来源链的一部分。
   const [showEntityLayer, setShowEntityLayer] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [searchText, setSearchText] = useState("");
@@ -622,8 +621,7 @@ export default function KnowledgeGraph({ workspaceId }: { workspaceId: string })
     ];
   }, [active.expandedNodeIds, displayGraph.edges, displayGraph.nodes, highlightedIds, selectedNodeId, showRelationLabels]);
 
-  // P0.5-4: canvas chrome adapts to the theme; node/relation hues are
-  // mid-saturation and stay identical in both themes.
+  // P0.5-4：画布控件随主题适配；节点/关系色保持中等饱和度，且在两种主题中一致。
   const canvasInk = isDark ? "rgba(255, 255, 255, .92)" : "#172033";
   const canvasLabelBg = isDark ? "#141414" : "#ffffff";
   const stylesheet = useMemo(() => [

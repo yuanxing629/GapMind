@@ -1,9 +1,7 @@
-"""MinerU local HTTP integration and output normalization.
+"""MinerU 本地 HTTP 集成与输出规范化。
 
-GapMind keeps its own ``ParsedPdf`` contract so the downstream chunking,
-knowledge extraction, and evidence code do not depend on a specific parser.
-This module only handles the local MinerU API and converts its structured
-output into that contract.
+GapMind 保留自己的 ``ParsedPdf`` 契约，使下游分块、知识抽取和证据代码不依赖特定解析器。
+本模块只处理本地 MinerU API，并将其结构化输出转换为该契约。
 """
 
 from __future__ import annotations
@@ -32,20 +30,20 @@ from app.domains.artifact.pdf_parser import (
 
 
 class MinerUError(RuntimeError):
-    """Base error for a local MinerU request or response."""
+    """本地 MinerU 请求或响应的基础错误。"""
 
 
 class MinerUUnavailableError(MinerUError):
-    """MinerU could not be reached."""
+    """无法连接 MinerU。"""
 
 
 class MinerUParseError(MinerUError):
-    """MinerU returned an unusable result."""
+    """MinerU 返回了不可用结果。"""
 
 
 @dataclass(frozen=True)
 class MinerUImage:
-    """One image resource returned by MinerU's ZIP response."""
+    """MinerU ZIP 响应返回的一项图片资源。"""
 
     relative_path: str
     content: bytes
@@ -54,7 +52,7 @@ class MinerUImage:
 
 @dataclass(frozen=True)
 class MinerUParseResult:
-    """Normalized MinerU result plus parser metadata for task observability."""
+    """规范化的 MinerU 结果及用于任务观测的解析器元数据。"""
 
     parsed: ParsedPdf
     backend: str | None = None
@@ -69,11 +67,10 @@ def parse_with_mineru(
     timeout_seconds: float = 1800.0,
     client_factory: Callable[..., Any] = httpx.Client,
 ) -> MinerUParseResult:
-    """Parse one PDF through a local ``mineru-api`` service.
+    """通过本地 ``mineru-api`` service 解析一份 PDF。
 
-    The API call is synchronous because this function already runs inside
-    GapMind's background parse task. ``client_factory`` is intentionally
-    injectable so tests can use ``httpx.MockTransport`` without a live service.
+    API 调用是同步的，因为该函数本来就在 GapMind 后台解析任务中运行。
+    ``client_factory`` 刻意设计为可注入，使测试可以使用 ``httpx.MockTransport``，无需运行中的服务。
     """
     if not content:
         raise MinerUParseError("PDF content is empty")
@@ -136,7 +133,7 @@ def normalize_mineru_output(
     *,
     include_images: bool = True,
 ) -> MinerUParseResult:
-    """Public alias used by tests and offline output validation scripts."""
+    """供测试和离线输出校验脚本使用的公开别名。"""
     return _normalize_output_files(files, include_images=include_images)
 
 
@@ -144,13 +141,11 @@ def _prefer_pymupdf_text(
     content: bytes,
     mineru_result: MinerUParseResult,
 ) -> MinerUParseResult:
-    """Use PyMuPDF text when it covers a digital PDF reliably.
+    """当 PyMuPDF 能可靠覆盖数字 PDF 时，使用其文本。
 
-    MinerU remains the source for layout-aware Markdown, equations, tables,
-    and sections. Its current pipeline can nevertheless drop characters from
-    ordinary PDF text (notably ``f`` in some embedded fonts). PyMuPDF gives us
-    a clean text backstop for chunking and retrieval while preserving the
-    structured MinerU Markdown for downstream extraction.
+    MinerU 仍然是感知布局的 Markdown、公式、表格和章节的来源。但其当前流水线可能从普通 PDF 文本中
+    丢失字符（尤其是某些嵌入字体中的 ``f``）。PyMuPDF 为分块和检索提供干净的文本兜底，
+    同时保留下游抽取所需的结构化 MinerU Markdown。
     """
     try:
         pymupdf_result = parse_pdf(content)
@@ -199,7 +194,7 @@ def _has_sufficient_pymupdf_text(
     if coverage < 0.8:
         return False
 
-    # Avoid replacing a substantial OCR result with a tiny hidden text layer.
+# 避免用很小的隐藏文本层替换内容完整的 OCR 结果。
     return len(pymupdf.full_text) >= max(20, int(len(mineru.full_text) * 0.3))
 
 
@@ -207,7 +202,7 @@ def _rebase_sections(
     sections: list[SectionMarker],
     parsed: ParsedPdf,
 ) -> list[SectionMarker]:
-    """Map MinerU section markers onto the PyMuPDF text offsets."""
+    """将 MinerU 章节标记映射到 PyMuPDF 文本偏移。"""
     if not sections:
         return []
 
@@ -258,7 +253,7 @@ def _heading_prefix(value: str) -> str | None:
 
 
 def _repair_missing_f_words(markdown: str, reference_text: str) -> str:
-    """Repair unique words missing one ``f`` using PyMuPDF as the oracle."""
+    """以 PyMuPDF 为基准，修复唯一缺少一个 ``f`` 的单词。"""
     reference_words = set(re.findall(r"[A-Za-z]{4,}", reference_text.lower()))
     candidates: dict[str, set[str]] = {}
     for word in reference_words:
@@ -287,7 +282,7 @@ def _read_zip(content: bytes) -> dict[str, bytes]:
         for info in archive.infolist():
             if info.is_dir():
                 continue
-            # Do not let an output filename escape the logical result map.
+# 不允许输出文件名越过逻辑结果映射的范围。
             name = str(PurePosixPath(info.filename))
             result[name] = archive.read(info)
         if not result:
@@ -353,7 +348,7 @@ _IMAGE_MIME_TYPES = {
 
 
 def _extract_image_resources(files: Mapping[str, bytes]) -> tuple[MinerUImage, ...]:
-    """Extract safe image files while preserving MinerU's relative paths."""
+    """提取安全的图片文件，同时保留 MinerU 的相对路径。"""
     resources: list[MinerUImage] = []
     seen: set[str] = set()
     for name in sorted(files):
@@ -480,8 +475,7 @@ def _group_content_pages(raw: Any, version: str) -> list[list[dict[str, Any]]]:
     if not isinstance(raw, list):
         raise MinerUParseError("MinerU content list must be a JSON array")
 
-    # content_list_v2 is page-grouped; the legacy format is a flat list with
-    # page_idx on each block.
+# content_list_v2 按页面分组；legacy 格式是扁平列表，每个 block 带有 page_idx。
     if version == "content_list_v2" or all(isinstance(item, list) for item in raw):
         return [
             [item for item in page if isinstance(item, dict)]
@@ -522,13 +516,11 @@ _MINERU_LAYOUT_TAG_RE = re.compile(
 
 
 def _strip_mineru_layout_tags(value: str) -> str:
-    """Remove baseline tags MinerU emits around ordinary text spans.
+    """移除 MinerU 在普通文本范围周围生成的 baseline 标签。
 
-    MinerU's pipeline output may use HTML ``sub``/``sup`` tags for font
-    baseline runs, including ordinary letters in body text. Formulas are
-    represented separately as LaTeX blocks, so keeping these tags would make
-    normal prose render as subscript/superscript and pollute retrieval text.
-    The tag contents remain unchanged.
+    MinerU 流水线输出可能使用 HTML ``sub``/``sup`` 标签表示字体基线运行，其中包括正文普通字母。
+    公式会单独表示为 LaTeX 块，因此保留这些标签会使普通 prose 渲染为下标/上标，并污染检索文本。
+    标签内容保持不变。
     """
     return _MINERU_LAYOUT_TAG_RE.sub("", value)
 
@@ -538,7 +530,7 @@ def _block_text(block: Mapping[str, Any]) -> str:
     if block_type in _IGNORED_TYPES:
         return ""
 
-    # Legacy content_list.json fields.
+# legacy content_list.json 字段。
     legacy_keys = (
         "text",
         "code_body",
@@ -554,7 +546,7 @@ def _block_text(block: Mapping[str, Any]) -> str:
     if values:
         return _clean_text("\n".join(_value_text(value) for value in values))
 
-    # content_list_v2 uses a structured content object.
+# content_list_v2 使用结构化 content 对象。
     if "content" in block:
         return _clean_text(_value_text(block["content"]))
     return ""
@@ -574,9 +566,8 @@ def _value_text(value: Any) -> str:
     if isinstance(value, dict):
         if value.get("type") in {"image", "chart"} and "content" not in value:
             return ""
-        # MinerU hyperlink spans expose both concatenated ``content`` and
-        # style-preserving ``children``. The former is authoritative here;
-        # reading both would duplicate text in parsed_text.
+# MinerU hyperlink span 同时暴露拼接后的 ``content`` 和保留样式的 ``children``。
+# 这里以前者为准；同时读取二者会在 parsed_text 中产生重复文本。
         if "content" in value:
             return _value_text(value["content"])
         preferred = [
@@ -619,8 +610,7 @@ def _section_for_heading(heading: str, level: int | None) -> tuple[str, str | No
     if canonical:
         return canonical, first_line if normalized != canonical else None
 
-    # Preserve meaningful MinerU titles even when they are outside our known
-    # vocabulary; the chunker can still use them as section boundaries.
+# 即使 MinerU 标题不在已知词汇中，也保留有意义的标题；chunker 仍可将其用作章节边界。
     stripped = re.sub(r"^\d+(?:\.\d+)*\.?\s*", "", first_line).strip()
     if not stripped:
         stripped = first_line

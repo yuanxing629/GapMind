@@ -1,13 +1,11 @@
-"""Opportunity workflow: listing, decisions (confirm/reject/defer/edit), and plan conversion.
+"""Opportunity 工作流：列表、决策（confirm/reject/defer/edit）和 plan 转换。
 
-This is one of the three sub-aggregates extracted from the original
-``service.py``. The other two (``external_sourcing`` and the inline
-orchestrator) still live next to it because their internal call structure
-is too dense to split without growing the diff beyond useful.
+这是从原始 ``service.py`` 中拆出的三个子聚合之一。另两个子聚合
+（``external_sourcing`` 和内联 orchestrator）仍与其放在一起，因为它们的内部调用结构过于密集，
+继续拆分会让 diff 膨胀到难以维护。
 
-Each method here used to live as a method on ``DiscoverService``; the
-``_WorkflowHelper`` mixin pattern keeps the call sites in ``service.py``
-working without rewiring every ``self.X`` access.
+这里的每个方法过去都是 ``DiscoverService`` 的方法；``_WorkflowHelper`` mixin 模式无需重连每个
+``self.X`` 访问，就能保持 ``service.py`` 中的调用点正常工作。
 """
 
 from __future__ import annotations
@@ -43,26 +41,23 @@ from app.domains.knowledge.models import EvidenceSpan
 
 
 class OpportunityWorkflow:
-    """Mixin-style helpers for the Opportunity state machine.
+    """Opportunity 状态机的 mixin 风格辅助函数。
 
-    Mixed into ``DiscoverService``. Methods call ``self.db`` and
-    ``self.timeline``; those are the only attributes they depend on from
-    the outer service.
+    该类混入 ``DiscoverService``。方法会调用 ``self.db`` 和 ``self.timeline``；这两项
+    是它们从外层 service 依赖的全部属性。
     """
 
-    # ------------------------------------------------------- read paths
+    # ------------------------------------------------------- 读取路径
     @staticmethod
     def _evidence_freshness(
         evidence: list[OpportunityEvidence],
         *,
         now: datetime | None = None,
     ) -> tuple[str, datetime | None]:
-        """Classify the age of the verification snapshot attached to evidence.
+        """对证据所附校验快照的时效进行分类。
 
-        This is an operational revalidation signal. It intentionally does not
-        claim that a paper or scientific result has become invalid. Evidence
-        rows without a recorded timestamp stay ``unknown`` rather than being
-        silently treated as current.
+        这是一个用于运行时重新校验的信号，不表示论文或科学结果已经失效。没有记录
+        时间戳的证据行保持为 ``unknown``，不会被静默当作当前有效。
         """
         if not evidence or any(row.created_at is None for row in evidence):
             return "unknown", None
@@ -134,7 +129,7 @@ class OpportunityWorkflow:
         limit: int,
         offset: int,
     ) -> tuple[list[dict[str, Any]], int]:
-        """Return durable confirmed opportunities independent of run history visibility."""
+        """返回持久化的已确认 opportunity，不受 run 历史可见性影响。"""
         base = select(ResearchOpportunity).where(
             ResearchOpportunity.workspace_id == workspace_id,
             ResearchOpportunity.is_deleted.is_(False),
@@ -272,12 +267,10 @@ class OpportunityWorkflow:
         current: OpportunityVersion | None,
         evidence: list[OpportunityEvidence],
     ) -> EvidenceManifest | None:
-        """Assemble the evidence-credibility passport for an opportunity.
+        """为一个 opportunity 组装证据可信度护照。
 
-        Aggregates counts, independent papers, full-text vs metadata, gate
-        status, versions, critic verdict and human-review state from existing
-        rows — a plain snapshot, no new tables. Returns ``None`` only when the
-        opportunity has no version yet.
+        从现有行聚合数量、独立论文、全文与元数据、门禁状态、版本、批评结论和人工审核状态，
+        形成普通快照，不创建新表。仅当 opportunity 尚无版本时返回 ``None``。
         """
         if current is None:
             return None
@@ -357,7 +350,7 @@ class OpportunityWorkflow:
             ).scalars()
         )
 
-    # ----------------------------------------------------- evidence view
+    # ----------------------------------------------------- 证据视图
     def opportunity_evidence_context(self, workspace_id: str, evidence_id: str) -> dict[str, Any]:
         evidence = self.db.get(OpportunityEvidence, evidence_id)
         if evidence is None:
@@ -422,7 +415,7 @@ class OpportunityWorkflow:
         )
         return result
 
-    # ----------------------------------------------------- decision paths
+    # ----------------------------------------------------- 决策路径
     def confirm(
         self,
         workspace_id: str,
@@ -677,7 +670,7 @@ class OpportunityWorkflow:
         )
         return plan
 
-    # ------------------------------------------------------- internal helpers
+    # ------------------------------------------------------- 内部辅助函数
     def _simple_decision(
         self,
         workspace_id: str,

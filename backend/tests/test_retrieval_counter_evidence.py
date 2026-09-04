@@ -1,12 +1,10 @@
-"""Counter Evidence role ordering + Judge constraint tests (RG-5 / D3).
+"""Counter Evidence 角色排序与 Judge 约束测试（RG-5 / D3）。
 
-Covers:
-  * ``judgement`` field is a Literal (rejects out-of-vocabulary strings)
-  * ``_diversify_and_sort_counter_items`` orders by role priority and caps
-    per-paper chunks
-  * ``find_counter_evidence`` populates ``empty_reason`` correctly for the
-    three empty states (retrieval_empty / judge_failed /
-    genuinely_no_counter_evidence)
+覆盖：
+  * ``judgement`` 字段是 Literal（拒绝词汇表之外的字符串）
+  * ``_diversify_and_sort_counter_items`` 按角色优先级排序并限制单论文分块
+  * ``find_counter_evidence`` 正确填充 ``empty_reason``，覆盖三种空状态
+   （retrieval_empty / judge_failed / genuinely_no_counter_evidence）
 """
 
 from __future__ import annotations
@@ -25,7 +23,7 @@ from app.domains.retrieval.service import (
 
 
 # ==================================================================
-# Schema validation: judgement is a Literal
+# Schema validation：judgement 是 Literal
 # ==================================================================
 
 
@@ -51,7 +49,7 @@ def test_empty_reason_is_constrained_to_three_values() -> None:
 
 
 # ==================================================================
-# Pure helper: _diversify_and_sort_counter_items
+# 纯函数：_diversify_and_sort_counter_items
 # ==================================================================
 
 
@@ -104,10 +102,10 @@ def test_cap_drops_extra_chunks_from_same_paper() -> None:
     ranked = _diversify_and_sort_counter_items(items)
     by_paper = [i.paper_id for i in ranked]
     assert by_paper.count("p-A") == COUNTER_EVIDENCE_MAX_CHUNKS_PER_PAPER
-    # p-A keeps the highest-confidence chunks (sorted first), not arbitrary.
+    # p-A 保留置信度最高的分块（优先排序），而不是任意分块。
     kept_a = [i for i in ranked if i.paper_id == "p-A"]
     assert [i.chunk_id for i in kept_a] == ["c0", "c1", "c2"]
-    # p-B still survives — paper diversity preserved.
+    # p-B 仍然保留，论文多样性得到保持。
     assert any(i.paper_id == "p-B" for i in ranked)
 
 
@@ -116,14 +114,14 @@ def test_sort_empty_list_returns_empty() -> None:
 
 
 def test_role_priority_table_lists_user_facing_roles() -> None:
-    # Snapshot the user-visible ordering — don't silently reorder later.
+    # 固定面向用户的排序快照，避免之后静默改变顺序。
     assert list(COUNTER_ROLE_PRIORITY.keys()) == [
         "contradicts", "qualifies", "supports", "overlaps", "unknown",
     ]
 
 
 # ==================================================================
-# find_counter_evidence: empty_reason classification
+# find_counter_evidence：empty_reason 分类
 # ==================================================================
 
 
@@ -145,11 +143,11 @@ class _FakeMilvus:
 
 
 def _patch(monkeypatch, *, milvus_hits, judge_hits, rerank_hits=None):
-    """Patch milvus + embedding + reranker + judge to return controlled data.
+    """替换 Milvus、向量生成、重排器和判断器，返回受控数据。
 
-    rerank_hits is a list of (index, score) pairs; defaults to "preserve order".
-    judge_hits is a list of (judgement, confidence) pairs aligned by index with
-    rerank_hits (or milvus_hits if rerank disabled).
+    rerank_hits 是 ``(index, score)`` 对列表，默认“保持顺序”。
+    judge_hits 是按索引对齐的 ``(judgement, confidence)`` 对列表。
+    如果禁用重排，则按 milvus_hits 的顺序处理。
     """
     monkeypatch.setattr(service, "milvus_client", _FakeMilvus(milvus_hits))
     monkeypatch.setattr(service, "get_embedding_gateway", _FakeEmbedding)
@@ -213,24 +211,24 @@ def test_empty_reason_judge_failed_when_all_candidates_unknown(monkeypatch) -> N
     _patch(
         monkeypatch,
         milvus_hits=[_hit("c1", "p-A"), _hit("c2", "p-B")],
-        # Every judge result is the failure sentinel.
+        # 每个 Judge 结果都是失败哨兵。
         judge_hits=[("unknown", 0.0), ("unknown", 0.0)],
     )
     resp = service.find_counter_evidence(
         "ws-1", "claim", top_k=10, use_reranker=True, use_judge=True,
         exclude_paper_ids={"src"},
     )
-    # Both items survive the paper cap (2 chunks, 2 papers), then sort
-    # (both unknown/0.0 → tiebreak on score).
+    # 两个条目都通过论文上限（2 个分块、2 篇论文），然后排序
+    #（都是 unknown/0.0 → 按 score 打破平局）。
     assert resp.total == 2
     assert resp.empty_reason == "judge_failed"
     assert resp.status == "degraded"
 
 
 def test_empty_reason_genuinely_no_counter_evidence_when_only_supports_overlaps(monkeypatch) -> None:
-    """Judge ran, all chunks judged supports/overlaps (no contradicts /
-    qualifies) — the system should say "we found related work, but none
-    contradicts the claim", distinct from "we couldn't judge what we found"."""
+    """判断器已运行，所有分块都被判断为 supports/overlaps（没有 contradicts / qualifies）。
+
+    系统应说明“找到了相关工作，但没有内容反驳该主张”，而不是说“无法判断找到的内容”。"""
     _patch(
         monkeypatch,
         milvus_hits=[_hit("c1", "p-A"), _hit("c2", "p-B")],
@@ -240,15 +238,14 @@ def test_empty_reason_genuinely_no_counter_evidence_when_only_supports_overlaps(
         "ws-1", "claim", top_k=10, use_reranker=True, use_judge=True,
         exclude_paper_ids={"src"},
     )
-    # Per-paper cap (3) doesn't kick in — only 2 chunks total.
+    # 单论文上限（3）未触发，总共只有 2 个分块。
     assert resp.total == 2
     assert resp.empty_reason == "genuinely_no_counter_evidence"
     assert resp.status == "succeeded"  # judge worked fine, just no counter
 
 
 def test_non_empty_items_dont_set_empty_reason(monkeypatch) -> None:
-    """If any contradicts/qualifies survives, the response is non-empty and
-    empty_reason is null."""
+    """如果有任何 contradicts/qualifies 项保留下来，响应就不为空，且 empty_reason 为 null。"""
     _patch(
         monkeypatch,
         milvus_hits=[_hit("c1", "p-A"), _hit("c2", "p-B")],
@@ -260,17 +257,18 @@ def test_non_empty_items_dont_set_empty_reason(monkeypatch) -> None:
     )
     assert resp.total >= 1
     assert resp.empty_reason is None
-    # contradicts comes first (priority 0) regardless of input order.
+    # 无论输入顺序如何，contradicts 都排在最前（优先级 0）。
     assert resp.items[0].judgement == "contradicts"
 
 
 def test_role_priority_is_enforced_against_reranker_score(monkeypatch) -> None:
-    """Even if reranker scores one supports chunk very high, a contradicts
-    chunk must come first — the user-facing signal dominates."""
+    """即使重排器给某个 supports 分块很高的分数，contradicts 分块也必须排在前面。
+
+    面向用户的信号优先。"""
     _patch(
         monkeypatch,
         milvus_hits=[_hit("supports1", "p-Sup"), _hit("contra1", "p-Con")],
-        # p-Sup gets a much higher reranker score; p-Con low.
+        # p-Sup 的 reranker 分数高很多；p-Con 较低。
         rerank_hits=[(0, 0.99), (1, 0.10)],
         judge_hits=[("supports", 0.99), ("contradicts", 0.99)],
     )

@@ -1,8 +1,6 @@
-"""Smoke tests for Knowledge read-only API (Phase 1b).
+"""Knowledge 只读 API 冒烟测试（Phase 1b）。
 
-Knowledge content is written by the extraction pipeline in Phase 3, so
-Phase 1b only verifies that the endpoints respond with empty lists and
-that workspace scoping works.
+Knowledge 内容由 Phase 3 的抽取流水线写入，因此 Phase 1b 仅验证端点能以空列表响应，并验证工作区范围约束。
 """
 
 from __future__ import annotations

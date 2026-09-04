@@ -1,4 +1,4 @@
-"""Paper Pydantic schemas."""
+"""Paper 的 Pydantic schemas。"""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class PaperBase(BaseModel):
-    """Shared metadata fields."""
+    """共用的元数据字段。"""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -36,23 +36,22 @@ class PaperBase(BaseModel):
 
 
 class PaperCreate(PaperBase):
-    """Body for POST /api/v1/workspaces/{id}/papers (JSON metadata-only create).
+    """POST /api/v1/workspaces/{id}/papers 的请求体（JSON 仅元数据创建）。
 
-    For PDF upload, use the `/papers/upload` endpoint instead. For JSON
-    creation, `title` is required - you can't create a metadata-only paper
-    without a title. For upload, the router builds a PaperCreate internally
-    and may leave title=None so the service can fill it from PDF metadata.
+    PDF 上传请改用 `/papers/upload` endpoint。通过 JSON 创建时必须提供 `title`，不能在
+    没有标题的情况下创建仅含元数据的论文。上传时 router 会在内部构建 PaperCreate，
+    并可能保留 title=None，以便 service 从 PDF 元数据中补全标题。
     """
 
     title: str | None = Field(None, min_length=1, max_length=512)
 
 
 class PaperUpdate(PaperBase):
-    """Body for PATCH /api/v1/workspaces/{id}/papers/{paper_id}."""
+    """PATCH /api/v1/workspaces/{id}/papers/{paper_id} 的请求体。"""
 
 
 class PaperRead(BaseModel):
-    """Full paper as returned from the API."""
+    """API 返回的完整论文。"""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -67,7 +66,7 @@ class PaperRead(BaseModel):
     arxiv_id: str | None = None
     source: str = "manual"
     external_paper_id: str | None = None
-    # Phase 2: parsing state
+# Phase 2：解析状态
     parse_status: str = "not_applicable"
     parsed_at: datetime | None = None
     page_count: int = 0
@@ -86,7 +85,7 @@ class PaperRead(BaseModel):
 
 
 class PaperListResponse(BaseModel):
-    """Paginated list response."""
+    """分页列表响应。"""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -97,7 +96,7 @@ class PaperListResponse(BaseModel):
 
 
 class SemanticScholarAuthor(BaseModel):
-    """The author fields used by the search result UI."""
+    """搜索结果 UI 使用的作者字段。"""
 
     model_config = ConfigDict(extra="allow", populate_by_name=True)
 
@@ -106,7 +105,7 @@ class SemanticScholarAuthor(BaseModel):
 
 
 class SemanticScholarPaper(BaseModel):
-    """A deliberately small, forward-compatible S2 paper projection."""
+    """有意保持精简且向前兼容的 S2 论文投影。"""
 
     model_config = ConfigDict(extra="allow", populate_by_name=True)
 
@@ -136,7 +135,7 @@ class SemanticScholarPaper(BaseModel):
 
 
 class SemanticScholarSearchResponse(BaseModel):
-    """Normalized wrapper for both offset and token based S2 searches."""
+    """同时包装 offset 和 token 两种 S2 搜索结果的规范化结构。"""
 
     total: int = 0
     offset: int = 0
@@ -173,7 +172,7 @@ class SemanticScholarFavoriteRead(BaseModel):
 
 
 class SemanticScholarImportRequest(BaseModel):
-    """Import one search result into a selected Workspace as metadata."""
+    """将一条搜索结果作为元数据导入选定的 Workspace。"""
 
     semantic_scholar_paper_id: str = Field(..., min_length=1, max_length=255)
     download_open_access_pdf: bool = True

@@ -1,4 +1,4 @@
-"""Structured logging setup using structlog."""
+"""使用 structlog 的结构化日志配置。"""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from app.core.config import settings
 
 
 def configure_logging() -> None:
-    """Configure structlog + stdlib logging once at startup."""
+    """在启动时一次性配置 structlog 和标准库 logging。"""
     level = getattr(logging, settings.app_log_level.upper(), logging.INFO)
 
     logging.basicConfig(
@@ -35,5 +35,5 @@ def configure_logging() -> None:
 
 
 def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:
-    """Return a bound structlog logger."""
+    """返回绑定上下文的 structlog logger。"""
     return structlog.get_logger(name)

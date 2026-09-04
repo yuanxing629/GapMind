@@ -1,4 +1,4 @@
-"""HTTP API for the paper reading library."""
+"""论文阅读库的 HTTP API。"""
 
 from __future__ import annotations
 

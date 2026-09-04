@@ -1,7 +1,7 @@
-"""Diagnose counter-evidence loss: where do gold papers get dropped?
+"""诊断反证丢失：Gold 论文在哪一步被丢弃？
 
-Pipeline: recall(top_k*3) -> rerank(top_k chunks) -> judge -> diversify.
-Shows per-stage survival for each gold paper.
+流水线：recall(top_k*3) -> rerank(top_k chunks) -> judge -> diversify。
+展示每篇 Gold 论文在各阶段的存活情况。
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ def main(claim_text: str, source_id: str, gold_ids: list[str]) -> None:
             gp = db.get(Paper, g)
             raw = [h for h in hits if h.get("paper_id") == g]
             raw_sorted = sorted(raw, key=lambda h: h.get("score", 0), reverse=True)
-            # overall raw rank of the paper's best chunk among all recall hits
+# 该论文最佳分块在所有召回命中中的原始总体排名
             all_sorted = sorted(hits, key=lambda h: h.get("score", 0), reverse=True)
             best_rank = next((i for i, h in enumerate(all_sorted) if h.get("paper_id") == g), None)
             print(f"\n== GOLD {gp.title[:55]}")
@@ -42,7 +42,7 @@ def main(claim_text: str, source_id: str, gold_ids: list[str]) -> None:
             for h in raw_sorted[:2]:
                 print(f"     preview: {h.get('text','')[:110]!r}")
 
-        # Stage 2: rerank top10 chunks
+# Stage 2：重排 Top-10 分块
         reranked = _rerank_hits(claim_text, hits, 10)
         print(f"\nrerank top10 chunks: {len(reranked)}")
         for i in reranked:
@@ -51,14 +51,14 @@ def main(claim_text: str, source_id: str, gold_ids: list[str]) -> None:
             in_top10 = any(getattr(i, "paper_id", None) == g for i in reranked)
             print(f"   GOLD {db.get(Paper, g).title[:30]} -> {'in rerank top10' if in_top10 else 'LOST at rerank'}")
 
-        # Stage 3: judge the reranked items
+# Stage 3：判断重排后的项
         judged = _judge_items(claim_text, reranked)
         print(f"\njudge on {len(judged)} items:")
         for i in judged:
             tag = " *" if getattr(i, "paper_id", None) in gold_ids else ""
             print(f"   {db.get(Paper, i.paper_id).title[:34]:34} judgement={i.judgement} conf={i.judgement_confidence:.2f}{tag}")
 
-        # Proposal: rerank ALL recall candidates -> per-paper max -> top10 papers
+# 方案：重排所有召回候选 -> 按论文取最高分 -> Top-10 论文
         all_ranked = _rerank_hits(claim_text, hits, len(hits))
         by_pid = {}
         for i in all_ranked:

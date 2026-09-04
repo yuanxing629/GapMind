@@ -1,4 +1,4 @@
-"""Schema 3.0 contracts and API payloads for gap discovery."""
+"""Gap discovery 的 Schema 3.0 契约与 API 载荷。"""
 
 from __future__ import annotations
 

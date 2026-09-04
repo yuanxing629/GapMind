@@ -1,4 +1,4 @@
-"""Unit tests for the Retrieval Gate metric functions (pure, no I/O)."""
+"""Retrieval Gate 指标函数的单元测试（纯函数，无 I/O）。"""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-# repo root so `evaluation.retrieval.metrics` is importable from backend/tests/
+# 仓库根目录，使 `evaluation.retrieval.metrics` 可从 backend/tests/ 导入
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
@@ -22,7 +22,7 @@ from evaluation.retrieval.metrics import (  # noqa: E402
 )
 
 
-# --------------------------------------------------------------- recall@k
+# --------------------------------------------------------------- recall@k：召回率
 def test_recall_at_k_all_hit() -> None:
     assert recall_at_k({"a", "b"}, ["a", "b", "c", "d"], k=10) == 1.0
 
@@ -32,7 +32,7 @@ def test_recall_at_k_partial() -> None:
 
 
 def test_recall_at_k_respects_k() -> None:
-    # Both gold items present but the second is beyond k=1.
+# 两个 gold 条目都存在，但第二个超出 k=1。
     assert recall_at_k({"a", "b"}, ["a", "b"], k=1) == 0.5
 
 
@@ -44,7 +44,7 @@ def test_recall_at_k_no_hits() -> None:
     assert recall_at_k({"z"}, ["a", "b"], k=10) == 0.0
 
 
-# ------------------------------------------------------------------ mrr@k
+# ------------------------------------------------------------------ mrr@k：平均倒数排名
 def test_mrr_first_rank_is_one() -> None:
     assert mrr_at_k({"b"}, ["b", "a"], k=10) == 1.0
 
@@ -58,11 +58,11 @@ def test_mrr_zero_when_absent() -> None:
 
 
 def test_mrr_beyond_k_counts_zero() -> None:
-    # Gold is at rank 3 but we only look at top-2.
+# Gold 位于第 3 位，但只查看前 2 位。
     assert mrr_at_k({"c"}, ["a", "b", "c"], k=2) == 0.0
 
 
-# ------------------------------------------------------------- diversity
+# ------------------------------------------------------------- 多样性
 def test_diversity_full_when_all_distinct() -> None:
     assert paper_diversity(["a", "b", "c", "d"], k=10) == 1.0
 
@@ -72,7 +72,7 @@ def test_diversity_single_paper_dominates() -> None:
 
 
 def test_diversity_limited_by_k() -> None:
-    # Two distinct in first 2 slots out of 5 returned.
+# 返回的前 2 个槽位中有两个不同对象。
     assert paper_diversity(["a", "b", "a", "a", "a"], k=2) == 1.0
 
 
@@ -80,7 +80,7 @@ def test_diversity_empty() -> None:
     assert paper_diversity([], k=10) == 0.0
 
 
-# -------------------------------------------------------------- leakage
+# -------------------------------------------------------------- 泄漏
 def test_leakage_zero_when_all_match() -> None:
     assert workspace_leakage(["ws1", "ws1"], "ws1") == 0.0
 
@@ -93,7 +93,7 @@ def test_leakage_empty_list() -> None:
     assert workspace_leakage([], "ws1") == 0.0
 
 
-# ------------------------------------------------------------- gate_report
+# ------------------------------------------------------------- gate_report：门禁报告
 def test_gate_report_passes_when_recall_above_threshold() -> None:
     report = gate_report(recall=0.82, threshold=0.80, leakage=0.0)
     assert report["recall_passed"] is True

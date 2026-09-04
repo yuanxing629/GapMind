@@ -1,7 +1,7 @@
-# GapMind stable runtime defaults.
+# GapMind 稳定运行时默认值。
 #
-# Keep secrets and deployment-specific endpoints in .env or .env.local.
-# Environment variables take precedence over the values in this file.
+# 将密钥和部署相关端点保存在 .env 或 .env.local 中。
+# 环境变量优先于此文件中的值。
 
 app:
   env: development
@@ -18,7 +18,7 @@ parser:
   fallback_enabled: true
   mineru_api_url: http://127.0.0.1:8002
   mineru_timeout_seconds: 1800
-  # The original PDF is the reading source; do not persist derived images by default.
+  # 原始 PDF 是阅读来源；默认不持久化派生图片。
   return_images: false
 
 auth:
@@ -85,8 +85,7 @@ gap:
   extraction_context_mode: knowledge_context_v1
   allow_legacy_markdown_fallback: true
   context_max_chars: 24000
-  # Keep false during backfill; production can switch this to true after all
-  # existing papers have a successful knowledge extraction run.
+  # 回填期间保持 false；所有已有论文成功完成知识抽取后，生产环境才可切换为 true。
   require_knowledge: false
 
 chat:

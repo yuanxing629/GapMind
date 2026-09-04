@@ -1,4 +1,4 @@
-"""Tests for the local MinerU adapter and its ParsedPdf normalization."""
+"""本地 MinerU 适配器及其 ParsedPdf 规范化测试。"""
 
 from __future__ import annotations
 

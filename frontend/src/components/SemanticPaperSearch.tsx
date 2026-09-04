@@ -152,7 +152,7 @@ export default function SemanticPaperSearch({
         setFavoritePapers(favorites.map((favorite) => favorite.paper));
       })
       .catch(() => {
-        // Search remains usable when history/favorites are unavailable.
+// history/favorites 不可用时，搜索仍保持可用。
       });
   }, []);
 
@@ -235,7 +235,7 @@ export default function SemanticPaperSearch({
       setSearchStateDirty(false);
       if (!append) {
         void semanticScholarApi.listHistory().then(setSearchHistory).catch(() => {
-          // Search results remain usable when history refresh is unavailable.
+// history 刷新不可用时，搜索结果仍保持可用。
         });
       }
     } catch (err) {

@@ -1,4 +1,4 @@
-"""Persist the bounded Chat citation quality audit."""
+"""持久化有界 Chat 引用质量审计。"""
 
 from __future__ import annotations
 

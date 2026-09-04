@@ -1,4 +1,4 @@
-"""Shared rate limiting and caching for Semantic Scholar requests."""
+"""Semantic Scholar 请求的共享限流和缓存。"""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ def get_redis_client() -> redis.Redis:
 
 
 def wait_for_request_slot() -> None:
-    """Coordinate one Semantic Scholar request per configured interval."""
+    """按配置的时间间隔协调 Semantic Scholar 请求。"""
     global _local_next_slot
     interval = max(0.1, settings.semantic_scholar_rate_interval)
     client = get_redis_client()

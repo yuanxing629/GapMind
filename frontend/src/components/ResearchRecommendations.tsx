@@ -154,7 +154,7 @@ export default function ResearchRecommendations({
     try {
       await recommendationsApi.feedback(workspaceId, item.external_paper_id, "open");
     } catch {
-      // Opening the external page should remain available if feedback fails.
+// 即使 feedback 失败，也应保持打开外部页面的能力。
     }
     if (item.paper.url) window.open(item.paper.url, "_blank", "noopener,noreferrer");
   };

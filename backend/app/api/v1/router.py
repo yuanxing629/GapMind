@@ -1,6 +1,6 @@
-"""API v1 router aggregator.
+"""API v1 路由聚合器。
 
-Domain routers will be included here as they are implemented.
+领域路由会在实现后统一接入。
 """
 
 from __future__ import annotations

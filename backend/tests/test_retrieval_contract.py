@@ -1,15 +1,13 @@
-"""Retrieval exclusion contract tests (RG-2 / D1).
+"""Retrieval 排除契约测试（RG-2 / D1）。
 
-These verify that:
-  1. ``milvus_client.search`` pushes ``exclude_paper_ids`` into the filter
-     expression (not a post-filter), so excluded papers never enter recall.
-  2. The three retrieval service functions forward exclusion sets and
-     surface them on ``filters_applied`` for audit.
-  3. ``find_similar_work`` ALWAYS excludes its own source paper.
-  4. Workspace isolation is part of the Milvus filter expression.
+验证：
+  1. ``milvus_client.search`` 将 ``exclude_paper_ids`` 下推到 filter 表达式（而不是事后
+     过滤），因此被排除论文不会进入召回。
+  2. 三个 retrieval service 函数转发排除集合，并在 ``filters_applied`` 中暴露以供审计。
+  3. ``find_similar_work`` 始终排除自己的来源论文。
+  4. workspace 隔离属于 Milvus filter 表达式的一部分。
 
-All Milvus/embedding interactions are mocked — these test the contract
-wiring, not vector search itself.
+所有 Milvus/embedding 交互都使用 mock；这些测试验证 contract wiring，而不是向量搜索本身。
 """
 
 from __future__ import annotations
@@ -26,12 +24,12 @@ from app.domains.workspace.models import Workspace
 
 
 # ==================================================================
-# milvus_client.search filter push-down
+# milvus_client.search 的过滤器下推
 # ==================================================================
 
 
 class _RecordingMilvus:
-    """Stand-in for pymilvus MilvusClient that records filter expressions."""
+    """记录过滤表达式的 pymilvus MilvusClient 替身。"""
 
     def __init__(self) -> None:
         self.calls: list[dict[str, Any]] = []
@@ -58,7 +56,7 @@ def test_search_excludes_papers_in_filter(monkeypatch) -> None:
     milvus_client.search([0.1] * 4, "ws-1", top_k=10, exclude_paper_ids={"p-2", "p-1"})
     expr = fake.calls[0]["filter"]
     assert 'workspace_id == "ws-1"' in expr
-    # Sorted → deterministic filter string.
+# 排序后得到确定性过滤字符串。
     assert 'paper_id not in ["p-1", "p-2"]' in expr
 
 
@@ -94,7 +92,7 @@ def test_search_empty_exclude_omits_clause(monkeypatch) -> None:
 
 
 # ==================================================================
-# service-level exclusion forwarding
+# service 级排除条件转发
 # ==================================================================
 
 
@@ -109,7 +107,7 @@ class _FakeEmbedding:
 
 
 class _FakeMilvus:
-    """Replaces ``service.milvus_client``; records the search arguments."""
+    """替换 ``service.milvus_client``，并记录搜索参数。"""
 
     def __init__(self, hits: list[dict[str, Any]]) -> None:
         self.hits = hits
@@ -154,9 +152,9 @@ def test_counter_evidence_forwards_exclude_to_milvus(monkeypatch) -> None:
 
 
 def test_counter_evidence_never_returns_excluded_paper(monkeypatch) -> None:
-    """Even if a buggy Milvus returns excluded chunks, the service still
-    (defensively) drops them before returning — belt-and-suspenders on top
-    of the filter push-down."""
+    """即使有缺陷的 Milvus 返回了被排除的分块，服务也必须在返回前防御性地丢弃它们。
+
+    这是过滤下推之外的额外保护。"""
     hits = [
         {"chunk_id": "c1", "workspace_id": "ws-1", "paper_id": "p-source",
          "section": "M", "text": "t", "score": 0.9, "source_artifact_id": "a1", "chunk_index": 1},
@@ -179,8 +177,7 @@ def test_counter_evidence_never_returns_excluded_paper(monkeypatch) -> None:
 def test_similar_work_always_excludes_source_paper(
     db_session, monkeypatch, tmp_path
 ) -> None:
-    """find_similar_work must put the source paper in the exclusion set
-    even when the caller passes no exclusions."""
+    """即使调用方未传入排除项，find_similar_work 也必须将源论文加入排除集合。"""
     fake = _patch_service_deps(
         monkeypatch,
         hits=[{"chunk_id": "c1", "workspace_id": "ws-1", "paper_id": "p-src",
@@ -244,7 +241,6 @@ def test_semantic_search_forwards_exclude(monkeypatch) -> None:
     resp = service.semantic_search("ws-1", "query", top_k=5, exclude_paper_ids={"p-x"})
     assert fake.calls[0]["exclude_paper_ids"] == {"p-x"}
     assert resp.filters_applied["excluded_paper_ids"] == ["p-x"]
-    # Empty result is "succeeded" (no hits), NOT "failed" — absence of a
-    # counter-example must not be reported as a system failure.
+# 空结果属于“succeeded”（没有命中），而不是“failed”——没有反例不能报告为系统失败。
     assert resp.status == "succeeded"
     assert resp.items == []

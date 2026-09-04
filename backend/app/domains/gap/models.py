@@ -1,4 +1,4 @@
-"""Persistence models for specialized gap extraction and board snapshots."""
+"""专用 gap 抽取和棋盘快照的持久化模型。"""
 
 from __future__ import annotations
 

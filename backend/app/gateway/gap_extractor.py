@@ -1,4 +1,4 @@
-"""Ollama adapter dedicated to the fine-tuned Schema 3.0 extractor."""
+"""面向微调 Schema 3.0 extractor 的 Ollama adapter。"""
 
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ class GapExtractionResult:
 
 
 class GapExtractor(Protocol):
-    """Provider-neutral contract for the local extractor and its backup."""
+    """本地 extractor 及其备用实现的 provider-neutral 契约。"""
 
     @property
     def provider(self) -> str: ...
@@ -54,7 +54,7 @@ class GapExtractor(Protocol):
 
 
 class GapExtractorUnavailableError(RuntimeError):
-    """A safe, actionable failure when the tunneled Ollama service is unavailable."""
+    """隧道中的 Ollama service 不可用时的安全且可操作失败。"""
 
 
 class OllamaGapExtractor:
@@ -175,12 +175,11 @@ class OllamaGapExtractor:
 
 
 class RemoteGapExtractor:
-    """Explicitly enabled OpenAI-compatible structured-output backup.
+    """显式启用的 OpenAI-compatible structured-output 备用实现。
 
-    The worker is responsible for checking the server-side feature flag and
-    complete remote configuration before constructing this adapter. The adapter
-    itself uses the shared LLM gateway so structured calls always pass
-    ``disable_thinking=True`` and never use ``reasoning_effort``.
+    worker 负责在构造该 adapter 前检查服务端 feature flag 和完整的远程配置。adapter
+    本身使用共享 LLM gateway，因此结构化调用始终传递 ``disable_thinking=True``，且
+    从不使用 ``reasoning_effort``。
     """
 
     def __init__(
@@ -212,8 +211,8 @@ class RemoteGapExtractor:
     @property
     def model_parameters(self) -> dict[str, Any]:
         return {
-            # The remote extractor uses Chat Completions JSON mode. Schema 3.0
-            # is still enforced locally by validate_annotation below.
+# remote extractor 使用 Chat Completions JSON mode。Schema 3.0 仍由下面的
+# validate_annotation 在本地强制校验。
             "response_format": "json_object",
             "temperature": 0.0,
             "max_tokens": settings.gap_extractor_remote_max_tokens,

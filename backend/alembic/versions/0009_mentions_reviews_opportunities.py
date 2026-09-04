@@ -1,7 +1,7 @@
-"""Add paper mentions, human review metadata, and research opportunities.
+"""增加论文提及、人工审核元数据和研究机会。
 
-Revision ID: 0009_mentions_reviews_opportunities
-Revises: 0008_search_history_favorites
+Revision ID：0009_mentions_reviews_opportunities
+Revises：0008_search_history_favorites
 """
 
 from __future__ import annotations
@@ -20,8 +20,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Alembic creates version_num as VARCHAR(32) by default, but this
-    # revision identifier is longer than 32 characters.
+# Alembic 默认将 version_num 创建为 VARCHAR(32)，但此迁移标识超过 32 个字符。
     op.execute(
         "ALTER TABLE alembic_version "
         "ALTER COLUMN version_num TYPE VARCHAR(64)"

@@ -1,4 +1,4 @@
-"""Add soft deletion metadata to Discover runs."""
+"""为 Discover 运行记录增加软删除元数据。"""
 
 from __future__ import annotations
 

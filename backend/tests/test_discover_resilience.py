@@ -1,12 +1,10 @@
-"""W5 resilience tests: idempotency + degradation-continue.
+"""W5 韧性测试：幂等性 + 降级后继续。
 
-Covers two real gaps: execute_run must be idempotent for terminal runs
-(W5-6, protects against duplicate spawns), and an Opportunity synthesis LLM
-failure must degrade to a rule-based fallback instead of failing the pipeline
-(W5-5). The other degradation paths (S2 429, Milvus down, PDF download fail,
-critic/role LLM down) already have coverage in test_discover_external_queries,
-test_retrieval_lifecycle, test_discover_fulltext, test_discover_agents, and
-test_discover_external_role.
+覆盖两个真实缺口：terminal run 的 execute_run 必须幂等（W5-6，防止重复派发），Opportunity
+synthesis 的 LLM 失败必须降级为基于规则的 fallback，而不是让流水线失败（W5-5）。其他
+降级路径（S2 429、Milvus 不可用、PDF 下载失败、critic/role LLM 不可用）已由
+test_discover_external_queries、test_retrieval_lifecycle、test_discover_fulltext、
+test_discover_agents 和 test_discover_external_role 覆盖。
 """
 
 from __future__ import annotations
@@ -79,7 +77,7 @@ def test_execute_run_is_idempotent_for_terminal_status(db_session):
 
     assert result["idempotent"] is True
     assert result["status"] == "succeeded"
-    # A duplicate spawn must not re-run the pipeline or touch the run row.
+# 重复 spawn 不能重新运行流水线，也不能修改 run 行。
     db_session.refresh(run)
     assert run.status == "succeeded"
 
@@ -111,14 +109,14 @@ def test_synthesis_llm_failure_degrades_to_rule_based_fallback(db_session):
         3,
     )
 
-    # Pipeline continues with a conservative rule-based candidate instead of failing.
+# 流水线继续使用保守规则候选，而不是失败。
     assert len(candidates) == 1
     assert candidates[0]["provider"] == "rule_based_fallback"
     assert candidates[0]["verification_status"] == "verification_incomplete"
 
 
 def test_external_candidate_state_skips_non_imported_rows(db_session):
-    """Verified query without imported rows must not crash state aggregation."""
+    """没有导入行的已验证 query 不能导致状态聚合崩溃。"""
     ws = _ws(db_session)
     run = _run(db_session, ws)
     from app.domains.discover.models import DiscoverExternalCandidate

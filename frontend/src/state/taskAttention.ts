@@ -1,8 +1,7 @@
 import type { Task } from "../api/types/domain";
 
 /**
- * A failed task remains in the audit trail forever, but the overview should
- * only interrupt the researcher for failures that still need timely action.
+* 失败任务永久保留在审计轨迹中，但概览只应提醒仍需及时处理的失败。
  */
 export const RECENT_FAILED_TASK_WINDOW_MS = 24 * 60 * 60 * 1000;
 
@@ -16,7 +15,7 @@ export function isTaskNeedingAttention(
   if (task.status !== "failed") return false;
 
   const updatedAt = Date.parse(task.updated_at || task.created_at);
-  // A malformed timestamp should fail safe: keep the failure visible until it
-  // can be inspected instead of silently hiding an unknown recent issue.
+// 时间戳格式错误时应安全处理：保持失败可见，直到它被检查，
+// 不要静默隐藏未知的近期问题。
   return Number.isNaN(updatedAt) || now - updatedAt <= RECENT_FAILED_TASK_WINDOW_MS;
 }

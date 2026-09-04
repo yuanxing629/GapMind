@@ -59,8 +59,8 @@ export default function DashboardPage() {
   }, [activeSummary, setCurrentWorkspace]);
 
   const loadRecommendations = useCallback((workspaces: Workspace[]) => {
-    // Render each source as it arrives. A cold workspace can wait on S2 while
-    // the Demo workspace's persisted recommendations remain immediately useful.
+// 来源到达后立即渲染。冷 workspace 可以等待 S2，同时 Demo workspace 的
+// 持久化推荐仍可立即使用。
     const sources = workspaces.filter((workspace) => workspace.name !== "__independent__");
     const requestId = ++recommendationRequestIdRef.current;
     recommendationEntriesRef.current.clear();
@@ -78,8 +78,7 @@ export default function DashboardPage() {
           );
         })
         .catch(() => {
-          // The overview card owns the actionable S2 error state. The homepage
-          // preview must remain non-blocking when a cold source is unavailable.
+// 概览卡片负责可操作的 S2 错误状态。冷来源不可用时，首页预览仍不能阻塞。
         });
     }
   }, []);
@@ -89,8 +88,7 @@ export default function DashboardPage() {
     try {
       const workspaces = (await workspaceApi.list({ limit: 8 })).items;
       const next = await Promise.all(workspaces.map(async (workspace) => {
-        // Single-source readiness gives exact counts; object-level requests
-        // stay only for the "needs attention" action list.
+// 单一来源的 readiness 提供精确计数；对象级请求只保留给“需要关注”的操作列表。
         const [readiness, tasks, runs, opportunities] = await Promise.allSettled([
           workspaceApi.readiness(workspace.id),
           taskApi.list(workspace.id, { limit: 100 }),
@@ -109,8 +107,8 @@ export default function DashboardPage() {
         } satisfies WorkspaceSummary;
       }));
       setSummaries(next);
-      // decoupled: recommendation calls can wait on the S2 upstream for
-      // uncached workspaces (~5s); the main view must not block on them
+// 两者解耦：未缓存 workspace 的推荐调用可以等待 S2 上游（约 5 秒），
+// 主视图不能因此阻塞。
       void loadRecommendations(workspaces);
     } catch {
       setSummaries([]);

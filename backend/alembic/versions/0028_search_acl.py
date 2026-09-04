@@ -1,7 +1,7 @@
-"""Scope external-paper search history and favorites to an owner.
+"""将外部论文搜索历史和收藏限定到所有者。
 
-Revision ID: 0028_search_acl
-Revises: 0027_chat_conversation_owner
+Revision ID：0028_search_acl
+Revises：0027_chat_conversation_owner
 """
 
 from __future__ import annotations
@@ -32,9 +32,8 @@ def upgrade() -> None:
     )
     op.alter_column("paper_search_histories", "owner_id", server_default=None)
 
-    # The original favorite table made semantic_scholar_paper_id globally
-    # unique. Rebuild it so the same paper can be favorited independently by
-    # different users while retaining all existing rows as the legacy user.
+    # 原收藏表使 semantic_scholar_paper_id 全局唯一。重建该表，使不同用户可以独立收藏同一论文，
+    # 同时将所有现有行保留为旧用户记录。
     op.create_table(
         "paper_search_favorites_new",
         sa.Column("id", UUIDString(), primary_key=True, nullable=False),

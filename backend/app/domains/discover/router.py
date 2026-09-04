@@ -1,15 +1,13 @@
-"""Discover Agent HTTP API.
+"""Discover Agent HTTP API 路由。
 
-Domain exceptions raised here (DiscoverInputError, DiscoverRunNotFoundError,
-OpportunityNotFoundError, OpportunityVersionConflict,
-InvalidOpportunityTransition, DiscoverGateError, WorkspaceNotFoundError)
-are translated into HTTP responses by the central handler registered in
-``app.core.exception_handlers``.
+此处抛出的领域异常（DiscoverInputError、DiscoverRunNotFoundError、
+OpportunityNotFoundError、OpportunityVersionConflict、
+InvalidOpportunityTransition、DiscoverGateError、WorkspaceNotFoundError）
+由注册在 ``app.core.exception_handlers`` 中的中央处理器转换为 HTTP 响应。
 
-Every endpoint sits under ``/workspaces/{workspace_id}/discover/...`` and
-therefore needs the workspace to exist. The check is wired in once via the
-``APIRouter(dependencies=...)`` argument so endpoints stay free of an
-inline ``workspace_service.get(workspace_id)`` line.
+每个端点都位于 ``/workspaces/{workspace_id}/discover/...`` 下，因此要求工作区存在。
+该检查通过 ``APIRouter(dependencies=...)`` 参数统一接入，端点无需重复写
+``workspace_service.get(workspace_id)``。
 """
 
 from __future__ import annotations

@@ -1,10 +1,9 @@
-"""Rebuild exact-source chunks without rerunning knowledge extraction.
+"""在不重新运行知识抽取的情况下重建精确来源分块。
 
-This repair utility is intended for papers parsed before the exact chunk
-slice fix. It creates a new immutable chunk_index artifact, updates the
-Paper pointer, and force-reindexes Milvus.
+该修复工具用于处理精确分块切片修复前解析的论文。它创建新的不可变 chunk_index Artifact，
+更新 Paper 指针，并强制重建 Milvus 索引。
 
-Run from backend/:
+从 backend/ 目录运行：
 
     python scripts/rebuild_paper_chunks.py --paper-id <uuid> --paper-id <uuid>
 """
@@ -57,7 +56,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def _parsed_from_existing_text(text: str) -> ParsedPdf:
-    """Create a chunker input without changing the existing source text."""
+    """在不改变现有 source text 的情况下创建 chunker 输入。"""
     page_ranges: list[tuple[int, int]] = []
     cursor = 0
     pages = text.split("\f")

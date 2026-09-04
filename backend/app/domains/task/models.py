@@ -1,14 +1,14 @@
-"""Task ORM models.
+"""Task ORM 模型。
 
-Task Runtime state machine:
+Task Runtime 状态机：
     queued -> running -> waiting_for_user | succeeded | failed
                                     |
                                     v
-                          (resumed by user) -> running
+                          （由用户恢复）-> running
     queued | running -> cancel_requested -> cancelled
 
-Phase 1b: only the table + state machine + CRUD. The actual Celery task
-wiring (parse_pdf, embed_chunks, extract_knowledge) lands in Phase 2-3.
+Phase 1b：仅包含表、状态机和 CRUD。实际的 Celery task wiring（parse_pdf、embed_chunks、
+extract_knowledge）在 Phase 2-3 接入。
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from app.db.base import Base, TimestampMixin, UUIDPKMixin
 
 
 class Task(Base, UUIDPKMixin, TimestampMixin):
-    """A long-running task in a workspace."""
+    """workspace 中的长时间运行任务。"""
 
     __tablename__ = "tasks"
 
@@ -30,18 +30,18 @@ class Task(Base, UUIDPKMixin, TimestampMixin):
     task_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="queued", index=True)
 
-    # Progress 0.0 - 1.0
+# 进度 0.0 - 1.0
     progress: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
 
-    # Free-form structured info: input args, current step, partial results.
+# 自由格式的结构化信息：输入参数、当前步骤、部分结果。
     payload: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    # Celery integration
+# Celery 集成
     celery_task_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
 
-    # Soft delete (admin/cleanup only - tasks normally stay forever for audit)
+# 软删除（仅管理员/清理使用，任务通常永久保留以供审计）
     is_deleted: Mapped[bool] = mapped_column(
         Boolean, default=False, nullable=False, index=True
     )

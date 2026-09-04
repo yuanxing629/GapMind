@@ -1,1 +1,1 @@
-"""General-purpose AI chat domain."""
+"""通用 AI chat domain。"""

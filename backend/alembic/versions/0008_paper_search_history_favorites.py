@@ -1,7 +1,7 @@
-"""Add external paper search history and favorites.
+"""增加外部论文搜索历史和收藏。
 
-Revision ID: 0008_search_history_favorites
-Revises: 0007_extraction_rejections
+Revision ID：0008_search_history_favorites
+Revises：0007_extraction_rejections
 """
 
 from __future__ import annotations

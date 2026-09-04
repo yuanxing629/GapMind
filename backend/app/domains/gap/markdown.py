@@ -1,4 +1,4 @@
-"""Build the model-facing paper view without experiment-heavy sections."""
+"""构建面向模型的论文视图，排除实验密集型章节。"""
 
 from __future__ import annotations
 

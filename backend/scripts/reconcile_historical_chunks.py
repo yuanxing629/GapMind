@@ -1,12 +1,11 @@
-"""Audit and optionally repair historical paper chunk indexes.
+"""审计并按需修复历史论文的 chunk index。
 
-The default mode is read-only. It checks the current Paper pointers, the
-immutable parsed_text artifact, the canonical chunk_index JSONL, and the live
-workspace-scoped Milvus chunk IDs. ``--repair`` only rebuilds papers that have
-an active parsed_text artifact; it creates a new chunk_index artifact and
-force-reindexes Milvus without rerunning knowledge extraction.
+默认模式为只读。它检查当前 Paper 指针、不可变的 parsed_text artifact、规范的
+chunk_index JSONL，以及 live workspace-scoped Milvus chunk ID。``--repair`` 只重建
+拥有有效 parsed_text artifact 的论文；该模式会创建新的 chunk_index artifact，
+并强制重建 Milvus 索引，但不会重新运行 knowledge extraction。
 
-Run from backend/:
+从 backend/ 目录运行：
 
     python scripts/reconcile_historical_chunks.py
     python scripts/reconcile_historical_chunks.py --repair --output ..\\evaluation\\graphrag\\reports\\chunk_repair.json
@@ -254,7 +253,7 @@ def audit_paper(
                 _append_issue(result, "milvus_ids_mismatch")
             result["milvus_missing_count"] = len(expected_ids - existing_ids)
             result["milvus_stale_count"] = len(existing_ids - expected_ids)
-        except Exception as exc:  # pragma: no cover - depends on live infrastructure
+        except Exception as exc:  # pragma: no cover - 依赖运行中的基础设施
             result["milvus_check"] = "unavailable"
             result["milvus_error"] = type(exc).__name__
 
@@ -339,7 +338,7 @@ def _repair_one(audit: dict[str, Any], *, skip_milvus: bool) -> dict[str, Any]:
         else:
             return repair
         repair["status"] = "succeeded"
-    except Exception as exc:  # pragma: no cover - depends on live artifacts/services
+    except Exception as exc:  # pragma: no cover - 依赖运行中的 artifact/service
         repair["status"] = "failed"
         repair["error"] = f"{type(exc).__name__}: {exc}"
     return repair

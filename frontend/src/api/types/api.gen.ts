@@ -3318,7 +3318,7 @@ export interface components {
         };
         /**
          * GraphRAGEdgeRead
-         * @description A validated graph edge; source and target must be in the path nodes.
+         * @description 经过校验的 graph 边；source 和 target 必须存在于路径节点中。
          */
         GraphRAGEdgeRead: {
             /** Id */
@@ -3346,7 +3346,7 @@ export interface components {
         };
         /**
          * GraphRAGEvidenceRead
-         * @description Evidence re-retrieved from PostgreSQL for a graph path.
+         * @description 为 graph 路径从 PostgreSQL 重新检索得到的 Evidence。
          */
         GraphRAGEvidenceRead: {
             /** Evidence Span Id */
@@ -3396,7 +3396,7 @@ export interface components {
         };
         /**
          * GraphRAGNodeRead
-         * @description A request-scoped graph node with explicit provenance identity.
+         * @description 当前请求范围内、带有明确 provenance 身份的 graph 节点。
          */
         GraphRAGNodeRead: {
             /** Id */
@@ -3433,7 +3433,7 @@ export interface components {
         };
         /**
          * GraphRAGPathRead
-         * @description A bounded, auditable path; this is not a persisted scientific fact.
+         * @description 有界且可审计的路径；它不是持久化的 scientific fact。
          */
         GraphRAGPathRead: {
             /** Path Id */
@@ -3461,7 +3461,7 @@ export interface components {
         };
         /**
          * GraphRetrievalAuditRead
-         * @description Bounded GraphRAG diagnostics; it is not answer evidence by itself.
+         * @description 有界 GraphRAG 诊断信息；其本身不是回答证据。
          */
         GraphRetrievalAuditRead: {
             /**

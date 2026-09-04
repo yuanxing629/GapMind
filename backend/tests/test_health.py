@@ -1,4 +1,4 @@
-"""Smoke test - verifies FastAPI app can be constructed and health route works."""
+"""Smoke 测试：验证 FastAPI 应用可构造且 health 路由可用。"""
 
 from __future__ import annotations
 

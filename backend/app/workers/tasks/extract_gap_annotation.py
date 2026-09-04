@@ -1,4 +1,4 @@
-"""Celery task for fine-tuned Schema 3.0 paper extraction."""
+"""微调 Schema 3.0 论文抽取的 Celery 任务。"""
 
 from __future__ import annotations
 
@@ -416,9 +416,8 @@ def _try_remote_fallback(
     remote_row.model_parameters = remote.model_parameters
     remote_row.fallback_reason = "local_model_unavailable" if local_status == "unavailable" else "local_validation_failed"
     try:
-        # JSON Output only guarantees syntactically valid JSON. The adapter
-        # re-runs the same semantic validator and feeds its errors back to
-        # the model before the result can become a board annotation.
+# JSON Output 只能保证 JSON 语法有效。adapter 会重新运行同一个语义校验器，
+# 并在结果成为棋盘标注前将错误反馈给模型。
         remote_result = remote.extract(markdown)
     except GapExtractorUnavailableError as exc:
         message = str(exc)
@@ -569,13 +568,11 @@ def _fail(
 def _has_valid_annotation(
     db: Session, paper_id: str, context: GapContextIdentity | None = None
 ) -> bool:
-    """True if the paper already has any valid annotation.
+    """判断论文是否已有有效标注。
 
-    A valid result from the local model or the configured remote fallback is
-    already usable by the board. Prompt/model versions are provenance for
-    re-extraction and auditing, not a reason for the incremental "extract all
-    parsed papers" action to rerun an entire corpus. Explicit ``force=True``
-    remains the opt-in path for re-extraction.
+    本地模型或配置的远程 fallback 产生的有效结果已经可以供棋盘使用。Prompt/model 版本
+    用于记录重新抽取和审计所需的 provenance，不是让增量“抽取已解析论文”操作重新运行
+    整个语料库的理由。显式 ``force=True`` 仍是重新抽取的选择路径。
     """
     return _get_valid_annotation(db, paper_id, context) is not None
 
@@ -614,13 +611,11 @@ def spawn_gap_extraction(
     *,
     force: bool = False,
 ) -> tuple[str | None, bool]:
-    """Create (or reuse) a gap-extraction task for a paper.
+    """为论文创建或复用 gap 抽取任务。
 
-    Returns ``(task_id, skipped)``. ``skipped=True`` means the paper already has
-    a valid annotation from any provider/version and no task was created (so
-    "抽取已解析论文" on a large corpus only actually enqueues new papers).
-    Use ``force=True`` when a prompt/model migration intentionally requires a
-    re-extraction.
+    返回 ``(task_id, skipped)``。``skipped=True`` 表示论文已经有来自任意 provider/version
+    的有效标注，且没有创建 task（因此大型语料库执行“抽取已解析论文”时只会为新论文入队）。
+    当 prompt/model 迁移确实需要重新抽取时，使用 ``force=True``。
     """
     paper = db.get(Paper, paper_id)
     if paper is None or paper.is_deleted or paper.workspace_id != workspace_id:

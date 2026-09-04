@@ -1,4 +1,4 @@
-"""Persist safe workspace retrieval diagnostics on chat messages."""
+"""在 Chat 消息上持久化安全的工作区检索诊断信息。"""
 
 from __future__ import annotations
 

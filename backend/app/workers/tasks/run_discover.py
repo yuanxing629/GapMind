@@ -1,4 +1,4 @@
-"""Celery entry point for a durable Discover Agent run."""
+"""持久化 Discover Agent run 的 Celery 入口。"""
 
 from __future__ import annotations
 
@@ -36,10 +36,9 @@ def run_discover_task(self, run_id: str) -> dict:
         return {"run_id": run_id, "status": "cancelled"}
     except Exception as exc:
         db.rollback()
-        # Do not leave a durable run in `running` when a worker exception is
-        # not one of the explicitly handled, degraded pipeline outcomes.
-        # The run remains retryable through its existing user-facing retry
-        # path, while the original exception is still re-raised for Celery.
+# 当 worker 异常不属于已明确处理的降级流水线结果时，不要让持久化 run 停留在
+# `running`。run 仍可通过现有面向用户的重试路径再次执行，同时继续向 Celery
+# 重新抛出原始异常。
         run = db.get(DiscoverRun, run_id)
         if run is not None and run.status not in {"succeeded", "cancelled", "failed"}:
             try:
@@ -56,6 +55,6 @@ def run_discover_task(self, run_id: str) -> dict:
 
 
 def spawn_discover_task(run_id: str) -> str:
-    """Dispatch a run and return the Celery task id."""
+    """派发 run 并返回 Celery 任务 id。"""
     result = run_discover_task.delay(run_id)
     return str(result.id)

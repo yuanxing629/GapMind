@@ -1,4 +1,4 @@
-"""Chat API tests use a fake gateway and never call an external LLM."""
+"""Chat API 测试使用 fake gateway，绝不调用外部 LLM。"""
 
 from __future__ import annotations
 
@@ -343,7 +343,7 @@ def test_validation_and_generating_conflict(client, db_session, fake_gateway):
     )
 
     created = client.post("/api/v1/chat/conversations", json={}).json()
-    # Insert a real generating message through the public model fixture path.
+# 通过公开 model fixture 路径插入真实的 generating 消息。
     from app.db.models import ChatMessage
 
     db_session.add(
@@ -629,13 +629,11 @@ def test_workspace_chat_graph_shadow_is_audit_only_and_keeps_dense_context(
     assert graph["candidate_path_count"] == graph["emitted_path_count"]
     assert graph["dropped_path_count"] == 0
     assert graph["dropped_path_reasons"] == {}
-    # Query-mode paths must have a source span; a related paper without
-    # question-relevant evidence is not shown as a diagnostic result.
+# Query-mode 路径必须有 source span；没有问题相关证据的相关论文不会作为诊断结果展示。
     assert paper_two["id"] not in graph["supporting_paper_ids"]
     assert all(path["evidence"] for path in graph["paths"])
     assert evidence_id in graph["supporting_evidence_ids"]
-    # Phase 1 is shadow-only: GraphRAG does not add related-paper evidence to
-    # the prompt or to the answer citations.
+# Phase 1 仅为 shadow：GraphRAG 不会将相关论文证据加入 prompt 或回答 citations。
     assert [citation["paper_id"] for citation in assistant["citations"]] == [paper_one["id"]]
     assert "Related evidence" not in fake_gateway.calls[-1][0]["content"]
 
@@ -1209,7 +1207,7 @@ def test_stream_message_emits_sse_events(client, fake_gateway):
     assert '"content": "第一"' in body
     assert '"content": "内容"' in body
     assert '"type": "done"' in body
-    # persisted assistant message is complete
+# 持久化的 assistant 消息是完整的
     detail = client.get(f"/api/v1/chat/conversations/{conversation['id']}").json()
     assistant = [m for m in detail["messages"] if m["role"] == "assistant"][-1]
     assert assistant["content"] == "第一段内容"
@@ -1396,8 +1394,8 @@ def test_stream_retrieval_failure_emits_sse_error_and_marks_failed(
 
 
 def test_stream_client_disconnect_marks_failed_not_generating(db_session, fake_gateway):
-    """P0.5-1: closing the SSE generator mid-stream (client disconnect) must not
-    leave the assistant row stuck in "generating" forever."""
+    """P0.5-1：在流式响应中途关闭 SSE 生成器（客户端断开）时，
+    不能让 assistant 行永久卡在 “generating” 状态。"""
     from app.domains.chat.models import ChatMessage
     from app.domains.chat.service import ChatService
 
@@ -1416,8 +1414,8 @@ def test_stream_client_disconnect_marks_failed_not_generating(db_session, fake_g
 
 
 def test_stale_generating_row_is_healed_instead_of_bricking(db_session, fake_gateway):
-    """P0.5-1: a "generating" row untouched for > STALE_GENERATING_SECONDS is
-    marked failed on the next send instead of raising a permanent conflict."""
+    """P0.5-1：超过 STALE_GENERATING_SECONDS 未更新的 “generating” 行，
+    下一次发送时应标记为失败，而不是抛出永久冲突。"""
     from datetime import datetime, timedelta, timezone
 
     from app.domains.chat.models import ChatMessage
@@ -1436,7 +1434,7 @@ def test_stale_generating_row_is_healed_instead_of_bricking(db_session, fake_gat
         )
         db_session.add(message)
         db_session.commit()
-        # updated_at is set by onupdate; force the stale timestamp explicitly.
+# updated_at 由 onupdate 设置；显式强制设置过期时间戳。
         db_session.query(ChatMessage).filter(ChatMessage.id == message.id).update(
             {"updated_at": updated_at}
         )

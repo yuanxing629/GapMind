@@ -1,13 +1,12 @@
-"""extract_knowledge Celery task (Phase 3).
+"""extract_knowledge Celery 任务（Phase 3）。
 
-Reads a paper's parsed_markdown artifact, sends it to the configured remote
-OpenAI Chat Completions-compatible provider with a structured extraction
-prompt, validates the JSON output, and writes
-knowledge_items / knowledge_relations / evidence_spans.
+读取论文的 parsed_markdown Artifact，使用结构化抽取提示词发送给配置的远程
+OpenAI Chat Completions 兼容提供商，校验 JSON 输出，并写入
+knowledge_items / knowledge_relations / evidence_spans。
 
-State flow:
-    Task row:     queued -> running -> succeeded / failed
-    Paper row:    extract_status: pending -> extracting -> extracted / failed
+状态流转：
+    Task 行：     queued -> running -> succeeded / failed
+    Paper 行：    extract_status：pending -> extracting -> extracted / failed
 """
 
 from __future__ import annotations
@@ -66,10 +65,10 @@ EXTRACTION_ITEM_ADAPTER = TypeAdapter(ExtractionItem)
 
 @celery_app.task(name="gapmind.extract_knowledge", bind=True)
 def extract_knowledge_task(self, task_id: str) -> dict:
-    """Extract structured knowledge from a parsed paper.
+    """从已解析论文中抽取结构化知识。
 
-    Args:
-        task_id: The Task row ID. Payload must contain {"paper_id": "..."}.
+    参数：
+        task_id：Task 行 ID。Payload 必须包含 {"paper_id": "..."}。
     """
     configure_logging()
     db: Session = SessionLocal()
@@ -212,9 +211,9 @@ def _run_extract(db: Session, task_id: str) -> dict:
                 "all extracted items were rejected by evidence validation"
             )
 
-        # P1 (feature-flagged): collapse semantic near-duplicates (same fact at
-        # different spans) BEFORE writing. Rejections are auditable ExtractionRejection
-        # rows; if embedding is unavailable we degrade gracefully to no semantic dedup.
+# P1（受功能开关控制）：在写入前合并语义近重复项（同一事实位于不同文本范围）。
+# 拒绝项会记录为可审计的 ExtractionRejection 行；如果 embedding 不可用，
+# 则安全降级为不做语义去重。
         if settings.retrieval_dedup_semantic:
             try:
                 from app.gateway.embedding import get_embedding_gateway
@@ -402,7 +401,7 @@ def _validate_output_records(
     list[ExtractionRejectionCreate],
     int,
 ]:
-    """Validate items and relations independently so one bad record is isolated."""
+    """独立校验条目和关系，使单条错误记录被隔离。"""
     valid_items: list[ExtractionItem] = []
     valid_relations: list[ExtractionRelation] = []
     rejections: list[ExtractionRejectionCreate] = []
@@ -616,12 +615,11 @@ def _validate_and_rebase_evidence(
             "batch_index": batch_index,
         }
         if paper is not None:
-            # Paper identity makes the dedup span/similarity keys paper-aware so
-            # cross-paper items are never merged (even if numeric spans collide).
+# 论文身份使去重的范围/相似度键带有论文上下文，因此跨论文条目永不合并
+#（即使数值范围发生碰撞）。
             provenance["paper_id"] = paper.id
         data["source_provenance"] = provenance
-        # Persist the exact artifact slice, not the LLM's whitespace-normalized
-        # rendering of it.
+# 持久化 artifact 的精确切片，而不是 LLM 经过空白归一化后的呈现文本。
         data["evidence_text"] = resolved_text
         validated.append(data)
     return validated, rejections
@@ -729,7 +727,7 @@ def _mark_extraction_failed(
     db.commit()
 
 
-# ----------------------------------------------------------------- DB write
+# ----------------------------------------------------------------- 数据库写入
 def _write_extraction(
     db: Session,
     paper: Paper,
@@ -737,12 +735,11 @@ def _write_extraction(
     items: list[dict],
     relations: list[dict],
 ) -> tuple[int, int, int, int]:
-    """Stage an extraction atomically. The caller owns commit/rollback."""
+    """以原子方式准备一次抽取，提交/回滚由调用方负责。"""
     ks = KnowledgeService(db)
 
-    # P0: collapse exact duplicates + same-span claim/limitation collisions
-    # BEFORE anything is written. Rejected items are recorded as auditable
-    # ExtractionRejection rows (never hard-deleted) so the loss is traceable.
+# P0：在写入任何内容前，合并精确重复项以及相同范围的 claim/limitation 冲突。
+# 被拒绝的条目记录为可审计的 ExtractionRejection 行（绝不硬删除），以便追踪损失。
     items, dedup_rejected = dedup_exact(items)
     for rejected in dedup_rejected:
         sp = rejected.get("source_provenance") or {}
@@ -772,7 +769,7 @@ def _write_extraction(
             dropped=len(dedup_rejected),
         )
 
-    # Map canonical_name -> knowledge_item_id for relation resolution
+# 建立 canonical_name -> knowledge_item_id 映射，用于解析关系端点
     entity_map: dict[tuple[str, str], str] = {}  # (type, canonical_name) -> id
 
     item_ids: set[str] = set()
@@ -859,7 +856,7 @@ def _write_extraction(
                 confidence=item["confidence"],
             )
 
-    # Create relations
+# 创建关系
     relation_ids: set[str] = set()
     rejected_relations = 0
     for rel in relations:
@@ -974,7 +971,7 @@ def _fail(
 
 
 def spawn_extract_knowledge(db: Session, paper_id: str, workspace_id: str) -> str:
-    """Create a Task row and dispatch extract_knowledge."""
+    """创建 Task 行并派发 extract_knowledge。"""
     import app.workers.tasks.extract_knowledge  # noqa: F401
 
     paper = db.get(Paper, paper_id)

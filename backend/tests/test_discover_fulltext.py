@@ -1,13 +1,10 @@
-"""W1 external full-text verification loop tests.
+"""W1 外部全文校验循环测试。
 
-Covers the download/import failure paths (URL normalization, import_failed),
-the metadata -> full_text evidence-level upgrade, full-text role re-judging
-(LLM on paper text instead of title+abstract), and the failed-pipeline
-degradation path.
+覆盖下载/导入失败路径（URL normalization、import_failed）、metadata -> full_text 证据级别
+升级、全文 role re-judging（LLM 使用论文正文而非 title+abstract），以及流水线失败降级路径。
 
-Follows the W1 plan: URL normalization so non-https openAccessPdf URLs still
-import, and role re-judgement against the imported paper's full text once the
-pipeline is ready.
+遵循 W1 plan：规范化 URL，使非 https 的 openAccessPdf URL 仍可导入；流水线就绪后，针对
+导入论文全文重新判断 role。
 """
 
 from __future__ import annotations
@@ -43,7 +40,7 @@ class _NoopLLM:
 
 
 class _RoleLLM:
-    """Full-text role judge fake; records the user prompt for assertions."""
+    """全文 role judge fake，并记录 user prompt 供断言使用。"""
 
     def __init__(self, role: str = "contradicts", confidence: float = 0.8) -> None:
         self.role = role
@@ -112,7 +109,7 @@ def _candidate(db, run: DiscoverRun, *, url: str | None = None, status: str = "s
     return row
 
 
-# ---------------------------------------------------------------- URL normalization
+# ---------------------------------------------------------------- URL 规范化
 
 
 def test_normalize_pdf_url():
@@ -127,7 +124,7 @@ def test_normalize_pdf_url():
     assert norm(None) == ""
 
 
-# ------------------------------------------------------------------ import paths
+# ------------------------------------------------------------------ 导入路径
 
 
 def test_import_failed_when_download_raises(db_session):
@@ -173,7 +170,7 @@ def test_import_normalizes_url_and_marks_pending_parse(db_session):
             svc._import_selected_candidates(run)
 
     db_session.refresh(row)
-    # http:// URL is normalized to https:// before hitting download_pdf
+# 调用 download_pdf 前，http:// URL 会规范化为 https://
     assert downloaded == ["https://example.com/a.pdf"]
     assert row.verification_status == "imported_pending_parse"
     assert row.imported_paper_id is not None
@@ -226,11 +223,11 @@ def test_arxiv_fallback_uses_pdf_url(db_session):
     assert row.verification_status == "imported_pending_parse"
 
 
-# ------------------------------------------------ metadata -> full_text upgrade
+# ------------------------------------------------ 元数据 -> full_text 升级
 
 
 def _ready_pipeline(db_session, ws: Workspace, run: DiscoverRun, row: DiscoverExternalCandidate) -> str:
-    """Attach a fully-ready imported paper to the candidate row."""
+    """将一篇准备完毕的导入论文附加到候选行。"""
     paper_id = str(uuid4())
     artifact_id = str(uuid4())
     paper = Paper(
@@ -282,7 +279,7 @@ def test_external_candidate_state_failed_pipeline(db_session):
     assert "verification_error" in (row.snapshot_payload or {})
 
 
-# ---------------------------------------------------------- full-text role re-judge
+# ---------------------------------------------------------- 全文 role 重判
 
 
 def test_fulltext_role_judge_updates_role_and_is_idempotent(db_session):
@@ -305,10 +302,10 @@ def test_fulltext_role_judge_updates_role_and_is_idempotent(db_session):
     assert row.role == "contradicts"
     assert row.role_confidence == 0.9
     assert (row.snapshot_payload or {}).get("fulltext_role_judged") is True
-    # Full text reached the LLM, not just the abstract.
+# LLM 接收到全文，而不只是 abstract。
     assert "full text showing evidence" in llm.messages[0][-1]["content"]
 
-    # Idempotent: already-judged rows are not re-judged (no second LLM call).
+# 幂等：已有判断结果的行不会再次判断（不产生第二次 LLM 调用）。
     with patch.object(ExternalRetrievalService, "_read_paper_text", return_value="x"):
         judged2 = svc._judge_external_fulltext_roles(run, "Is graph rationalization stable under shift?")
     assert judged2 == 0
