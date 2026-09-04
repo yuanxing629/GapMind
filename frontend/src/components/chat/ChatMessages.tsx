@@ -9,7 +9,7 @@ import type { ChatMessage } from "../../api/chat";
 import { apiBaseURL } from "../../api/client";
 import { chatFailureMessage, retrievalDiagnosticCopy } from "../../state/chatState";
 import ChatCitations from "./ChatCitations";
-import ChatSources from "./ChatSources";
+import ChatGraphAudit from "./ChatGraphAudit";
 import ChatAgentRunCard from "./ChatAgentRunCard";
 import type { AgentRunDetail } from "../../api/agent";
 
@@ -141,8 +141,8 @@ function ChatMessageItem({ conversationId, message, onRetry, retrying }: { conve
       {!isUser && message.status === "completed" && message.citation_check?.grounded_without_citations && <Typography.Text type="warning">已使用工作区证据，但回答未标注 [E] 引用，关键结论可能缺少直接支撑。</Typography.Text>}
       {!isUser && message.status === "completed" && message.citation_quality?.status === "rejected" && <Alert type="warning" showIcon message="回答未通过引用质量校验" description="当前回答已降级为证据不足提示，未将未验证结论展示为论文事实。" />}
       {!isUser && message.status === "completed" && message.source_check && !message.source_check.ok && <Typography.Text type="danger">检测到失效上下文来源标记：{message.source_check.broken.join("、")}，请核对来源。</Typography.Text>}
+      {!isUser && message.status === "completed" && message.retrieval_audit?.graph && <ChatGraphAudit audit={message.retrieval_audit.graph} />}
       {!isUser && conversationId && (message.citations?.length ?? 0) > 0 && <ChatCitations conversationId={conversationId} messageId={message.id} citations={message.citations ?? []} />}
-      {!isUser && message.status === "completed" && <ChatSources sources={message.sources ?? []} />}
     </div>
     {message.status === "completed" && <div className="gm-chat-message-actions"><Tooltip title={copied ? "已复制" : "复制"}><Button type="text" size="small" aria-label="复制消息" icon={copied ? <CheckOutlined /> : <CopyOutlined />} onClick={() => void copy()} /></Tooltip></div>}
   </article>;

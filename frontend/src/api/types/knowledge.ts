@@ -34,6 +34,9 @@ export type KnowledgeGraphEdge = components["schemas"]["KnowledgeGraphEdgeRead"]
 export type KnowledgeGraphResponse = components["schemas"]["KnowledgeGraphResponse"];
 export type KnowledgeGraphSearchResult = components["schemas"]["KnowledgeGraphSearchResult"];
 export type KnowledgeGraphSearchResponse = components["schemas"]["KnowledgeGraphSearchResponse"];
+export type GraphRAGPath = components["schemas"]["GraphRAGPathRead"];
+export type GraphRAGEvidence = components["schemas"]["GraphRAGEvidenceRead"];
+export type GraphRAGAudit = components["schemas"]["GraphRetrievalAuditRead"];
 
 export type EvidenceContext = components["schemas"]["EvidenceContextRead"];
 

@@ -123,9 +123,14 @@ export const knowledgeApi = {
     return resp.data;
   },
 
-  async evidenceContext(workspaceId: string, itemId: string): Promise<EvidenceContext> {
+  async evidenceContext(
+    workspaceId: string,
+    itemId: string,
+    evidenceSpanId?: string,
+  ): Promise<EvidenceContext> {
     const resp = await apiClient.get<EvidenceContext>(
       `/workspaces/${workspaceId}/knowledge/${itemId}/evidence/context`,
+      { params: evidenceSpanId ? { evidence_span_id: evidenceSpanId } : undefined },
     );
     return resp.data;
   },

@@ -60,6 +60,17 @@ describe("knowledge graph utilities", () => {
     expect(merged.edges.map((item) => item.id)).toEqual(["ab"]);
   });
 
+  it("keeps same-label nodes distinct and drops edges with unloaded endpoints", () => {
+    const first = { ...node("item-1", "method"), label: "Same method" };
+    const second = { ...node("item-2", "method"), label: "Same method" };
+    const merged = mergeGraph(
+      { nodes: [first], edges: [] },
+      { nodes: [second], edges: [edge("valid", "item-1", "item-2"), edge("dangling", "item-2", "missing")] },
+    );
+    expect(merged.nodes.map((item) => item.id)).toEqual(["item-1", "item-2"]);
+    expect(merged.edges.map((item) => item.id)).toEqual(["valid"]);
+  });
+
   it("limits a branch to the selected node and its one-hop neighbors", () => {
     const result = branchGraph(
       { nodes: [node("a", "claim"), node("b", "claim"), node("c", "claim")], edges: [edge("ab", "a", "b")] },

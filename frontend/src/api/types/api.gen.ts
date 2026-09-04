@@ -2273,6 +2273,29 @@ export interface components {
             source_artifact_ids?: string[];
             /** Images */
             images?: components["schemas"]["ChatImageInput"][];
+            /**
+             * Retrieval Mode
+             * @default dense
+             * @enum {string}
+             */
+            retrieval_mode: "dense" | "hybrid" | "graph";
+            /** Graph Expand */
+            graph_expand?: boolean | null;
+            /**
+             * Graph Max Hops
+             * @default 2
+             */
+            graph_max_hops: number;
+            /**
+             * Graph Node Limit
+             * @default 32
+             */
+            graph_node_limit: number;
+            /**
+             * Graph Edge Limit
+             * @default 64
+             */
+            graph_edge_limit: number;
         };
         /** ChatMessageEvidenceRead */
         ChatMessageEvidenceRead: {
@@ -2972,6 +2995,11 @@ export interface components {
             /** Confidence */
             confidence: number;
             /**
+             * Is Deleted
+             * @default false
+             */
+            is_deleted: boolean;
+            /**
              * Created At
              * Format: date-time
              */
@@ -3287,6 +3315,230 @@ export interface components {
              * @default not_checked
              */
             dependency_status: string;
+        };
+        /**
+         * GraphRAGEdgeRead
+         * @description A validated graph edge; source and target must be in the path nodes.
+         */
+        GraphRAGEdgeRead: {
+            /** Id */
+            id: string;
+            /** Type */
+            type: string;
+            /** Source */
+            source: string;
+            /** Target */
+            target: string;
+            /** Workspace Id */
+            workspace_id: string;
+            /** Paper Id */
+            paper_id?: string | null;
+            /** Supporting Item Ids */
+            supporting_item_ids?: string[];
+            /** Supporting Evidence Ids */
+            supporting_evidence_ids?: string[];
+            /**
+             * Review Status
+             * @default candidate
+             * @enum {string}
+             */
+            review_status: "confirmed" | "candidate" | "rejected";
+        };
+        /**
+         * GraphRAGEvidenceRead
+         * @description Evidence re-retrieved from PostgreSQL for a graph path.
+         */
+        GraphRAGEvidenceRead: {
+            /** Evidence Span Id */
+            evidence_span_id: string;
+            /** Workspace Id */
+            workspace_id: string;
+            /** Paper Id */
+            paper_id: string;
+            /** Item Id */
+            item_id: string;
+            /** Artifact Id */
+            artifact_id?: string | null;
+            /** Chunk Id */
+            chunk_id?: string | null;
+            /** Section */
+            section?: string | null;
+            /**
+             * Excerpt
+             * @default
+             */
+            excerpt: string;
+            /** Start Char */
+            start_char?: number | null;
+            /** End Char */
+            end_char?: number | null;
+            /**
+             * Relation
+             * @default supports
+             */
+            relation: string;
+            /**
+             * Confidence
+             * @default 0
+             */
+            confidence: number;
+            /**
+             * Review Status
+             * @default candidate
+             * @enum {string}
+             */
+            review_status: "confirmed" | "candidate" | "rejected";
+            /**
+             * Query Relevance Score
+             * @default 0
+             */
+            query_relevance_score: number;
+        };
+        /**
+         * GraphRAGNodeRead
+         * @description A request-scoped graph node with explicit provenance identity.
+         */
+        GraphRAGNodeRead: {
+            /** Id */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "paper" | "canonical_entity" | "knowledge_item" | "evidence_span" | "chunk";
+            /** Workspace Id */
+            workspace_id: string;
+            /** Label */
+            label: string;
+            /** Paper Id */
+            paper_id?: string | null;
+            /** Item Id */
+            item_id?: string | null;
+            /** Canonical Entity Id */
+            canonical_entity_id?: string | null;
+            /** Chunk Id */
+            chunk_id?: string | null;
+            /** Evidence Span Id */
+            evidence_span_id?: string | null;
+            /** Type */
+            type?: string | null;
+            /** Status */
+            status?: string | null;
+            /**
+             * Review Status
+             * @default candidate
+             * @enum {string}
+             */
+            review_status: "confirmed" | "candidate" | "rejected";
+        };
+        /**
+         * GraphRAGPathRead
+         * @description A bounded, auditable path; this is not a persisted scientific fact.
+         */
+        GraphRAGPathRead: {
+            /** Path Id */
+            path_id: string;
+            /** Workspace Id */
+            workspace_id: string;
+            /** Nodes */
+            nodes?: components["schemas"]["GraphRAGNodeRead"][];
+            /** Edges */
+            edges?: components["schemas"]["GraphRAGEdgeRead"][];
+            /** Supporting Paper Ids */
+            supporting_paper_ids?: string[];
+            /** Supporting Item Ids */
+            supporting_item_ids?: string[];
+            /** Supporting Evidence Ids */
+            supporting_evidence_ids?: string[];
+            /** Evidence */
+            evidence?: components["schemas"]["GraphRAGEvidenceRead"][];
+            /**
+             * Review Status
+             * @default candidate
+             * @enum {string}
+             */
+            review_status: "confirmed" | "candidate" | "rejected";
+        };
+        /**
+         * GraphRetrievalAuditRead
+         * @description Bounded GraphRAG diagnostics; it is not answer evidence by itself.
+         */
+        GraphRetrievalAuditRead: {
+            /**
+             * Mode
+             * @default disabled
+             * @enum {string}
+             */
+            mode: "disabled" | "shadow";
+            /**
+             * Projection Version
+             * @default sql_graph_v1
+             */
+            projection_version: string;
+            /**
+             * Seed Count
+             * @default 0
+             */
+            seed_count: number;
+            /**
+             * Expanded Node Count
+             * @default 0
+             */
+            expanded_node_count: number;
+            /**
+             * Expanded Edge Count
+             * @default 0
+             */
+            expanded_edge_count: number;
+            /**
+             * Path Count
+             * @default 0
+             */
+            path_count: number;
+            /**
+             * Candidate Path Count
+             * @default 0
+             */
+            candidate_path_count: number;
+            /**
+             * Emitted Path Count
+             * @default 0
+             */
+            emitted_path_count: number;
+            /**
+             * Dropped Path Count
+             * @default 0
+             */
+            dropped_path_count: number;
+            /** Dropped Path Reasons */
+            dropped_path_reasons?: {
+                [key: string]: number;
+            };
+            /**
+             * Latency Ms
+             * @default 0
+             */
+            latency_ms: number;
+            /** Supporting Paper Ids */
+            supporting_paper_ids?: string[];
+            /** Supporting Evidence Ids */
+            supporting_evidence_ids?: string[];
+            /**
+             * Truncated
+             * @default false
+             */
+            truncated: boolean;
+            /** Truncation Reason */
+            truncation_reason?: string | null;
+            /**
+             * Fallback
+             * @default false
+             */
+            fallback: boolean;
+            /** Fallback Reason */
+            fallback_reason?: string | null;
+            /** Paths */
+            paths?: components["schemas"]["GraphRAGPathRead"][];
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -4511,6 +4763,7 @@ export interface components {
              * @enum {string}
              */
             reranker_status: "applied" | "enabled_no_rerank" | "degraded" | "disabled" | "unknown";
+            graph?: components["schemas"]["GraphRetrievalAuditRead"];
         };
         /**
          * RetrievalResponse
@@ -7315,7 +7568,9 @@ export interface operations {
     };
     get_evidence_context_api_v1_workspaces__workspace_id__knowledge__item_id__evidence_context_get: {
         parameters: {
-            query?: never;
+            query?: {
+                evidence_span_id?: string | null;
+            };
             header?: {
                 "X-User-ID"?: string | null;
                 Authorization?: string | null;

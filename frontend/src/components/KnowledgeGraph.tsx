@@ -114,6 +114,14 @@ const STATUS_OPTIONS = [
   ["rejected", "已拒绝"],
 ] as const;
 
+function reviewStatusLabel(status: string): string {
+  if (status === "human_confirmed" || status === "experiment_validated") return "人工确认";
+  if (status === "rejected" || status === "invalidated") return "已拒绝";
+  if (status === "deprecated") return "已弃用";
+  if (status === "evidence_backed_proposal") return "有证据候选";
+  return "AI 候选";
+}
+
 interface GraphFilters {
   type?: string;
   status?: string;
@@ -285,7 +293,7 @@ function Inspector({
       <Space wrap style={{ marginBottom: 12 }}>
         <Tag color={TYPE_COLORS[kind] ?? "default"}>{node.display_type || TYPE_LABELS[kind] || kind}</Tag>
         <Tag>{Math.round(node.confidence * 100)}% 置信度</Tag>
-        <Tag color={node.status === "human_confirmed" ? "green" : "gold"}>{node.status}</Tag>
+        <Tag color={node.status === "human_confirmed" || node.status === "experiment_validated" ? "green" : node.status === "rejected" || node.status === "invalidated" ? "red" : "gold"}>{reviewStatusLabel(node.status)}</Tag>
       </Space>
       <Title level={5} style={{ marginTop: 0 }}>{node.label}</Title>
       <Paragraph style={{ whiteSpace: "pre-wrap" }}>{contentSummary(node)}</Paragraph>
@@ -586,7 +594,7 @@ export default function KnowledgeGraph({ workspaceId }: { workspaceId: string })
             nodeKind: node.node_kind,
             nodeType: type,
             opacity: Math.max(0.56, node.confidence),
-            borderStyle: node.status === "human_confirmed" ? "solid" : "dashed",
+            borderStyle: node.status === "human_confirmed" || node.status === "experiment_validated" ? "solid" : "dashed",
           },
           classes: [
             isFocused ? "focused" : "",
@@ -652,7 +660,7 @@ export default function KnowledgeGraph({ workspaceId }: { workspaceId: string })
   ], [isDark, canvasInk, canvasLabelBg]);
 
   const expandNode = useCallback(async (nodeId: string) => {
-    if (active.expandedNodeIds.includes(nodeId) || expanding) return;
+    if (active.expandedNodeIds.includes(nodeId) || expanding) return false;
     setExpanding(true);
     try {
       const response = await knowledgeApi.graphNeighbors(workspaceId, nodeId, {
@@ -661,6 +669,10 @@ export default function KnowledgeGraph({ workspaceId }: { workspaceId: string })
         projection_mode: mode,
       });
       const incoming = { nodes: response.nodes ?? [], edges: response.edges ?? [] };
+      if (!incoming.nodes.some((node) => node.id === nodeId)) {
+        message.warning("搜索结果存在，但焦点子图没有返回该节点，未将其标记为已加载。");
+        return false;
+      }
       updateView(mode, (state) => ({
         ...state,
         history: [...state.history, state.graph],
@@ -671,8 +683,10 @@ export default function KnowledgeGraph({ workspaceId }: { workspaceId: string })
       setSelectedNodeId(nodeId);
       message.success(`已展开 ${incoming.nodes.length} 个相关节点`);
       window.setTimeout(() => runLayout(mode), 50);
+      return true;
     } catch (requestError) {
       message.error(`邻居展开失败：${errorMessage(requestError)}`);
+      return false;
     } finally {
       setExpanding(false);
     }
@@ -810,7 +824,8 @@ export default function KnowledgeGraph({ workspaceId }: { workspaceId: string })
     const result = searchResults.find((item) => item.node_id === nodeId);
     if (result) setSearchText(result.label);
     if (!active.graph.nodes.some((node) => node.id === nodeId)) {
-      await expandNode(nodeId);
+      const loaded = await expandNode(nodeId);
+      if (!loaded) return;
     }
     pendingFocusRef.current = nodeId;
     setSelectedNodeId(nodeId);

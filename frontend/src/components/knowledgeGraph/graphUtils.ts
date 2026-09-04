@@ -117,7 +117,16 @@ export function mergeGraph(current: GraphData, incoming: GraphData): GraphData {
   const edges = new Map(current.edges.map((edge) => [edge.id, edge]));
   incoming.nodes.forEach((node) => nodes.set(node.id, node));
   incoming.edges.forEach((edge) => edges.set(edge.id, edge));
-  return { nodes: [...nodes.values()], edges: [...edges.values()] };
+  const nodeIds = new Set(nodes.keys());
+  return {
+    nodes: [...nodes.values()],
+    // A partial/faulty response must not create a dangling Cytoscape edge.
+    // Identity is the only join key; labels and canonical names are display
+    // values and must never collapse distinct paper-local items.
+    edges: [...edges.values()].filter(
+      (edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target),
+    ),
+  };
 }
 
 export function connectedNodeIds(edges: KnowledgeGraphEdge[], nodeId: string): Set<string> {
