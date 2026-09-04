@@ -1,9 +1,7 @@
-// Workspace type aliases — all re-exports of the auto-generated OpenAPI
-// schemas. Run `npm run gen:api` after touching backend Pydantic models
-// to keep these in sync.
+// Workspace 类型别名——全部从自动生成的 OpenAPI schemas 重新导出。
+// 修改后端 Pydantic models 后运行 `npm run gen:api`，保持两边同步。
 //
-// Do NOT add hand-written fields here. If a field is missing from the
-// backend, add it to the Pydantic schema and regenerate.
+// 不要在这里添加手写字段。后端缺少字段时，应添加到 Pydantic schema 并重新生成。
 
 import type { components } from "./api.gen";
 

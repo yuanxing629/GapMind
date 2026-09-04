@@ -1,1 +1,1 @@
-"""Paper package."""
+"""Paper 包。"""

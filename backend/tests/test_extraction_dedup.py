@@ -1,4 +1,4 @@
-"""Unit tests for P0 exact dedup + P1 semantic dedup (extraction/dedup.py)."""
+"""P0 精确去重与 P1 语义去重单元测试（extraction/dedup.py）。"""
 
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ def _item(
     }
 
 
-# ------------------------------------------------------------- content_signature
+# ------------------------------------------------------------- content_signature：内容签名
 def test_content_signature_uses_statement() -> None:
     assert content_signature({"statement": "GraphRAG is better"}) == content_signature(
         {"statement": "  GraphRAG is better  "}
@@ -54,7 +54,7 @@ def test_content_signature_empty_returns_stable() -> None:
     assert content_signature({}) == content_signature({"statement": None})
 
 
-# ------------------------------------------------------------- rule 1: exact dup
+# ------------------------------------------------------------- 规则 1：精确重复
 def test_exact_duplicate_keeps_first_rejects_rest() -> None:
     a = _item(statement="same fact", start=100, end=200, confidence=0.7)
     b = _item(statement="same fact", start=100, end=200, confidence=0.9)  # same everything
@@ -79,7 +79,7 @@ def test_method_exact_duplicate_is_deduped() -> None:
     assert len(rejected) == 1
 
 
-# ------------------------------------------------------------- rule 2: cross-type
+# ------------------------------------------------------------- 规则 2：跨类型
 def test_claim_and_limitation_same_span_keeps_higher_confidence() -> None:
     claim = _item(type_="claim", statement="position bias is present", start=7082, end=7323, confidence=0.9)
     limitation = _item(type_="limitation", statement="position bias is present", start=7082, end=7323, confidence=0.7)
@@ -92,7 +92,7 @@ def test_claim_and_limitation_keeps_higher_even_if_second() -> None:
     limitation = _item(type_="limitation", statement="position bias is present", start=7082, end=7323, confidence=0.6)
     claim = _item(type_="claim", statement="position bias is present", start=7082, end=7323, confidence=0.95)
     survivors, rejected = dedup_exact([limitation, claim])
-    # Claim has higher confidence → it replaces the limitation, which is rejected.
+# Claim 置信度更高 -> 替换 limitation，后者被拒绝。
     assert survivors == [claim]
     assert rejected == [limitation]
 
@@ -101,22 +101,22 @@ def test_claim_and_limitation_equal_confidence_keeps_first() -> None:
     limitation = _item(type_="limitation", statement="position bias", start=7082, end=7323, confidence=0.8)
     claim = _item(type_="claim", statement="position bias", start=7082, end=7323, confidence=0.8)
     survivors, rejected = dedup_exact([limitation, claim])
-    # Equal confidence → first (limitation) stays, claim rejected.
+# 置信度相同 -> 首个（limitation）保留，claim 被拒绝。
     assert survivors == [limitation]
     assert rejected == [claim]
 
 
-# ------------------------------------------------------------- cross-paper guard
+# ------------------------------------------------------------- 跨论文保护
 def test_same_numeric_span_different_paper_not_merged() -> None:
     a = _item(statement="same statement", paper_id="p-1", start=100, end=200)
     b = _item(statement="same statement", paper_id="p-2", start=100, end=200)
     survivors, rejected = dedup_exact([a, b])
-    # Same numbers, different paper → NOT duplicates (paper key in span).
+# 数值相同但论文不同 -> 不是重复项（范围键包含论文）。
     assert len(survivors) == 2
     assert rejected == []
 
 
-# ------------------------------------------------------------- no-span items
+# ------------------------------------------------------------- 无范围条目
 def test_items_without_span_are_kept() -> None:
     a = _item()
     a["source_provenance"] = {"paper_id": "p-1", "batch_index": 0}  # no start/end
@@ -129,7 +129,7 @@ def test_empty_input() -> None:
     assert dedup_exact([]) == ([], [])
 
 
-# ------------------------------------------------------------- idempotent shape
+# ------------------------------------------------------------- 幂等结构
 def test_survivor_plus_rejected_equals_input_count() -> None:
     items = [
         _item(statement="same", start=1, end=5),
@@ -142,10 +142,10 @@ def test_survivor_plus_rejected_equals_input_count() -> None:
     assert len(survivors) + len(rejected) == len(items)
 
 
-# ------------------------------------------------------------- P1: semantic near-dup
+# ------------------------------------------------------------- P1：语义近重复
 
 def _embed_from(vectors: dict[str, list[float]]):
-    """Stub batch embedder: unknown texts get a distinct orthogonal vector."""
+    """批次 embedding 替身：未知文本获得不同的正交向量。"""
     return lambda texts: [vectors.get(t, [0.0, 1.0]) for t in texts]
 
 

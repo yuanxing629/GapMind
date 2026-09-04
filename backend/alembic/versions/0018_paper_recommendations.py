@@ -1,4 +1,4 @@
-"""Add cached workspace paper recommendations."""
+"""增加缓存的工作区论文推荐。"""
 
 from __future__ import annotations
 

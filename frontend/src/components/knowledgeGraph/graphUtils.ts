@@ -3,7 +3,7 @@ import type {
   KnowledgeGraphNode,
 } from "../../api/types/knowledge";
 
-export type GraphViewMode = "landscape" | "claims" | "evidence";
+export type GraphViewMode = "workspace" | "landscape" | "claims" | "evidence";
 
 export interface GraphData {
   nodes: KnowledgeGraphNode[];
@@ -16,6 +16,12 @@ export const VIEW_CONFIG: Record<GraphViewMode, {
   description: string;
   layout: "concentric" | "cose" | "breadthfirst";
 }> = {
+  workspace: {
+    label: "Workspace 总览",
+    eyebrow: "Workspace Map",
+    description: "以论文和跨论文共享实体呈现研究空间，点击节点后逐层下钻到来源与证据。",
+    layout: "cose",
+  },
   landscape: {
     label: "研究全景",
     eyebrow: "Research Landscape",
@@ -49,6 +55,7 @@ export const RELATION_LABELS: Record<string, string> = {
   mentioned_in: "包含原文提及",
   refers_to: "指向实体",
   evidences: "提供证据",
+  paper_entity: "涉及实体",
 };
 
 export const TYPE_LABELS: Record<string, string> = {
@@ -71,6 +78,9 @@ export function resolvedNodeType(node: KnowledgeGraphNode): string {
 
 function nodeAllowed(node: KnowledgeGraphNode, mode: GraphViewMode): boolean {
   const type = resolvedNodeType(node);
+  if (mode === "workspace") {
+    return node.node_kind === "paper" || node.node_kind === "canonical_entity";
+  }
   if (mode === "landscape") {
     return node.node_kind === "paper"
       || node.node_kind === "canonical_entity"
@@ -107,7 +117,16 @@ export function mergeGraph(current: GraphData, incoming: GraphData): GraphData {
   const edges = new Map(current.edges.map((edge) => [edge.id, edge]));
   incoming.nodes.forEach((node) => nodes.set(node.id, node));
   incoming.edges.forEach((edge) => edges.set(edge.id, edge));
-  return { nodes: [...nodes.values()], edges: [...edges.values()] };
+  const nodeIds = new Set(nodes.keys());
+  return {
+    nodes: [...nodes.values()],
+    // 不完整或错误的响应不得创建悬空的 Cytoscape 边。
+    // 身份是唯一的关联键；label 和 canonical name 只是展示值，
+    // 绝不能合并不同论文中的局部 item。
+    edges: [...edges.values()].filter(
+      (edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target),
+    ),
+  };
 }
 
 export function connectedNodeIds(edges: KnowledgeGraphEdge[], nodeId: string): Set<string> {
@@ -129,14 +148,13 @@ export function branchGraph(graph: GraphData, nodeId: string | null): GraphData 
 }
 
 /**
- * Hides the canonical-entity layer for the semantic views.
+ * 在语义视图中隐藏 canonical-entity 层。
  *
- * Knowledge items already carry their canonical name as the node label, so the
- * "对应规范实体" (canonicalizes) edges + entity nodes are pure visual noise when
- * many same-named items all point at one same-named entity node (e.g. 18
- * "GNNExplainer" items → one "GNNExplainer" entity). Removes canonicalizes
- * edges, then drops canonical_entity nodes left with no other connection (an
- * entity that happens to have a real semantic edge is preserved).
+ * 知识项节点标签已经携带 canonical name，因此当多个同名项都指向一个同名实体节点时，
+ * “对应规范实体”（canonicalizes）边和实体节点只是视觉噪声（例如 18 个
+ * “GNNExplainer” 项 -> 一个 “GNNExplainer” 实体）。函数会移除 canonicalizes 边，
+ * 然后删除没有其他连接的 canonical_entity 节点
+ * （恰好存在真实语义边的实体会被保留）。
  */
 export function hideEntityLayer(graph: GraphData): GraphData {
   const edges = graph.edges.filter((edge) => edge.relation_type !== "canonicalizes");

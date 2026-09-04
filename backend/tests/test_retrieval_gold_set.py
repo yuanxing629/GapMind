@@ -1,4 +1,4 @@
-"""Tests for the Retrieval Gate gold-set schema and paper-ref resolution."""
+"""Retrieval Gate gold-set schema 和 paper-ref 解析测试。"""
 
 from __future__ import annotations
 
@@ -59,7 +59,7 @@ def _paper(db: Session, ws_id: str, title: str, external_id: str | None = None) 
     return paper
 
 
-# ------------------------------------------------------------ gold schema
+# ------------------------------------------------------------ gold schema：黄金集结构
 def test_gold_set_requires_at_least_one_benchmark() -> None:
     with pytest.raises(ValidationError):
         GoldSet(
@@ -114,7 +114,7 @@ def test_gold_set_roundtrips_freezer() -> None:
     assert gold.freeze.embedding_model == "custom-emb"
 
 
-# ------------------------------------------------------------ paper refs
+# ------------------------------------------------------------ paper refs：论文引用
 def test_resolve_by_uuid(db_session: Session) -> None:
     ws = _workspace(db_session)
     paper = _paper(db_session, ws.id, "Title A")
@@ -153,7 +153,7 @@ def test_resolve_does_not_leak_across_workspaces(db_session: Session) -> None:
     db_session.add(ws_b)
     db_session.commit()
     paper = _paper(db_session, ws_a.id, "Private Paper")
-    # Same title queried in the OTHER workspace must NOT resolve.
+# 在其他 workspace 查询同名标题时绝不能解析成功。
     resolved = resolve_paper_ref(db_session, ws_b.id, "Private Paper")
     assert resolved is None
 

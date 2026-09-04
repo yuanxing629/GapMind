@@ -1,4 +1,4 @@
-"""Workspace ownership policy shared by middleware and domain services."""
+"""middleware 与 domain service 共用的 workspace 所有权策略。"""
 
 from __future__ import annotations
 
@@ -14,10 +14,9 @@ def has_workspace_access(
     *,
     minimum_role: str = "viewer",
 ) -> bool:
-    """Return whether ``user_id`` owns the workspace.
+    """返回 ``user_id`` 是否拥有该 workspace。
 
-    ``minimum_role`` is retained for call-site compatibility during the
-    owner-only migration. There are no member roles in this product model.
+    ``minimum_role`` 在 owner-only 迁移期间保留，用于兼容调用点。当前产品模型没有成员角色。
     """
     del minimum_role
     workspace = db.get(Workspace, workspace_id)

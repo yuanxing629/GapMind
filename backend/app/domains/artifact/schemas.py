@@ -1,7 +1,7 @@
-"""Artifact Pydantic schemas.
+"""Artifact 的 Pydantic schemas。
 
-Artifacts are typically created implicitly during Paper upload, so we only
-expose Read shapes plus an internal Create used by the service layer.
+Artifact 通常在 Paper 上传期间隐式创建，因此这里只暴露 Read 结构，
+以及 service 层使用的内部 Create 结构。
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class ArtifactRead(BaseModel):
-    """Artifact as returned from the API."""
+    """API 返回的 Artifact。"""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -29,10 +29,10 @@ class ArtifactRead(BaseModel):
 
 
 class ArtifactCreateInternal(BaseModel):
-    """Internal schema used by the service layer (not exposed via HTTP)."""
+    """service 层使用的内部 schema（不通过 HTTP 暴露）。"""
 
     workspace_id: str
-    kind: str = Field(..., pattern=r"^(pdf|parsed_text|chunk_index|report)$")
+    kind: str = Field(..., pattern=r"^(pdf|parsed_text|parsed_markdown|chunk_index|paper_image|report)$")
     file_path: str
     original_filename: str | None = None
     mime_type: str | None = None

@@ -1,12 +1,11 @@
-"""Knowledge ORM models.
+"""Knowledge ORM 模型。
 
-Three tables:
-  - knowledge_items       : the 17 typed research objects (Phase 1b core 7)
-  - knowledge_relations   : explicit edges between items (the logical KG)
-  - evidence_spans        : pointers back into paper text backing each item
+三张表：
+  - knowledge_items      ：17 种有类型的研究对象（Phase 1b 核心 7 种）
+  - knowledge_relations  ：项之间的显式边（逻辑 KG）
+  - evidence_spans       ：指回支撑每个项的论文文本
 
-Phase 1b: tables + read-only API. Content is written by the extraction
-pipeline in Phase 3, not by users directly.
+Phase 1b：表和只读 API。内容由 Phase 3 抽取流水线写入，而不是由用户直接写入。
 """
 
 from __future__ import annotations
@@ -28,9 +27,9 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin, UUIDPKMixin
 
-# Phase 1b supports the core 7 knowledge types. Others (Opportunity,
-# ResearchQuestion, Hypothesis, ResearchPlan, Citation, Note, CodeRepository,
-# Baseline, Metric, Idea, FutureWork) arrive in Phase 4-5 as needed.
+# Phase 1b 支持核心的 7 种知识类型。其他类型（Opportunity、ResearchQuestion、
+# Hypothesis、ResearchPlan、Citation、Note、CodeRepository、Baseline、Metric、
+# Idea、FutureWork）按需在 Phase 4-5 引入。
 KNOWLEDGE_TYPES_PHASE_1B = {
     "paper",
     "method",
@@ -41,7 +40,7 @@ KNOWLEDGE_TYPES_PHASE_1B = {
     "limitation",
 }
 
-# Verification lifecycle (per plans.md):
+# 校验生命周期（依据 plans.md）：
 #   raw_source -> extracted_candidate -> evidence_backed_proposal
 #   -> human_confirmed -> experiment_validated -> deprecated | rejected | invalidated
 KNOWLEDGE_STATUSES = {
@@ -59,7 +58,7 @@ CREATED_BY_VALUES = {"user", "agent", "system"}
 
 
 class CanonicalEntity(Base, UUIDPKMixin, TimestampMixin):
-    """A workspace-scoped identity shared by paper-specific mentions."""
+    """按 workspace 限定、由论文级 mention 共享的身份。"""
 
     __tablename__ = "canonical_entities"
     __table_args__ = (
@@ -87,11 +86,10 @@ class CanonicalEntity(Base, UUIDPKMixin, TimestampMixin):
 
 
 class PaperMention(Base, UUIDPKMixin, TimestampMixin):
-    """A paper-local mention that resolves to a canonical entity.
+    """解析到 canonical entity 的论文级 mention。
 
-    Mentions preserve the evidence location used to link a paper to the
-    workspace-level entity. They are intentionally separate from
-    ``KnowledgeItem`` so one paper can mention the same entity many times.
+    Mention 保留将论文链接到 workspace 级实体时使用的证据位置。它们有意与
+    ``KnowledgeItem`` 分离，因此一篇论文可以多次提及同一实体。
     """
 
     __tablename__ = "paper_mentions"
@@ -135,7 +133,7 @@ class PaperMention(Base, UUIDPKMixin, TimestampMixin):
 
 
 class ExtractionRun(Base, UUIDPKMixin, TimestampMixin):
-    """One versioned extraction attempt for one immutable source artifact."""
+    """针对一个不可变源 artifact 的一次版本化抽取尝试。"""
 
     __tablename__ = "extraction_runs"
     __table_args__ = (
@@ -173,7 +171,7 @@ class ExtractionRun(Base, UUIDPKMixin, TimestampMixin):
 
 
 class ExtractionRejection(Base, UUIDPKMixin, TimestampMixin):
-    """One rejected LLM item/relation retained for quality audit."""
+    """为质量审计保留的一条被拒绝 LLM 条目/关系。"""
 
     __tablename__ = "extraction_rejections"
     __table_args__ = (
@@ -213,12 +211,11 @@ class ExtractionRejection(Base, UUIDPKMixin, TimestampMixin):
 
 
 class KnowledgeItem(Base, UUIDPKMixin, TimestampMixin):
-    """A single knowledge object in a workspace.
+    """workspace 中的一个知识对象。
 
-    `content` is a JSON blob whose shape depends on `type` - e.g. a Method
-    might carry {name, description, inputs, outputs}, a Claim might carry
-    {statement, scope, conditions}. The shape is enforced at the service
-    layer (Phase 3) rather than by the DB.
+    `content` 是形状取决于 `type` 的 JSON blob。例如 Method 可能包含
+    {name, description, inputs, outputs}，Claim 可能包含 {statement, scope, conditions}。
+    其结构由 service 层（Phase 3）而非 DB 强制校验。
     """
 
     __tablename__ = "knowledge_items"
@@ -251,11 +248,11 @@ class KnowledgeItem(Base, UUIDPKMixin, TimestampMixin):
     canonical_name: Mapped[str] = mapped_column(Text, nullable=False)
     content: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
 
-    # Provenance
+# 来源追溯（Provenance）
     source_provenance: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     created_by: Mapped[str] = mapped_column(String(16), default="system", nullable=False)
 
-    # Lifecycle
+# 生命周期
     confidence: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     status: Mapped[str] = mapped_column(
         String(32), default="extracted_candidate", nullable=False, index=True
@@ -272,11 +269,11 @@ class KnowledgeItem(Base, UUIDPKMixin, TimestampMixin):
 
 
 class KnowledgeRelation(Base, UUIDPKMixin, TimestampMixin):
-    """An explicit typed edge between two KnowledgeItems.
+    """两个 KnowledgeItem 之间的显式类型化边。
 
-    Relation types (per plans.md): proposes, addresses, evaluates_on,
-    compares_with, claims, mentions_limitation, suggests, extends,
-    supports, qualifies, contradicts, derived_from, related_to.
+    Relation types（依据 plans.md）：proposes、addresses、evaluates_on、
+    compares_with、claims、mentions_limitation、suggests、extends、supports、
+    qualifies、contradicts、derived_from、related_to。
     """
 
     __tablename__ = "knowledge_relations"
@@ -303,10 +300,10 @@ class KnowledgeRelation(Base, UUIDPKMixin, TimestampMixin):
 
 
 class EvidenceSpan(Base, UUIDPKMixin, TimestampMixin):
-    """A pointer to a span of text in a paper that backs a KnowledgeItem.
+    """指向论文文本范围的指针，用于支持 KnowledgeItem。
 
-    Phase 1b stores chunk_index + char offsets. Phase 2 will define the
-    chunk shape; Phase 3 will populate these rows during extraction.
+    Phase 1b 保存 chunk_index 和字符偏移。Phase 2 定义 chunk 结构；Phase 3 在抽取过程
+    中填充这些行。
     """
 
     __tablename__ = "evidence_spans"
@@ -335,3 +332,8 @@ class EvidenceSpan(Base, UUIDPKMixin, TimestampMixin):
         String(16), default="supports", nullable=False
     )  # supports | qualifies | contradicts
     confidence: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    # Evidence 是一等 provenance 对象。在此保留软删除，避免 graph 投影重新
+    # 引用已经失效的 span。
+    is_deleted: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, index=True
+    )

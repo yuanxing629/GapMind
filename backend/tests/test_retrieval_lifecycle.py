@@ -1,31 +1,32 @@
-"""Indexing lifecycle + degradation-path tests (RG-6 / V3).
+"""索引生命周期与降级路径测试（RG-6 / V3）。
 
-Contract items from phase3_smoke_validation_and_next_plan.md §6 V3:
+phase3_smoke_validation_and_next_plan.md §6 V3 的 contract 项：
 
-  1. Same paper re-embed does NOT produce duplicate chunks.
-  2. Chunk version change → old vectors are fully deleted.
-  3. Paper soft-deleted → Retrieval no longer returns that paper.
-  4. Workspace archive / soft-delete policy is consistent with retrieval.
-  5. Embedding / Milvus / reranker failures → explicit failed/degraded status,
-     NOT silent fallback to "empty success".
-  6. Task and Paper projected state don't lie about real Milvus state.
-  7. Fresh-DB end-to-end (migration → upload → parse → extract → index → search).
+  1. 同一论文重复 embedding 不会产生重复 chunk。
+  2. Chunk version 变化 → 完整删除旧向量。
+  3. Paper 软删除后 → Retrieval 不再返回该论文。
+  4. Workspace archive / soft-delete 策略与 retrieval 一致。
+  5. Embedding / Milvus / reranker 失败 → 返回明确的 failed/degraded 状态，不会静默回退为
+     "empty success"。
+  6. Task 和 Paper 投影状态不会虚报真实 Milvus 状态。
+  7. 全新 DB 端到端流程（migration → upload → parse → extract → index → search）。
 
-Most tests mock Milvus (no live Milvus instance in CI) and use the
-SQLite fixture for Paper / Task / Workspace state. The cross-domain
-deletion propagation in (3) is tested by mocking milvus_client.delete_by_paper
-and asserting it gets called on paper soft_delete.
+大多数测试 mock Milvus（CI 中没有 live Milvus 实例），并使用 SQLite fixture 保存 Paper /
+Task / Workspace 状态。第 (3) 项的跨 domain 删除传播通过 mock
+milvus_client.delete_by_paper 并断言 paper soft_delete 时调用它来测试。
 """
 
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from unittest.mock import MagicMock
+from uuid import uuid4
 
 import pytest
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
+from app.domains.artifact.service import ArtifactService
 from app.domains.paper.models import Paper
 from app.domains.paper.service import PaperService
 from app.domains.retrieval import milvus_client, service as retrieval_service
@@ -33,17 +34,17 @@ from app.domains.workspace.models import Workspace
 
 
 # ==================================================================
-# Fixtures
+# Fixtures：测试夹具
 # ==================================================================
 
 
 @pytest.fixture
 def fake_milvus(_stub_milvus) -> MagicMock:
-    """Re-export the conftest-provided Milvus fake so test bodies can refer to
-    it explicitly. Returning the same object (not a fresh MagicMock) means
-    assertions like ``fake_milvus.delete_by_paper.assert_called_once_with(...)``
-    see the same calls that paper.service / retrieval.service triggered via
-    their patched module attributes.
+    """重新导出 conftest 提供的 Milvus 替身，便于测试主体显式引用。
+
+    返回同一个对象（而不是新的 MagicMock），这样
+    ``fake_milvus.delete_by_paper.assert_called_once_with(...)`` 等断言，
+    才能看到 paper.service / retrieval.service 通过其替换后的模块属性触发的调用。
     """
     return _stub_milvus
 
@@ -54,7 +55,7 @@ def fake_embedding(monkeypatch) -> MagicMock:
     fake.model = "fake-emb"
     fake.dim = 4
     fake.embed_one.return_value = [0.1, 0.2, 0.3, 0.4]
-    # Return one embedding per input text (pymilvus contract).
+# 每条输入文本返回一个 embedding（pymilvus 契约）。
     def _fake_embed(texts):
         from types import SimpleNamespace
         return SimpleNamespace(embeddings=[[0.1, 0.2, 0.3, 0.4] for _ in texts])
@@ -95,84 +96,125 @@ def _paper(
     return paper
 
 
-def _write_chunks_jsonl(tmp_path: Path, workspace_id: str, paper_id: str, n: int) -> Path:
-    """Write n synthetic chunks for index_paper_chunks to load."""
-    chunk_dir = tmp_path / workspace_id
-    chunk_dir.mkdir(parents=True, exist_ok=True)
-    path = chunk_dir / f"{paper_id}.jsonl"
-    path.write_text(
-        "\n".join(
-            json.dumps({
-                "chunk_id": f"{paper_id}-c{i}",
-                "workspace_id": workspace_id,
-                "paper_id": paper_id,
-                "source_artifact_id": "art-1",
-                "chunk_index": i,
-                "text": f"chunk {i}",
-                "start_char": 0,
-                "end_char": 10,
-            })
-            for i in range(n)
-        ),
-        encoding="utf-8",
+def _write_chunks_jsonl(db: Session, paper: Paper, n: int):
+    """为合成论文创建规范的 chunk_index Artifact。"""
+    payload = "\n".join(
+        json.dumps({
+            "chunk_id": f"{paper.id}-c{i}",
+            "workspace_id": paper.workspace_id,
+            "paper_id": paper.id,
+            "source_artifact_id": "art-1",
+            "chunk_index": i,
+            "text": f"chunk {i}",
+            "start_char": 0,
+            "end_char": 10,
+        })
+        for i in range(n)
     )
-    return path
+    artifact = ArtifactService(db).save_upload(
+        workspace_id=paper.workspace_id,
+        filename=f"{paper.id}_chunks.jsonl",
+        content=payload.encode("utf-8"),
+        mime_type="application/jsonl",
+        kind="chunk_index",
+    )
+    paper.chunk_index_artifact_id = artifact.id
+    db.commit()
+    return artifact
+
+
+def test_chunk_records_resolve_from_storage_artifact(
+    db_session, tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setattr(settings, "app_storage_dir", str(tmp_path / "storage"))
+    ws = _workspace(db_session)
+    paper = _paper(db_session, ws.id)
+    _write_chunks_jsonl(db_session, paper, n=2)
+
+    chunk = retrieval_service.find_chunk_record(
+        ws.id,
+        paper.id,
+        f"{paper.id}-c1",
+        db=db_session,
+    )
+    assert chunk is not None
+    assert chunk.start_char == 0
+    assert chunk.end_char == 10
+
+# 没有指针的历史行仍可通过数据库元数据解析出精确的 workspace 级 chunk_index 文件名。
+    paper.chunk_index_artifact_id = None
+    db_session.commit()
+    assert retrieval_service.find_chunk_record(
+        ws.id,
+        paper.id,
+        f"{paper.id}-c1",
+        db=db_session,
+    ) is not None
+    assert retrieval_service.find_chunk_record(
+        str(uuid4()),
+        paper.id,
+        f"{paper.id}-c1",
+        db=db_session,
+    ) is None
 
 
 # ==================================================================
-# 1. Idempotent indexing
+# 1. 幂等索引
 # ==================================================================
 
 
 def test_index_paper_chunks_idempotent_skips_existing(
     db_session, fake_milvus, fake_embedding, tmp_path, monkeypatch
 ) -> None:
-    """Same paper indexed twice without force_reindex — second call
-    invokes get_existing_chunk_ids and inserts zero new chunks."""
-    monkeypatch.setattr(retrieval_service, "DATA_ROOT", tmp_path)
-    # Conftest's stub returns insert_chunks=0 by default; simulate a real
-    # Milvus by returning the batch size.
+    """同一论文在未启用 force_reindex 时重复索引，第二次调用
+    get_existing_chunk_ids，并且不插入新的分块。"""
+    monkeypatch.setattr(settings, "app_storage_dir", str(tmp_path / "storage"))
+# Conftest 的替身默认返回 insert_chunks=0；通过返回批次大小模拟真实 Milvus。
     fake_milvus.insert_chunks.side_effect = lambda batch: len(batch)
     ws = _workspace(db_session)
     paper = _paper(db_session, ws.id)
-    _write_chunks_jsonl(tmp_path, ws.id, paper.id, n=3)
+    _write_chunks_jsonl(db_session, paper, n=3)
 
-    # First index: nothing exists yet → insert all 3
+# 第一次索引：尚无已存在内容 → 写入全部 3 个
     fake_milvus.get_existing_chunk_ids.return_value = set()
-    r1 = retrieval_service.index_paper_chunks(ws.id, paper.id)
+    r1 = retrieval_service.index_paper_chunks(ws.id, paper.id, db=db_session)
     assert r1.indexed_count == 3
     assert r1.skipped_count == 0
 
-    # Second index: report all 3 already exist → skip
+# 第二次索引：报告全部 3 个已存在 → 跳过
     fake_milvus.get_existing_chunk_ids.return_value = {
         f"{paper.id}-c0", f"{paper.id}-c1", f"{paper.id}-c2",
     }
-    r2 = retrieval_service.index_paper_chunks(ws.id, paper.id)
+    r2 = retrieval_service.index_paper_chunks(ws.id, paper.id, db=db_session)
     assert r2.indexed_count == 0
     assert r2.skipped_count == 3
     assert r2.error is None
 
 
 # ==================================================================
-# 2. Force reindex deletes old vectors before re-inserting
+# 2. 强制重建索引会在重新写入前删除旧向量
 # ==================================================================
 
 
 def test_index_force_reindex_calls_delete_by_paper_first(
     db_session, fake_milvus, fake_embedding, tmp_path, monkeypatch
 ) -> None:
-    """force_reindex=True must call delete_by_paper so stale chunks from a
-    previous parse don't linger. If a chunk_id survives across parses, it
-    gets re-inserted (chunk_version change implies new content)."""
-    monkeypatch.setattr(retrieval_service, "DATA_ROOT", tmp_path)
+    """force_reindex=True 必须调用 delete_by_paper，避免上次解析的旧分块残留。
+
+    如果某个 chunk_id 在多次解析间仍然存在，则重新插入它（chunk_version 变化表示内容已更新）。
+    """
+    monkeypatch.setattr(settings, "app_storage_dir", str(tmp_path / "storage"))
     ws = _workspace(db_session)
     paper = _paper(db_session, ws.id)
-    _write_chunks_jsonl(tmp_path, ws.id, paper.id, n=3)
+    _write_chunks_jsonl(db_session, paper, n=3)
 
-    retrieval_service.index_paper_chunks(ws.id, paper.id, force_reindex=True)
+    retrieval_service.index_paper_chunks(ws.id, paper.id, db=db_session, force_reindex=True)
 
-    fake_milvus.delete_by_paper.assert_called_once_with(paper.id)
-    # delete happens before insert; verify call ordering.
+    fake_milvus.delete_by_paper.assert_called_once_with(
+        paper.id,
+        workspace_id=ws.id,
+    )
+# delete 发生在 insert 之前，验证调用顺序。
     call_order = [c[0] for c in fake_milvus.mock_calls]
     assert "delete_by_paper" in call_order
     assert "insert_chunks" in call_order
@@ -180,19 +222,18 @@ def test_index_force_reindex_calls_delete_by_paper_first(
 
 
 # ==================================================================
-# 3. Soft-deleted paper → no Retrieval hits
+# 3. 软删除论文 -> 没有 Retrieval 命中
 # ==================================================================
 
 
 def test_paper_soft_delete_propagates_to_milvus(
     db_session, monkeypatch
 ) -> None:
-    """When paper.is_deleted flips to True, the corresponding Milvus
-    vectors must be deleted so future Retrieval calls don't surface it.
+    """当 paper.is_deleted 变为 True 时，必须删除对应的 Milvus 向量，
+    使后续检索不会再返回该论文。
 
-    This is a cross-domain propagation contract — paper lifecycle events
-    must reach the search index. We assert it by patching the
-    ``milvus_client`` module attribute that paper.service holds.
+    这是跨领域传播契约——论文生命周期事件必须传播到搜索索引。
+    本测试通过替换 paper.service 持有的 ``milvus_client`` 模块属性来断言这一点。
     """
     ws = _workspace(db_session)
     paper = _paper(db_session, ws.id)
@@ -203,35 +244,37 @@ def test_paper_soft_delete_propagates_to_milvus(
 
     PaperService(db_session).soft_delete(paper.id)
 
-    fake_milvus.delete_by_paper.assert_called_once_with(paper.id)
+    fake_milvus.delete_by_paper.assert_called_once_with(
+        paper.id,
+        workspace_id=ws.id,
+    )
 
 
 def test_soft_deleted_paper_excluded_from_retrieval_via_milvus_deletion(
     db_session, fake_milvus, fake_embedding, tmp_path, monkeypatch
 ) -> None:
-    """End-to-end: index a paper, soft-delete it (which deletes from
-    Milvus), then verify retrieval returns nothing from that paper.
+    """端到端流程：索引论文、软删除论文（同时从 Milvus 删除），
+    然后验证检索不会返回该论文的内容。
 
-    The conftest's autouse _stub_milvus fixture provides a shared MagicMock
-    Milvus; the explicit fake_milvus parameter here is the SAME object (it's
-    a function-scoped autouse fixture, and `fake_milvus` re-imports it for
-    the test's convenience). So we just assert on the shared fake.
+    conftest 中自动使用的 _stub_milvus fixture 提供共享 MagicMock；这里显式传入的
+    fake_milvus 参数就是同一个对象（它是函数级自动 fixture，fake_milvus 只是为了便于
+    测试重新导出它）。因此本测试直接对共享替身进行断言。
     """
-    monkeypatch.setattr(retrieval_service, "DATA_ROOT", tmp_path)
+    monkeypatch.setattr(settings, "app_storage_dir", str(tmp_path / "storage"))
     ws = _workspace(db_session)
     paper = _paper(db_session, ws.id)
-    _write_chunks_jsonl(tmp_path, ws.id, paper.id, n=2)
+    _write_chunks_jsonl(db_session, paper, n=2)
 
-    # Index.
+# 索引。
     fake_milvus.get_existing_chunk_ids.return_value = set()
-    retrieval_service.index_paper_chunks(ws.id, paper.id)
+    retrieval_service.index_paper_chunks(ws.id, paper.id, db=db_session)
     assert fake_milvus.insert_chunks.call_count >= 1
 
-    # Soft-delete → should propagate to Milvus.
+# 软删除 -> 应同步到 Milvus。
     PaperService(db_session).soft_delete(paper.id)
     assert fake_milvus.delete_by_paper.call_count == 1
 
-    # Now retrieval returns no hits because Milvus is empty for that paper.
+# 现在检索不返回命中，因为 Milvus 中该论文已为空。
     fake_milvus.search.return_value = []
     resp = retrieval_service.semantic_search(ws.id, "anything")
     assert resp.total == 0
@@ -239,16 +282,17 @@ def test_soft_deleted_paper_excluded_from_retrieval_via_milvus_deletion(
 
 
 # ==================================================================
-# 4. Workspace archive / soft-delete contract
+# 4. Workspace 归档/软删除契约
 # ==================================================================
 
 
 def test_workspace_is_archived_does_not_affect_retrieval(
     db_session, fake_milvus, fake_embedding
 ) -> None:
-    """Archive is a non-destructive flag (workspace preserved for history).
-    Retrieval against an archived workspace still works — the user can
-    query history. (Soft-delete is the destructive variant.)"""
+    """归档是非破坏性标记（保留工作区以便查看历史）。
+
+    对已归档工作区的检索仍然可用，用户可以查询历史记录。
+    （软删除才是破坏性变体。）"""
     ws = _workspace(db_session, archived=True)
 
     fake_milvus.search.return_value = [
@@ -260,21 +304,21 @@ def test_workspace_is_archived_does_not_affect_retrieval(
     resp = retrieval_service.semantic_search(ws.id, "query")
     assert resp.status == "succeeded"
     assert resp.total == 1
-    # The filter still pins the query to the workspace's scope.
+# 过滤器仍将查询固定在 workspace 作用域内。
     fake_milvus.search.assert_called_once()
-    # workspace_id is the first positional arg of milvus_client.search.
+# workspace_id 是 milvus_client.search 的第一个位置参数。
     args, kwargs = fake_milvus.search.call_args
     assert args[1] == ws.id  # (query_vector, workspace_id, top_k=...)
 
 
 # ==================================================================
-# 5. Failure paths: explicit status, no silent fallback
+# 5. 失败路径：显式状态，不静默回退
 # ==================================================================
 
 
 class _FakeEmbeddingBoom:
-    """embed_one raises — retrieval must surface a clean failed status,
-    NOT pretend the search succeeded with empty results."""
+    """embed_one 抛出异常时，检索必须返回清晰的失败状态，
+    不能假装搜索成功并返回空结果。"""
 
     model = "fake"
     dim = 4
@@ -338,9 +382,9 @@ def test_semantic_search_status_failed_on_unloaded_collection(monkeypatch) -> No
 
 
 def test_counter_evidence_status_failed_on_milvus_error(monkeypatch) -> None:
-    """Counter evidence failure must NOT silently return empty success —
-    the user needs to know the system couldn't find anything (vs found
-    nothing)."""
+    """反证检索失败时不能静默返回空的成功结果。
+
+    用户需要知道系统是“未能找到内容”，还是“找到的内容中没有结果”。"""
     class _OkEmbedding:
         model = "fake"
         dim = 4
@@ -364,9 +408,10 @@ def test_counter_evidence_status_failed_on_milvus_error(monkeypatch) -> None:
 def test_reranker_failure_falls_back_to_score_only(
     monkeypatch, fake_milvus, fake_embedding
 ) -> None:
-    """Reranker is best-effort: a failure degrades to vector-score ordering.
-    This is documented behaviour — semantic_search returns degraded with
-    the available signal. (Counter Evidence does the same.)"""
+    """重排器采用尽力而为策略：失败时降级为按向量分数排序。
+
+    这是已记录的行为——semantic_search 使用现有信号返回 degraded 状态。
+    （反证检索也采用相同策略。）"""
     class _BoomReranker:
         def rerank(self, query, documents, *, top_n):
             raise RuntimeError("reranker 502")
@@ -382,7 +427,7 @@ def test_reranker_failure_falls_back_to_score_only(
     resp = retrieval_service.semantic_search("ws-1", "query", top_k=3, use_reranker=True)
     assert resp.status == "degraded"
     assert resp.diagnostic_code == "reranker_degraded"
-    # We got the available signal, not a fake failure.
+# 我们获得了可用信号，而不是伪造的失败。
     assert resp.total == 3
     assert all(item.retrieval_stage == "candidate_recall" for item in resp.items)
 
@@ -390,7 +435,7 @@ def test_reranker_failure_falls_back_to_score_only(
 def test_semantic_search_can_diversify_reranked_chunks_by_paper(
     monkeypatch, fake_milvus, fake_embedding
 ) -> None:
-    """Chat answer generation should not let one paper occupy every evidence slot."""
+    """Chat 回答生成不应让同一篇论文占据所有证据槽位。"""
 
     class _OrderedReranker:
         def __init__(self):
@@ -429,30 +474,28 @@ def test_semantic_search_can_diversify_reranked_chunks_by_paper(
 
 
 # ==================================================================
-# 6. Paper.chunk_count vs Milvus state — no false projection
+# 6. Paper.chunk_count 与 Milvus 状态——不能错误投影
 # ==================================================================
 
 
 def test_paper_chunk_count_matches_indexed_chunks(
     db_session, fake_milvus, fake_embedding, tmp_path, monkeypatch
 ) -> None:
-    """The Task row + Paper.chunk_count must reflect what was actually
-    indexed, not a stale count from a previous indexing run.
+    """Task 行和 Paper.chunk_count 必须反映实际索引数量，不能使用上次索引运行的旧计数。
 
-    This test asserts the indexer reports the right counts. The pipeline
-    layer that updates paper.chunk_count from index_paper_chunks is
-    verified separately by the end-to-end integration test in
-    test_parse_pipeline.py — here we lock down the indexer's contract."""
-    monkeypatch.setattr(retrieval_service, "DATA_ROOT", tmp_path)
+    本测试断言索引器报告正确数量。流水线
+    负责根据 index_paper_chunks 更新 paper.chunk_count 的 layer 已由 test_parse_pipeline.py
+    端到端集成测试单独验证；本测试锁定 indexer 的 contract。"""
+    monkeypatch.setattr(settings, "app_storage_dir", str(tmp_path / "storage"))
     ws = _workspace(db_session)
     paper = _paper(db_session, ws.id)
-    _write_chunks_jsonl(tmp_path, ws.id, paper.id, n=4)
+    _write_chunks_jsonl(db_session, paper, n=4)
 
     fake_milvus.get_existing_chunk_ids.return_value = set()
     fake_milvus.insert_chunks.return_value = 4  # batch returns count
 
-    result = retrieval_service.index_paper_chunks(ws.id, paper.id)
-    assert result.total_chunks == 4  # JSONL read
+    result = retrieval_service.index_paper_chunks(ws.id, paper.id, db=db_session)
+    assert result.total_chunks == 4  # chunk_index Artifact read
     assert result.indexed_count == 4  # Milvus insert returned count
     assert result.skipped_count == 0
 
@@ -460,45 +503,44 @@ def test_paper_chunk_count_matches_indexed_chunks(
 def test_partial_insertion_reported_as_partial(
     db_session, fake_milvus, fake_embedding, tmp_path, monkeypatch
 ) -> None:
-    """If Milvus insert_chunks returns fewer than the batch size, the
-    indexer must report it honestly. This is the foundation for the
-    Task row's accuracy (Task reports partial completion, not 100%)."""
-    monkeypatch.setattr(retrieval_service, "DATA_ROOT", tmp_path)
+    """如果 Milvus insert_chunks 返回的数量少于批次大小，索引器必须如实报告。
+
+    这是 Task 行准确性的基础（Task 报告部分完成，而不是 100% 完成）。"""
+    monkeypatch.setattr(settings, "app_storage_dir", str(tmp_path / "storage"))
     ws = _workspace(db_session)
     paper = _paper(db_session, ws.id)
-    _write_chunks_jsonl(tmp_path, ws.id, paper.id, n=10)
+    _write_chunks_jsonl(db_session, paper, n=10)
 
     fake_milvus.get_existing_chunk_ids.return_value = set()
-    # Single batch (10 chunks < batch_size=100): 8 of 10 inserted.
+    # 单个批次（10 个分块 < batch_size=100）：插入 10 个中的 8 个。
     fake_milvus.insert_chunks.side_effect = lambda batch: 8
 
-    result = retrieval_service.index_paper_chunks(ws.id, paper.id)
+    result = retrieval_service.index_paper_chunks(ws.id, paper.id, db=db_session)
     assert result.total_chunks == 10
-    assert result.indexed_count == 8  # honest count
-    # Caller can compare indexed_count vs total_chunks to detect partial.
+    assert result.indexed_count == 8  # 如实记录数量
+    # 调用方可以比较 indexed_count 和 total_chunks 来检测部分完成。
 
 
 # ==================================================================
-# 7. Fresh-DB end-to-end (lightweight contract check)
+# 7. 全新数据库端到端测试（轻量契约检查）
 # ==================================================================
 
 
 def test_indexer_writes_consistent_records_to_milvus(
     db_session, fake_milvus, fake_embedding, tmp_path, monkeypatch
 ) -> None:
-    """Full indexing → record-shape contract: every record passed to
-    Milvus must carry workspace_id, paper_id, chunk_id, section,
-    text, embedding. The pipeline that calls this depends on every
-    field landing in the vector store correctly."""
-    monkeypatch.setattr(retrieval_service, "DATA_ROOT", tmp_path)
+    """完整索引的记录结构契约：传给 Milvus 的每条记录都必须包含
+    workspace_id、paper_id、chunk_id、section、text 和 embedding。
+    调用该流程的上层依赖每个字段都正确写入向量库。"""
+    monkeypatch.setattr(settings, "app_storage_dir", str(tmp_path / "storage"))
     ws = _workspace(db_session)
     paper = _paper(db_session, ws.id)
-    _write_chunks_jsonl(tmp_path, ws.id, paper.id, n=2)
+    _write_chunks_jsonl(db_session, paper, n=2)
 
     fake_milvus.get_existing_chunk_ids.return_value = set()
-    retrieval_service.index_paper_chunks(ws.id, paper.id)
+    retrieval_service.index_paper_chunks(ws.id, paper.id, db=db_session)
 
-    # Collect all records passed to insert_chunks across batches.
+# 收集所有批次传给 insert_chunks 的记录。
     all_records: list[dict] = []
     for call in fake_milvus.insert_chunks.call_args_list:
         all_records.extend(call.args[0])
@@ -514,19 +556,17 @@ def test_indexer_writes_consistent_records_to_milvus(
 
 
 # ==================================================================
-# Auxiliary: paper.soft_delete failure path — Milvus exception must NOT
-# silently leave the paper's vectors indexed
+# 辅助场景：paper.soft_delete 失败路径——Milvus 异常不能静默让论文向量继续留在索引中
 # ==================================================================
 
 
 def test_paper_soft_delete_records_failure_when_milvus_throws(
     db_session, monkeypatch
 ) -> None:
-    """If Milvus delete_by_paper fails, the paper soft_delete must raise so
-    the API returns 5xx (NOT a silent 200). The DB-level is_deleted flip is
-    committed before the Milvus call — leaving a known-inconsistent state
-    that the API caller can detect via a follow-up GET. We choose fail-loud
-    over silent inconsistency.
+    """如果 Milvus delete_by_paper 失败，paper soft_delete 必须抛出异常，
+    使 API 返回 5xx（不能静默返回 200）。数据库层的 is_deleted 翻转会在
+    Milvus 调用前提交，因而可能留下已知的不一致状态，API 调用方可以通过后续 GET 检测到。
+    这里选择显式失败，而不是静默接受不一致。
     """
     fake_milvus = MagicMock(name="milvus_client")
     fake_milvus.delete_by_paper.side_effect = RuntimeError("milvus unreachable")
@@ -539,7 +579,7 @@ def test_paper_soft_delete_records_failure_when_milvus_throws(
     with pytest.raises(RuntimeError, match="milvus unreachable"):
         PaperService(db_session).soft_delete(paper.id)
 
-    # DB-side flag IS flipped (documented; a follow-up reconcile can repair).
+# 数据库侧标记确实已翻转（已记录；后续 reconcile 可以修复）。
     db_session.expire_all()
     fresh = db_session.get(Paper, paper.id)
     assert fresh is not None

@@ -1,13 +1,11 @@
-"""Read-only A/B evaluation of Chat facets on a fixed Retrieval Gold Set.
+"""在固定 Retrieval Gold Set 上对 Chat facet 进行只读 A/B 评测。
 
-The existing Retrieval Gate manifest contains semantic-search queries rather
-than Chat QA questions.  This runner applies the same deterministic facet
-candidate-union experiment to those semantic queries, without calling an LLM,
-creating Chat messages, or mutating the workspace.  Only the semantic-search
-block is evaluated because facets are a Chat query-planning experiment; the
-similar-work and counter-evidence blocks remain unchanged.
+现有 Retrieval Gate manifest 包含 semantic-search query，而不是 Chat QA question。本运行器
+对这些 semantic query 应用同一个确定性的 facet 候选并集实验，不调用 LLM、不创建 Chat
+message，也不修改 workspace。由于 facet 是 Chat query-planning 实验，只评估 semantic-search
+区块；similar-work 和 counter-evidence 区块保持不变。
 
-Example (from the repository root)::
+示例（从仓库根目录运行）：
 
     backend\\.venv\\Scripts\\python.exe evaluation\\retrieval\\run_fixed_semantic_facet_ab.py `
       --workspace-id <workspace-id> `
@@ -70,7 +68,7 @@ def _metrics(
     target_paper_id: str,
     top_k: int,
 ) -> dict[str, Any]:
-    """Return fail-closed paper metrics for one retrieval response."""
+    """为一次检索响应返回 fail-closed 的论文级指标。"""
 
     if response.status == "failed":
         return {

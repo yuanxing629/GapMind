@@ -1,16 +1,13 @@
-"""LLM-call helpers used by the extraction worker.
+"""抽取 worker 使用的 LLM 调用辅助函数。
 
-The Deepseek wrapper in ``app.gateway.llm`` already handles transport;
-this module adds the things specific to *structured extraction*:
+``app.gateway.llm`` 中的 provider-neutral wrapper 已负责传输；本模块补充
+*structured extraction* 特有的逻辑：
 
-  * retry on JSON-parse failure (the model occasionally drops a brace or
-    forgets the closing ``]``);
-  * JSON repair (strip ```json fences, drop trailing commas);
-  * a ``max_tokens`` ceiling large enough to fit a full paper's
-    ``items + relations`` payload (≈16 K tokens observed in dev).
+* JSON 解析失败时重试（模型偶尔会漏掉括号或忘记闭合 ``]``）；
+* 修复 JSON（移除 ```json 围栏、删除末尾逗号）；
+* 提供足够空间容纳整篇论文的 ``items + relations`` payload（开发环境观察到约 16 K tokens）。
 
-The functions here are stateless — the retry loop captures only the
-local state, the LLM gateway is resolved lazily so tests can stub it.
+本模块的函数无状态；重试循环只保存局部状态，LLM gateway 延迟解析，以便测试替换它。
 """
 
 from __future__ import annotations
@@ -25,10 +22,9 @@ from app.gateway.llm import LLMGateway
 
 logger = get_logger(__name__)
 
-# Output budget: an extraction of "methods + tasks + datasets + claims +
-# limitations + relations" for a 30-page paper routinely hits 8-12 K
-# tokens of JSON. 16 384 leaves headroom without bumping into the
-# gateway's 32 K ceiling.
+# 输出预算：一篇 30 页论文的“methods + tasks + datasets + claims + limitations +
+# relations”抽取结果通常达到 8-12 K 个 JSON token。16 384 可以留出余量，
+# 同时不触及 gateway 的 32 K 上限。
 DEFAULT_MAX_TOKENS = 16_384
 DEFAULT_TEMPERATURE = 0.1
 DEFAULT_MAX_RETRIES = 2
@@ -42,11 +38,10 @@ def call_llm_with_retry(
     max_tokens: int = DEFAULT_MAX_TOKENS,
     temperature: float = DEFAULT_TEMPERATURE,
 ) -> tuple[str, dict[str, Any] | None]:
-    """Call the LLM and parse the response as JSON. Returns ``(raw, parsed)``.
+    """调用 LLM 并将响应解析为 JSON，返回 ``(raw, parsed)``。
 
-    ``parsed`` is ``None`` when every attempt failed to produce valid JSON
-    with an ``items`` key. The caller is responsible for persisting the
-    raw response as an ``ExtractionRejection`` for audit.
+    当所有尝试都未能生成包含 ``items`` 键的有效 JSON 时，``parsed`` 为 ``None``。
+    调用方负责将原始响应持久化为 ``ExtractionRejection`` 以供审计。
     """
     gateway = LLMGateway()
     last_raw = ""
@@ -56,8 +51,8 @@ def call_llm_with_retry(
                 messages,
                 temperature=temperature,
                 max_tokens=max_tokens,
-                # Structured extraction: the reasoning model otherwise burns the
-                # whole budget on CoT and returns empty content (see plan §八).
+# 结构化抽取：否则 reasoning model 可能将整个预算耗费在 CoT 上并返回空内容
+#（见方案 §八）。
                 disable_thinking=True,
             )
             raw = response.content
@@ -74,13 +69,13 @@ def call_llm_with_retry(
 
 
 def parse_llm_json(raw: str) -> dict[str, Any] | None:
-    """Pull a JSON object out of an LLM response.
+    """从 LLM 响应中提取 JSON 对象。
 
-    Handles three common shapes:
+    处理三种常见形式：
 
-    1. ```` ```json\n{...}\n``` ```` fenced block
-    2. prose with an embedded ``{...}`` (we grab the outermost braces)
-    3. valid JSON with a stray trailing comma (we strip it)
+    1. ```` ```json\n{...}\n``` ```` 代码围栏
+    2. 嵌入 ``{...}`` 的 prose（提取最外层大括号）
+    3. 带多余末尾逗号的有效 JSON（先移除末尾逗号）
     """
     match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", raw)
     if match:

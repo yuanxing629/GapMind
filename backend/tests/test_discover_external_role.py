@@ -1,4 +1,4 @@
-"""Tests for external candidate role judgement (Stage 3)."""
+"""外部候选角色判断测试（Stage 3）。"""
 
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ def _candidate(title: str, abstract: str = "abstract text") -> DiscoverExternalC
 
 
 class _FakeLLM:
-    """Returns a canned roles array; records the prompt."""
+    """返回预设 roles 数组，并记录 prompt。"""
 
     def __init__(self, roles: list[dict]) -> None:
         self.roles = roles
@@ -78,7 +78,7 @@ def test_role_judgement_updates_candidates(db_session) -> None:
     assert cands[1].role == "qualifies"
     assert cands[2].role == "contradicts"
     assert cands[0].role_confidence == 0.8
-    # One LLM call for the whole batch (3 candidates <= batch_size 8).
+# 整个批次只调用一次 LLM（3 个候选 <= batch_size 8）。
     assert len(fake.calls) == 1
 
 
@@ -89,8 +89,8 @@ def test_role_judgement_batches_large_sets(db_session) -> None:
     )
     service = _service(db_session, fake)
     service._judge_external_roles(MagicMock(spec=DiscoverRun), "q", cands)
-    # 12 candidates / batch 8 → 2 calls; second batch returns nothing valid
-    # so those candidates keep their heuristic role.
+# 12 个候选 / batch 8 -> 2 次调用；第二批没有返回有效内容，
+# 因此这些候选保留 heuristic role。
     assert len(fake.calls) == 2
 
 
@@ -98,7 +98,7 @@ def test_role_judgement_failure_keeps_heuristic(db_session) -> None:
     cands = [_candidate("Paper A")]
     service = _service(db_session, _BoomLLM())
     service._judge_external_roles(MagicMock(spec=DiscoverRun), "q", cands)
-    # LLM failed → heuristic role retained.
+# LLM 失败 -> 保留 heuristic role。
     assert cands[0].role == "similar"
     assert cands[0].role_confidence == 0.35
 

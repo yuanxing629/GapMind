@@ -1,4 +1,4 @@
-"""Tests for the Semantic Scholar search proxy and metadata import flow."""
+"""Semantic Scholar 搜索代理与元数据导入流程测试。"""
 
 from __future__ import annotations
 

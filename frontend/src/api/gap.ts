@@ -5,6 +5,9 @@ export interface GapExtractionTask {
   task_id: string;
   status: string;
   skipped?: boolean;
+  input_mode?: string | null;
+  knowledge_extraction_run_id?: string | null;
+  dependency_status?: string;
 }
 
 export interface GapAnnotation {
@@ -15,8 +18,16 @@ export interface GapAnnotation {
   model_provider: string;
   model_name: string;
   model_parameters?: Record<string, unknown>;
+  knowledge_extraction_run_id?: string | null;
+  knowledge_context_sha256?: string | null;
+  input_mode?: string;
+  source_knowledge_item_ids?: string[];
+  source_evidence_span_ids?: string[];
+  context_char_count?: number;
+  context_fallback_reason?: string | null;
   validation_errors: string[];
   fallback_reason?: string | null;
+  stale?: boolean;
   updated_at: string;
 }
 

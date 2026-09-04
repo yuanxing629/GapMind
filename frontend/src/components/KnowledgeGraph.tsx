@@ -114,12 +114,21 @@ const STATUS_OPTIONS = [
   ["rejected", "已拒绝"],
 ] as const;
 
+function reviewStatusLabel(status: string): string {
+  if (status === "human_confirmed" || status === "experiment_validated") return "人工确认";
+  if (status === "rejected" || status === "invalidated") return "已拒绝";
+  if (status === "deprecated") return "已弃用";
+  if (status === "evidence_backed_proposal") return "有证据候选";
+  return "AI 候选";
+}
+
 interface GraphFilters {
   type?: string;
   status?: string;
   paperId?: string;
   relationType?: string;
   minConfidence?: number;
+  includeRelatedPapers?: boolean;
 }
 
 interface ViewState {
@@ -131,6 +140,8 @@ interface ViewState {
   totalNodes: number;
   totalEdges: number;
   hasMore: boolean;
+  truncated: boolean;
+  truncationReason?: string;
   nodeCounts: Record<string, number>;
   relationCounts: Record<string, number>;
   workspaceCounts: Record<string, number>;
@@ -147,6 +158,7 @@ const emptyViewState = (): ViewState => ({
   totalNodes: 0,
   totalEdges: 0,
   hasMore: false,
+  truncated: false,
   nodeCounts: {},
   relationCounts: {},
   workspaceCounts: {},
@@ -165,7 +177,7 @@ function filterSignature(filters: GraphFilters): string {
 }
 
 function typeOptions(mode: GraphViewMode) {
-  const values = mode === "landscape"
+  const values = mode === "workspace" || mode === "landscape"
     ? ["method", "task", "dataset"]
     : mode === "claims"
       ? ["claim", "limitation"]
@@ -175,6 +187,7 @@ function typeOptions(mode: GraphViewMode) {
 
 function nodeShape(node: KnowledgeGraphNode): string {
   if (node.node_kind === "paper") return "round-rectangle";
+  if (node.node_kind === "canonical_entity") return "hexagon";
   if (node.node_kind === "paper_mention") return "ellipse";
   if (resolvedNodeType(node) === "claim" || resolvedNodeType(node) === "limitation") {
     return "round-rectangle";
@@ -185,6 +198,19 @@ function nodeShape(node: KnowledgeGraphNode): string {
 function layoutOptions(mode: GraphViewMode) {
   if (mode === "evidence") {
     return { name: "breadthfirst", directed: true, spacingFactor: 1.25, padding: 42 };
+  }
+  if (mode === "workspace") {
+    return {
+      name: "cose",
+      animate: false,
+      randomize: true,
+      padding: 56,
+      nodeRepulsion: 7800,
+      idealEdgeLength: 112,
+      edgeElasticity: 100,
+      gravity: 0.15,
+      numIter: 1200,
+    };
   }
   if (mode === "landscape") {
     return {
@@ -216,22 +242,26 @@ function Inspector({
   node,
   edges,
   nodes,
+  papers,
   workspaceId,
   expanded,
   loading,
   onExpand,
   onBranch,
   onRestore,
+  onEnterPaperView,
 }: {
   node: KnowledgeGraphNode | null;
   edges: KnowledgeGraphEdge[];
   nodes: KnowledgeGraphNode[];
+  papers: Paper[];
   workspaceId: string;
   expanded: boolean;
   loading: boolean;
   onExpand: () => void;
   onBranch: () => void;
   onRestore: () => void;
+  onEnterPaperView: (paperId: string) => void;
 }) {
   const navigate = useNavigate();
   if (!node) {
@@ -255,13 +285,15 @@ function Inspector({
   const source = node.content?.source;
   const parseStatus = node.content?.parse_status;
   const aliases = node.content?.aliases;
+  const entityAliases = node.aliases ?? (Array.isArray(aliases) ? aliases : []);
+  const supportingPapers = papers.filter((paper) => node.supporting_paper_ids?.includes(paper.id));
 
   return (
     <div>
       <Space wrap style={{ marginBottom: 12 }}>
         <Tag color={TYPE_COLORS[kind] ?? "default"}>{node.display_type || TYPE_LABELS[kind] || kind}</Tag>
         <Tag>{Math.round(node.confidence * 100)}% 置信度</Tag>
-        <Tag color={node.status === "human_confirmed" ? "green" : "gold"}>{node.status}</Tag>
+        <Tag color={node.status === "human_confirmed" || node.status === "experiment_validated" ? "green" : node.status === "rejected" || node.status === "invalidated" ? "red" : "gold"}>{reviewStatusLabel(node.status)}</Tag>
       </Space>
       <Title level={5} style={{ marginTop: 0 }}>{node.label}</Title>
       <Paragraph style={{ whiteSpace: "pre-wrap" }}>{contentSummary(node)}</Paragraph>
@@ -274,11 +306,17 @@ function Inspector({
         </>}
         {node.paper_title && <Descriptions.Item label="来源论文">{node.paper_title}</Descriptions.Item>}
         {node.entity_type && <Descriptions.Item label="实体类型">{TYPE_LABELS[node.entity_type] ?? node.entity_type}</Descriptions.Item>}
-        {Array.isArray(aliases) && aliases.length > 0 && (
-          <Descriptions.Item label="别名">{aliases.join("、")}</Descriptions.Item>
+        {entityAliases.length > 0 && (
+          <Descriptions.Item label="别名">{entityAliases.join("、")}</Descriptions.Item>
         )}
         <Descriptions.Item label="直接关系">{connected.length}</Descriptions.Item>
-        <Descriptions.Item label="证据数量">{node.evidence_count ?? 0}</Descriptions.Item>
+        {node.node_kind === "canonical_entity" ? <>
+          <Descriptions.Item label="覆盖论文数">{node.paper_count ?? 0}</Descriptions.Item>
+          <Descriptions.Item label="提及次数">{node.mention_count ?? 0}</Descriptions.Item>
+          <Descriptions.Item label="知识条目数">{node.knowledge_item_count ?? 0}</Descriptions.Item>
+          <Descriptions.Item label="证据数">{node.evidence_count ?? 0}</Descriptions.Item>
+          <Descriptions.Item label="人工确认数">{node.confirmed_item_count ?? 0}</Descriptions.Item>
+        </> : <Descriptions.Item label="证据数量">{node.evidence_count ?? 0}</Descriptions.Item>}
       </Descriptions>
 
       <Flex wrap gap={8} style={{ marginTop: 16 }}>
@@ -298,9 +336,34 @@ function Inspector({
         </Flex>
       )}
       {node.node_kind === "paper" && (
-        <Button style={{ marginTop: 8 }} onClick={() => navigate(`/workspaces/${workspaceId}/papers`)}>
-          打开论文列表
-        </Button>
+        <Flex wrap gap={8} style={{ marginTop: 8 }}>
+          <Button type="primary" onClick={() => node.paper_id && onEnterPaperView(node.paper_id)}>
+            进入论文视角
+          </Button>
+          <Button onClick={() => navigate(`/workspaces/${workspaceId}/papers`)}>打开论文列表</Button>
+        </Flex>
+      )}
+
+      {node.node_kind === "canonical_entity" && (
+        <>
+          <Divider orientation="left">关联论文</Divider>
+          {supportingPapers.length === 0 ? (
+            <Text type="secondary">当前没有可展示的来源论文</Text>
+          ) : (
+            <Space direction="vertical" size={4} style={{ width: "100%" }}>
+              {supportingPapers.map((paper) => (
+                <Button
+                  key={paper.id}
+                  type="link"
+                  style={{ padding: 0, height: "auto", textAlign: "left" }}
+                  onClick={() => onEnterPaperView(paper.id)}
+                >
+                  {paper.title}
+                </Button>
+              ))}
+            </Space>
+          )}
+        </>
       )}
 
       <Divider orientation="left">关联内容</Divider>
@@ -318,6 +381,11 @@ function Inspector({
                     <Text strong>{other?.label || edge.source_label || edge.target_label || otherId}</Text>
                   </Space>
                   <Text type="secondary">关系置信度 {Math.round(edge.confidence * 100)}%</Text>
+                  {(edge.occurrence_count ?? 0) > 0 && (
+                    <Text type="secondary">
+                      出现 {edge.occurrence_count} 次 · 覆盖 {edge.paper_count ?? 0} 篇论文 · 证据 {edge.evidence_count ?? 0} 条
+                    </Text>
+                  )}
                 </Space>
               </Card>
             );
@@ -355,14 +423,15 @@ export default function KnowledgeGraph({ workspaceId }: { workspaceId: string })
   const expandNodeRef = useRef<(nodeId: string) => void>(() => undefined);
   const lastNodeTapRef = useRef<{ nodeId: string; at: number } | null>(null);
   const hoverClearTimerRef = useRef<number | null>(null);
-  const [mode, setMode] = useState<GraphViewMode>("landscape");
+  const [mode, setMode] = useState<GraphViewMode>("workspace");
   const [views, setViews] = useState<Record<GraphViewMode, ViewState>>({
+    workspace: emptyViewState(),
     landscape: emptyViewState(),
     claims: emptyViewState(),
     evidence: emptyViewState(),
   });
   const [filters, setFilters] = useState<Record<GraphViewMode, GraphFilters>>({
-    landscape: {}, claims: {}, evidence: {},
+    workspace: {}, landscape: {}, claims: {}, evidence: {},
   });
   const [papers, setPapers] = useState<Paper[]>([]);
   const [loading, setLoading] = useState(false);
@@ -372,10 +441,9 @@ export default function KnowledgeGraph({ workspaceId }: { workspaceId: string })
   const [branchNodeId, setBranchNodeId] = useState<string | null>(null);
   const [filtersCollapsed, setFiltersCollapsed] = useState(false);
   const [showRelationLabels, setShowRelationLabels] = useState(false);
-  const [showLowConfidence, setShowLowConfidence] = useState(true);
-  // P2: hide the redundant canonical-entity layer in the semantic views by
-  // default (many same-named items pointing at one same-named entity node).
-  // Evidence view always keeps it as part of the provenance chain.
+  const [showLowConfidence, setShowLowConfidence] = useState(false);
+  // P2：语义视图默认隐藏冗余的 canonical-entity 层
+  // （多个同名项指向一个同名实体节点）。Evidence 视图始终保留它作为来源链的一部分。
   const [showEntityLayer, setShowEntityLayer] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [searchText, setSearchText] = useState("");
@@ -399,6 +467,7 @@ export default function KnowledgeGraph({ workspaceId }: { workspaceId: string })
       paper_id: current.paperId,
       relation_type: current.relationType,
       min_confidence: current.minConfidence,
+      include_related_papers: current.includeRelatedPapers,
       limit: PAGE_SIZE,
       offset,
     } as const;
@@ -429,6 +498,8 @@ export default function KnowledgeGraph({ workspaceId }: { workspaceId: string })
         totalNodes: response.total_nodes,
         totalEdges: response.total_edges,
         hasMore: response.has_more,
+        truncated: response.truncated,
+        truncationReason: response.truncation_reason ?? undefined,
         nodeCounts: response.node_counts ?? {},
         relationCounts: response.relation_counts ?? {},
         workspaceCounts: response.workspace_counts ?? {},
@@ -488,7 +559,7 @@ export default function KnowledgeGraph({ workspaceId }: { workspaceId: string })
       showRejected: activeFilters.status === "rejected",
       minConfidence: showLowConfidence ? 0 : Math.max(activeFilters.minConfidence ?? 0, 0.6),
     });
-    const layerFiltered = (mode !== "evidence" && !showEntityLayer && activeFilters.relationType !== "canonicalizes")
+    const layerFiltered = (mode !== "evidence" && mode !== "workspace" && !showEntityLayer && activeFilters.relationType !== "canonicalizes")
       ? hideEntityLayer(projected)
       : projected;
     return branchGraph(layerFiltered, branchNodeId);
@@ -522,7 +593,7 @@ export default function KnowledgeGraph({ workspaceId }: { workspaceId: string })
             nodeKind: node.node_kind,
             nodeType: type,
             opacity: Math.max(0.56, node.confidence),
-            borderStyle: node.status === "human_confirmed" ? "solid" : "dashed",
+            borderStyle: node.status === "human_confirmed" || node.status === "experiment_validated" ? "solid" : "dashed",
           },
           classes: [
             isFocused ? "focused" : "",
@@ -550,8 +621,7 @@ export default function KnowledgeGraph({ workspaceId }: { workspaceId: string })
     ];
   }, [active.expandedNodeIds, displayGraph.edges, displayGraph.nodes, highlightedIds, selectedNodeId, showRelationLabels]);
 
-  // P0.5-4: canvas chrome adapts to the theme; node/relation hues are
-  // mid-saturation and stay identical in both themes.
+  // P0.5-4：画布控件随主题适配；节点/关系色保持中等饱和度，且在两种主题中一致。
   const canvasInk = isDark ? "rgba(255, 255, 255, .92)" : "#172033";
   const canvasLabelBg = isDark ? "#141414" : "#ffffff";
   const stylesheet = useMemo(() => [
@@ -588,14 +658,19 @@ export default function KnowledgeGraph({ workspaceId }: { workspaceId: string })
   ], [isDark, canvasInk, canvasLabelBg]);
 
   const expandNode = useCallback(async (nodeId: string) => {
-    if (active.expandedNodeIds.includes(nodeId) || expanding) return;
+    if (active.expandedNodeIds.includes(nodeId) || expanding) return false;
     setExpanding(true);
     try {
       const response = await knowledgeApi.graphNeighbors(workspaceId, nodeId, {
         depth: 1,
         relation_type: activeFilters.relationType,
+        projection_mode: mode,
       });
       const incoming = { nodes: response.nodes ?? [], edges: response.edges ?? [] };
+      if (!incoming.nodes.some((node) => node.id === nodeId)) {
+        message.warning("搜索结果存在，但焦点子图没有返回该节点，未将其标记为已加载。");
+        return false;
+      }
       updateView(mode, (state) => ({
         ...state,
         history: [...state.history, state.graph],
@@ -606,8 +681,10 @@ export default function KnowledgeGraph({ workspaceId }: { workspaceId: string })
       setSelectedNodeId(nodeId);
       message.success(`已展开 ${incoming.nodes.length} 个相关节点`);
       window.setTimeout(() => runLayout(mode), 50);
+      return true;
     } catch (requestError) {
       message.error(`邻居展开失败：${errorMessage(requestError)}`);
+      return false;
     } finally {
       setExpanding(false);
     }
@@ -703,6 +780,8 @@ export default function KnowledgeGraph({ workspaceId }: { workspaceId: string })
         hasMore: response.has_more,
         totalNodes: response.total_nodes,
         totalEdges: response.total_edges,
+        truncated: response.truncated,
+        truncationReason: response.truncation_reason ?? undefined,
       }));
       message.success(`新增加载 ${incoming.nodes.length} 个节点`);
       window.setTimeout(() => runLayout(mode), 50);
@@ -743,7 +822,8 @@ export default function KnowledgeGraph({ workspaceId }: { workspaceId: string })
     const result = searchResults.find((item) => item.node_id === nodeId);
     if (result) setSearchText(result.label);
     if (!active.graph.nodes.some((node) => node.id === nodeId)) {
-      await expandNode(nodeId);
+      const loaded = await expandNode(nodeId);
+      if (!loaded) return;
     }
     pendingFocusRef.current = nodeId;
     setSelectedNodeId(nodeId);
@@ -755,6 +835,16 @@ export default function KnowledgeGraph({ workspaceId }: { workspaceId: string })
 
   const resetFilters = () => {
     setFilters((current) => ({ ...current, [mode]: {} }));
+  };
+
+  const enterPaperView = (paperId: string) => {
+    setFilters((current) => ({
+      ...current,
+      landscape: { ...current.landscape, paperId, includeRelatedPapers: false },
+    }));
+    setMode("landscape");
+    setSelectedNodeId(null);
+    setBranchNodeId(null);
   };
 
   const toggleFullscreen = async () => {
@@ -799,12 +889,14 @@ export default function KnowledgeGraph({ workspaceId }: { workspaceId: string })
       node={selectedNode}
       edges={displayGraph.edges}
       nodes={displayGraph.nodes}
+      papers={papers}
       workspaceId={workspaceId}
       expanded={selectedNode ? active.expandedNodeIds.includes(selectedNode.id) : false}
       loading={expanding}
       onExpand={() => selectedNode && void expandNode(selectedNode.id)}
       onBranch={() => selectedNode && setBranchNodeId(selectedNode.id)}
       onRestore={() => setBranchNodeId(null)}
+      onEnterPaperView={enterPaperView}
     />
   );
 
@@ -833,9 +925,9 @@ export default function KnowledgeGraph({ workspaceId }: { workspaceId: string })
 
         <Row className="gm-graph-overview-stats" gutter={[10, 10]}>
           <Col xs={12} md={6}><Card className="gm-graph-stat-card" size="small"><Statistic title="论文" value={workspaceCounts.papers ?? 0} suffix="篇" /></Card></Col>
-          <Col xs={12} md={6}><Card className="gm-graph-stat-card" size="small"><Statistic title="知识条目" value={workspaceCounts.knowledge_items ?? 0} suffix="条" /></Card></Col>
-          <Col xs={12} md={6}><Card className="gm-graph-stat-card" size="small"><Statistic title="人工确认" value={workspaceCounts.confirmed_items ?? 0} suffix="条" /></Card></Col>
-          <Col xs={12} md={6}><Card className="gm-graph-stat-card" size="small"><Statistic title="语义关系" value={workspaceCounts.relations ?? 0} suffix="条" /></Card></Col>
+          <Col xs={12} md={6}><Card className="gm-graph-stat-card" size="small"><Statistic title={mode === "workspace" ? "规范实体" : "知识条目"} value={mode === "workspace" ? (workspaceCounts.canonical_entities ?? 0) : (workspaceCounts.knowledge_items ?? 0)} suffix={mode === "workspace" ? "个" : "条"} /></Card></Col>
+          <Col xs={12} md={6}><Card className="gm-graph-stat-card" size="small"><Statistic title={mode === "workspace" ? "原文提及" : "人工确认"} value={mode === "workspace" ? (workspaceCounts.mentions ?? 0) : (workspaceCounts.confirmed_items ?? 0)} suffix="条" /></Card></Col>
+          <Col xs={12} md={6}><Card className="gm-graph-stat-card" size="small"><Statistic title={mode === "workspace" ? "证据跨度" : "语义关系"} value={mode === "workspace" ? (workspaceCounts.evidence_spans ?? 0) : (workspaceCounts.relations ?? 0)} suffix="条" /></Card></Col>
         </Row>
 
         <Alert
@@ -874,6 +966,12 @@ export default function KnowledgeGraph({ workspaceId }: { workspaceId: string })
                 <div><Text type="secondary">知识类型</Text><Select allowClear value={activeFilters.type} options={typeOptions(mode)} onChange={(value) => setActiveFilter("type", value)} style={{ width: "100%", marginTop: 6 }} placeholder="全部类型" /></div>
                 <div><Text type="secondary">审核状态</Text><Select allowClear value={activeFilters.status} options={STATUS_OPTIONS.map(([value, label]) => ({ value, label }))} onChange={(value) => setActiveFilter("status", value)} style={{ width: "100%", marginTop: 6 }} placeholder="全部状态" /></div>
                 <div><Text type="secondary">来源论文</Text><Select allowClear showSearch optionFilterProp="label" value={activeFilters.paperId} options={papers.map((paper) => ({ value: paper.id, label: paper.title }))} onChange={(value) => setActiveFilter("paperId", value)} style={{ width: "100%", marginTop: 6 }} placeholder="全部论文" /></div>
+                <Checkbox
+                  checked={activeFilters.includeRelatedPapers ?? false}
+                  disabled={!activeFilters.paperId}
+                  onChange={(event) => setActiveFilter("includeRelatedPapers", event.target.checked)}
+                >显示共享实体关联论文</Checkbox>
+                {activeFilters.paperId && <Text type="secondary" style={{ display: "block", fontSize: 12, marginTop: -8 }}>默认严格只看所选论文，开启后才展开共享实体的来源论文。</Text>}
                 <div><Text type="secondary">关系类型</Text><Select allowClear value={activeFilters.relationType} options={Object.keys(RELATION_COLORS).map((value) => ({ value, label: relationLabel({ relation_type: value } as KnowledgeGraphEdge) }))} onChange={(value) => setActiveFilter("relationType", value)} style={{ width: "100%", marginTop: 6 }} placeholder="全部关系" /></div>
                 <div><Text type="secondary">最低置信度</Text><InputNumber min={0} max={1} step={0.1} value={activeFilters.minConfidence} onChange={(value) => setActiveFilter("minConfidence", value ?? undefined)} style={{ width: "100%", marginTop: 6 }} placeholder="0.0 - 1.0" /></div>
                 <Button block onClick={resetFilters}>清除筛选</Button>
@@ -916,7 +1014,7 @@ export default function KnowledgeGraph({ workspaceId }: { workspaceId: string })
               <Space wrap>
                 <Checkbox checked={showRelationLabels} onChange={(event) => setShowRelationLabels(event.target.checked)}>显示全部关系标签</Checkbox>
                 <Checkbox checked={showLowConfidence} onChange={(event) => setShowLowConfidence(event.target.checked)}>显示低置信度节点</Checkbox>
-                {mode !== "evidence" && (
+                {mode !== "evidence" && mode !== "workspace" && (
                   <Checkbox checked={showEntityLayer} onChange={(event) => setShowEntityLayer(event.target.checked)}>
                     显示规范实体层
                   </Checkbox>
@@ -924,6 +1022,16 @@ export default function KnowledgeGraph({ workspaceId }: { workspaceId: string })
               </Space>
               <Text type="secondary">画布显示 {displayGraph.nodes.length} 个节点 · {displayGraph.edges.length} 条关系</Text>
             </Flex>
+            {active.truncated && (
+              <Alert
+                type="warning"
+                showIcon
+                banner
+                message={active.truncationReason === "edge_limit"
+                  ? "关系数量较多，当前只显示部分关系，请通过搜索或展开节点继续查看。"
+                  : "当前图谱已按服务端上限截断，请通过搜索、筛选或展开节点渐进加载。"}
+              />
+            )}
 
             <div
               style={{
@@ -978,7 +1086,7 @@ export default function KnowledgeGraph({ workspaceId }: { workspaceId: string })
 
             <Flex justify="space-between" align="center" wrap gap={10} style={{ padding: "12px 14px", borderTop: "1px solid #edf0f5" }}>
               <Space wrap size={[6, 6]}>
-                {(mode === "landscape" ? ["paper", "method", "task", "dataset"] : mode === "claims" ? ["paper", "claim", "limitation"] : ["paper", "paper_mention", "method", "task", "dataset", "claim"]).map((type) => (
+                {(mode === "workspace" ? ["paper", "canonical_entity", "method", "task", "dataset"] : mode === "landscape" ? ["paper", "method", "task", "dataset"] : mode === "claims" ? ["paper", "claim", "limitation"] : ["paper", "paper_mention", "method", "task", "dataset", "claim"]).map((type) => (
                   <Tag key={type} color={TYPE_COLORS[type]}>{TYPE_LABELS[type]}</Tag>
                 ))}
               </Space>

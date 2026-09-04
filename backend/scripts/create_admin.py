@@ -1,6 +1,6 @@
-"""Create the first platform administrator without storing a default secret.
+"""创建首个平台管理员，不存储默认密钥。
 
-Run after ``alembic upgrade head`` from the backend directory:
+在 backend 目录中执行 ``alembic upgrade head`` 后运行：
     python scripts/create_admin.py
 """
 

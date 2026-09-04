@@ -1,4 +1,4 @@
-"""Allow timeline events to record authenticated user identities."""
+"""允许时间线事件记录已认证用户身份。"""
 
 from __future__ import annotations
 
@@ -26,8 +26,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # A downgrade is only safe when no authenticated identity longer than the
-    # legacy 16-character actor label remains in the table.
+    # 只有表中不再存在长于旧版 16 字符 actor 标签的已认证身份时，downgrade 才是安全的。
     op.alter_column(
         "timeline_events",
         "actor",

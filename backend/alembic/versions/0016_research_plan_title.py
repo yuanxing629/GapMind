@@ -1,4 +1,4 @@
-"""Add a dedicated display title to research plans."""
+"""为研究计划增加独立的展示标题。"""
 
 from __future__ import annotations
 
@@ -24,8 +24,8 @@ def upgrade() -> None:
             server_default="未命名研究计划",
         ),
     )
-    # Opportunity-derived plans inherit the concise, human-readable opportunity title.
-    # Agent-created and legacy plans fall back to a shortened research question.
+# 从 Opportunity 派生的计划继承简洁、易读的 opportunity 标题。
+# Agent 创建的计划和旧版计划回退到缩短后的研究问题。
     op.execute(
         sa.text(
             """

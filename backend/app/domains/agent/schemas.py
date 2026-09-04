@@ -1,4 +1,4 @@
-"""HTTP contracts for workspace agents."""
+"""workspace agents 的 HTTP 契约。"""
 
 from __future__ import annotations
 

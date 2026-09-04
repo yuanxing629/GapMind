@@ -1,8 +1,7 @@
-"""Domain modules.
+"""领域模块。
 
-Each domain owns its models, schemas, service layer, and API router.
-Domains communicate only through well-defined interfaces, never by reaching
-into each other's internals.
+每个领域拥有自己的模型、schemas、service 层和 API 路由。
+领域之间只通过明确接口通信，不能直接访问彼此的内部实现。
 
-Phase 0: directory scaffolding only. Models land in Phase 1.
+Phase 0：仅搭建目录结构。模型在 Phase 1 中加入。
 """

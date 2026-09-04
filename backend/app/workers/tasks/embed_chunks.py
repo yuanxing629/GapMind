@@ -1,10 +1,10 @@
-"""embed_chunks Celery task (Phase 3, Step ④).
+"""embed_chunks Celery 任务（Phase 3，步骤 ④）。
 
-Reads a paper's chunks JSONL (Contract B), embeds via BGE-M3, and inserts
-vectors into Milvus. Triggered automatically after parse_pdf succeeds.
+读取论文的 chunk_index Artifact（Contract B），通过 BGE-M3 向量化并将向量写入 Milvus。
+parse_pdf 成功后自动触发。
 
-State flow:
-    Task row: queued -> running -> succeeded / failed
+状态流转：
+    Task 行：queued -> running -> succeeded / failed
 """
 
 from __future__ import annotations
@@ -27,10 +27,10 @@ logger = get_logger(__name__)
 
 @celery_app.task(name="gapmind.embed_chunks", bind=True)
 def embed_chunks_task(self, task_id: str) -> dict:
-    """Embed paper chunks and index into Milvus.
+    """将论文分块向量化并索引到 Milvus。
 
-    Args:
-        task_id: The Task row ID. Payload must contain {"paper_id": "..."}.
+    参数：
+        task_id：Task 行 ID。Payload 必须包含 {"paper_id": "..."}。
     """
     configure_logging()
     db: Session = SessionLocal()
@@ -38,8 +38,7 @@ def embed_chunks_task(self, task_id: str) -> dict:
         try:
             result = _run_embed(db, task_id)
         except TaskNotFoundError:
-            # The broker may contain a stale message after the corresponding
-            # database task has been removed or the database has been reset.
+# 对应的数据库任务被移除或数据库重置后，broker 中可能仍有过期消息。
             logger.warning(
                 "embed_chunks.orphaned_task",
                 task_id=task_id,
@@ -81,7 +80,7 @@ def _run_embed(db: Session, task_id: str) -> dict:
     task_service.update_progress(task_id, 0.2)
 
     try:
-        result = index_paper_chunks(workspace_id, paper_id)
+        result = index_paper_chunks(workspace_id, paper_id, db=db)
     except Exception as e:
         logger.error(
             "embed_chunks.index_failed",
@@ -110,7 +109,7 @@ def _run_embed(db: Session, task_id: str) -> dict:
         },
     )
 
-    # Record timeline event
+# 记录时间线事件
     TimelineService(db).record(
         workspace_id=workspace_id,
         event_type="paper.indexed",
@@ -155,14 +154,14 @@ def _notify_discover(db: Session, paper_id: str, workspace_id: str) -> None:
 
 
 def spawn_embed_chunks(db: Session, paper_id: str, workspace_id: str) -> str:
-    """Create a Task row and dispatch embed_chunks.
+    """创建 Task 行并派发 embed_chunks。
 
-    Called after parse_pdf succeeds. Returns the task_id.
-    Idempotent: if an active embed_chunks task exists for this paper, returns it.
+    在 parse_pdf 成功后调用，返回 task_id。该操作幂等：如果该论文已有活跃的 embed_chunks
+    task，则直接返回已有 task。
     """
     import app.workers.tasks.embed_chunks  # noqa: F401
 
-    # Check for existing active task
+# 检查已有的活动任务
     active_tasks = db.execute(
         select(Task).where(
             Task.workspace_id == workspace_id,

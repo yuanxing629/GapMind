@@ -19,7 +19,7 @@ export function dashboardRecommendationEntries(
     .map((item) => ({ workspace, item }));
 }
 
-/** Preserve workspace order while allowing cached sources to render first. */
+/** 保持 workspace 顺序，同时允许缓存来源优先渲染。 */
 export function aggregateDashboardRecommendations(
   sources: Workspace[],
   entriesByWorkspace: ReadonlyMap<string, DashboardRecommendationEntry[]>,

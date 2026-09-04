@@ -1,6 +1,6 @@
-"""Extraction pipeline sub-modules.
+"""抽取流水线子模块。
 
-Lifted out of ``workers/tasks/extract_knowledge.py`` so each concern can be
-unit-tested in isolation and so the worker file shrinks to a thin Celery
-entry point. See ``S7`` in ``docs/architecture-refactor-plan-2026-08-04.md``.
+本模块从 ``workers/tasks/extract_knowledge.py`` 拆出，使每项职责都能单独进行单元测试，
+并让 worker 文件收缩为薄的 Celery 入口。参见 ``docs/architecture-refactor-plan-2026-08-04.md``
+中的 ``S7``。
 """

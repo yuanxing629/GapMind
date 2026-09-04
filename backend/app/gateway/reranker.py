@@ -1,7 +1,7 @@
-"""Reranker Gateway - SiliconFlow BGE-reranker integration.
+"""Reranker Gateway：SiliconFlow BGE-reranker 集成。
 
-Provides cross-encoder reranking for retrieval candidates.
-Uses SiliconFlow's /v1/rerank endpoint (same API key as embedding).
+为检索候选提供 cross-encoder reranking。使用 SiliconFlow 的 /v1/rerank endpoint
+（与 embedding 使用同一 API key）。
 """
 
 from __future__ import annotations
@@ -18,15 +18,15 @@ logger = get_logger(__name__)
 
 @dataclass
 class RerankHit:
-    """A single reranked result."""
+    """单条重排序结果。"""
 
-    index: int  # original index in the input documents list
+    index: int  # 输入文档列表中的原始索引
     relevance_score: float
 
 
 @dataclass
 class RerankResult:
-    """Normalized rerank response."""
+    """规范化的重排序响应。"""
 
     hits: list[RerankHit] = field(default_factory=list)
     model: str = ""
@@ -34,10 +34,10 @@ class RerankResult:
 
 
 class RerankerGateway:
-    """Wrapper over SiliconFlow's rerank endpoint.
+    """SiliconFlow rerank endpoint 的包装器。
 
-    Model: BAAI/bge-reranker-v2-m3 (cross-encoder, multilingual).
-    Endpoint: POST {base_url}/rerank
+    Model：BAAI/bge-reranker-v2-m3（cross-encoder、multilingual）。
+    Endpoint：POST {base_url}/rerank
     """
 
     def __init__(
@@ -48,7 +48,7 @@ class RerankerGateway:
         timeout: float = 30.0,
     ) -> None:
         self.api_key = api_key if api_key is not None else settings.siliconflow_api_key
-        # Rerank endpoint shares the same base URL as embedding
+        # Rerank endpoint 与 embedding 使用同一个 base URL。
         self.base_url = (base_url if base_url is not None else settings.siliconflow_base_url).rstrip("/")
         self.model = model if model is not None else settings.reranker_model
         self.timeout = timeout
@@ -60,15 +60,15 @@ class RerankerGateway:
         *,
         top_n: int | None = None,
     ) -> RerankResult:
-        """Rerank documents by relevance to query.
+        """按文档与 query 的相关性重排序。
 
-        Args:
-            query: The search query or claim text.
-            documents: List of passage texts to rerank.
-            top_n: Return only top N results (default: all).
+        参数：
+            query：搜索 query 或 claim 文本。
+            documents：待 rerank 的段落文本列表。
+            top_n：仅返回前 N 个结果（默认全部返回）。
 
-        Returns:
-            RerankResult with hits sorted by relevance_score descending.
+        返回：
+            返回按 relevance_score 降序排列命中的 RerankResult。
         """
         if not documents:
             return RerankResult(model=self.model)
@@ -118,7 +118,7 @@ class RerankerGateway:
             )
             for item in data.get("results", [])
         ]
-        # Sort by relevance descending
+        # 按相关性降序排序
         hits.sort(key=lambda h: h.relevance_score, reverse=True)
 
         logger.info(
@@ -131,7 +131,7 @@ class RerankerGateway:
         return RerankResult(hits=hits, model=self.model, latency_ms=latency)
 
     def ping(self) -> bool:
-        """Check if API key is configured."""
+        """检查是否配置了 API key。"""
         return bool(self.api_key)
 
 
@@ -139,7 +139,7 @@ _gateway: RerankerGateway | None = None
 
 
 def get_reranker_gateway() -> RerankerGateway:
-    """Singleton accessor for the Reranker gateway."""
+    """Reranker gateway 的单例访问器。"""
     global _gateway
     if _gateway is None:
         _gateway = RerankerGateway()

@@ -1,4 +1,4 @@
-"""Contract tests for the durable Discover Agent API."""
+"""持久化 Discover Agent API 契约测试。"""
 
 from datetime import datetime, timezone
 from unittest.mock import patch

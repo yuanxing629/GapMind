@@ -1,4 +1,4 @@
-"""API schemas for workspace paper recommendations."""
+"""工作区论文推荐的 API schemas。"""
 
 from __future__ import annotations
 

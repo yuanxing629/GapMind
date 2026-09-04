@@ -21,11 +21,14 @@ import {
   InboxOutlined,
   PaperClipOutlined,
   PlusOutlined,
+  ReadOutlined,
 } from "@ant-design/icons";
 import type { UploadRequestOption } from "rc-upload/lib/interface";
+import { useNavigate } from "react-router-dom";
 import paperApi from "../api/paper";
 import type { Paper, PaperUpdate } from "../api/types/domain";
 import StatusBadge from "./common/StatusBadge";
+import { readingPaperPath } from "./layout/navigation";
 
 const { Text } = Typography;
 const { TextArea } = Input;
@@ -68,6 +71,7 @@ function toEditValues(p: Paper): EditFormValues {
 
 export default function PapersSection({ workspaceId, papers, loading, onChanged }: Props) {
   const { message, modal } = App.useApp();
+  const navigate = useNavigate();
   const [manualOpen, setManualOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editingPaper, setEditingPaper] = useState<Paper | null>(null);
@@ -75,7 +79,7 @@ export default function PapersSection({ workspaceId, papers, loading, onChanged 
   const [manualForm] = Form.useForm<ManualFormValues>();
   const [editForm] = Form.useForm<EditFormValues>();
 
-  // ---------- upload (new paper with PDF) ----------
+  // ---------- 上传（带 PDF 的新论文） ----------
   const handleUpload = async (req: UploadRequestOption) => {
     const file = req.file as File;
     if (!file.name.toLowerCase().endsWith(".pdf")) {
@@ -109,11 +113,11 @@ export default function PapersSection({ workspaceId, papers, loading, onChanged 
     multiple: false,
   };
 
-  // ---------- attach PDF to existing paper ----------
+  // ---------- 为已有论文附加 PDF ----------
   const handleAttachPdf = (paper: Paper) => {
-    // Triggered by clicking the "Upload PDF" action on a metadata-only paper.
-    // We open a hidden file input via a ref-less pattern: antd Upload with
-    // customRequest but no visible button - here we reuse a transient Upload.
+    // 点击仅元数据论文的“Upload PDF”操作后触发。
+    // 使用无 ref 模式打开隐藏文件输入：通过 customRequest 配置 antd Upload，
+    // 不显示按钮，这里复用临时 Upload。
     const input = document.createElement("input");
     input.type = "file";
     input.accept = ".pdf";
@@ -147,7 +151,7 @@ export default function PapersSection({ workspaceId, papers, loading, onChanged 
     input.click();
   };
 
-  // ---------- manual create ----------
+  // ---------- 手动创建 ----------
   const handleManualCreate = async () => {
     const values = await manualForm.validateFields();
     setSubmitting(true);
@@ -173,7 +177,7 @@ export default function PapersSection({ workspaceId, papers, loading, onChanged 
     }
   };
 
-  // ---------- edit ----------
+  // ---------- 编辑 ----------
   const openEdit = (paper: Paper) => {
     setEditingPaper(paper);
     editForm.setFieldsValue(toEditValues(paper));
@@ -207,7 +211,7 @@ export default function PapersSection({ workspaceId, papers, loading, onChanged 
     }
   };
 
-  // ---------- delete ----------
+  // ---------- 删除 ----------
   const handleDelete = (paper: Paper) => {
     modal.confirm({
       title: `Delete paper "${paper.title}"?`,
@@ -320,9 +324,17 @@ export default function PapersSection({ workspaceId, papers, loading, onChanged 
             {
               title: "操作",
               key: "actions",
-              width: 160,
+              width: 220,
               render: (_: unknown, p) => (
                 <Space size={4}>
+                  <Button
+                    size="small"
+                    type="primary"
+                    icon={<ReadOutlined />}
+                    onClick={() => navigate(readingPaperPath(p.id))}
+                  >
+                    阅读
+                  </Button>
                   <Button
                     size="small"
                     icon={<EditOutlined />}

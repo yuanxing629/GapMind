@@ -133,14 +133,13 @@ export default function WorkspaceDetailPage() {
     loadAll();
   }, [loadAll]);
 
-  // Auto-refresh papers + tasks + timeline while any task is in an active
-  // state. NOTE: `cancel_requested` is intentionally excluded - in MVP the
-  // worker doesn't monitor cancel signals, so a task in `cancel_requested`
-  // stays there forever and shouldn't keep polling alive. We treat it as
-  // effectively terminal from the UI's perspective.
+// 任意任务处于活动状态时，自动刷新 papers、tasks 和 timeline。
+// 注意：有意排除 `cancel_requested`——MVP 中 worker 不监控取消信号，处于
+// `cancel_requested` 的任务会永久保持该状态，不应持续触发轮询。
+// 从 UI 角度将其视为终态。
   //
-  // We use a 1.5s interval so the user sees pending -> parsing -> parsed
-  // transitions smoothly (a typical PDF parses in 2-5s).
+// 使用 1.5 秒间隔，使用户能平滑看到 pending -> parsing -> parsed 的转换
+//（典型 PDF 解析耗时 2-5 秒）。
   const hasActiveTask = tasks.some(
     (t) =>
       t.status === "queued" ||

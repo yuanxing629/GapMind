@@ -1,15 +1,13 @@
-"""Reconcile LLM-reported evidence spans against the actual parsed_markdown.
+"""将 LLM 报告的 evidence span 与实际 parsed_markdown 对齐。
 
-The LLM emits ``start_char``/``end_char`` and an ``evidence_text`` excerpt.
-Three things can drift:
+LLM 会输出 ``start_char``/``end_char`` 和 ``evidence_text`` 摘录。可能发生三种偏移：
 
-  1. the offset is wrong (batch-relative vs document-relative confusion);
-  2. the text has been whitespace-normalised, so direct slice comparison fails;
-  3. the LLM dropped the trailing newline, so the slice differs by 1 char.
+  1. 偏移错误（混淆了相对于 batch 和相对于文档的偏移）；
+  2. 文本经过空白规范化，直接切片比较失败；
+  3. LLM 丢弃了末尾换行，因此切片相差 1 个字符。
 
-This module resolves every drift we know about and emits a precise
-``(start, end, text)`` triple pointing back into the master document, or
-raises ``ValueError`` if the evidence is unrecoverable.
+本模块处理已知的各种偏移，并返回精确的 ``(start, end, text)`` 三元组以回链主文档；
+如果证据无法恢复，则抛出 ``ValueError``。
 """
 
 from __future__ import annotations
@@ -19,7 +17,7 @@ from typing import Any
 
 
 def all_occurrences(text: str, needle: str) -> list[int]:
-    """Return every index where ``needle`` appears in ``text``."""
+    """返回 ``needle`` 在 ``text`` 中出现的所有索引。"""
     matches: list[int] = []
     cursor = 0
     while True:
@@ -35,10 +33,10 @@ def nearest_match(matches: list[int], expected: int) -> int:
 
 
 def whitespace_equivalent_matches(text: str, evidence_text: str) -> list[tuple[int, int]]:
-    """Find occurrences of ``evidence_text`` in ``text`` ignoring whitespace.
+    """忽略空白，在 ``text`` 中查找 ``evidence_text`` 的出现位置。
 
-    Used as a fallback when the LLM collapses spaces but the document
-    preserves them. Returns ``[(start, end), ...]`` offsets in ``text``.
+    当 LLM 合并空格而文档保留空格时作为回退。返回 ``text`` 中的
+    ``[(start, end), ...]`` 偏移。
     """
     tokens = re.split(r"\s+", evidence_text.strip())
     if not tokens or any(not token for token in tokens):
@@ -56,11 +54,10 @@ def resolve_evidence_span(
     reported_end: int,
     evidence_text: str,
 ) -> tuple[int, int, str]:
-    """Return ``(start, end, text)`` resolved against ``paper_text``.
+    """返回基于 ``paper_text`` 解析得到的 ``(start, end, text)``。
 
-    ``text`` is the exact slice of ``paper_text`` between ``start`` and
-    ``end`` — *not* the LLM-normalised ``evidence_text`` — so the row we
-    persist matches the markdown the user sees.
+    ``text`` 是 ``paper_text`` 在 ``start`` 和 ``end`` 之间的精确切片，*不是* LLM 规范化
+    后的 ``evidence_text``，因此持久化的行与用户看到的 markdown 一致。
     """
     relative_end = reported_start + len(evidence_text)
     if reported_start >= 0 and batch_text[reported_start:relative_end] == evidence_text:

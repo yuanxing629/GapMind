@@ -66,10 +66,10 @@ export default function ChatPage() {
   const [streaming, setStreaming] = useState(false);
   const [retryingId, setRetryingId] = useState<string>();
   const [mode, setMode] = useState<ChatMode>(() => {
-    // stage direct-entry (LifecycleModules): /chat/new?mode=respond etc.
+// 处理直接进入（LifecycleModules）：/chat/new?mode=respond 等。
     const requested = searchParams.get("mode");
     if (!requested || !MODE_VALUES.includes(requested as ChatMode)) return "chat";
-    // plan/code modes are corpus-bound; ignore them on standalone /chat routes
+// plan/code 模式绑定语料；standalone /chat 路由忽略它们。
     if (!routeWorkspaceId && (requested === "research_plan" || requested === "code_generation")) return "chat";
     return requested as ChatMode;
   });
@@ -117,12 +117,10 @@ export default function ChatPage() {
   useEffect(() => { const timer = window.setTimeout(() => void loadHistory(), 180); return () => window.clearTimeout(timer); }, [loadHistory]);
   useEffect(() => { workspaceApi.list({ limit: 200 }).then((result) => setWorkspaces(result.items)).catch(() => setWorkspaces([])); }, []);
   useEffect(() => { if (!conversationId) setSelectedWorkspaceId(routeWorkspaceId); }, [conversationId, routeWorkspaceId]);
-  // P0.5-1: while an SSE stream is in flight we must NOT reload the conversation
-  // here — the backend only has the empty "generating" assistant at that point,
-  // and replacing the optimistic (local-stream-*) message with the DB row (real
-  // id) makes appendDelta unable to find it, so the UI appears one-shot. The
-  // send() flow flips streaming off when the stream ends; this effect then
-  // reloads the persisted full message.
+// P0.5-1：SSE 流进行期间不能在这里重新加载 conversation——此时后端只有空的
+// "generating" assistant 记录，用数据库行（真实 id）替换 optimistic
+//（local-stream-*）消息会使 appendDelta 找不到它，UI 因而看起来像只响应一次。
+// send() 流结束后会关闭 streaming 标记，此 effect 再加载持久化的完整消息。
   useEffect(() => { if (streaming) return; if (conversationId) void loadConversation(conversationId); else { setConversation(null); setMessages([]); setConversationError(null); } }, [conversationId, loadConversation, streaming]);
   useEffect(() => { if (conversation) setSelectedWorkspaceId(conversation.workspace_id ?? undefined); }, [conversation]);
   useEffect(() => { const node = messagesRef.current; if (node) node.scrollTop = node.scrollHeight; }, [messages, sending]);
@@ -177,7 +175,7 @@ export default function ChatPage() {
     if (mode === "chat") return;
     let wsId = activeWorkspaceId;
     if (!wsId) {
-      // P1.5: standalone W7 agents run in the system independent workspace.
+// P1.5：standalone W7 agents 在系统 independent workspace 中运行。
       try {
         const independent = await workspaceApi.independent();
         wsId = independent.id;
@@ -252,9 +250,8 @@ export default function ChatPage() {
     setInput("");
     setImageInputs([]);
     setSending(true);
-    // P0.5-1: mark streaming BEFORE navigating so the [conversationId, streaming]
-    // effect sees streaming=true on the new route and won't clobber the optimistic
-    // message with the backend's empty "generating" row.
+// P0.5-1：导航前先标记 streaming，使新路由上的 [conversationId, streaming]
+// effect 看到 streaming=true，不会用后端空的 "generating" 行覆盖 optimistic 消息。
     setStreaming(true);
     if (!targetId) {
       try {
@@ -275,10 +272,9 @@ export default function ChatPage() {
     const optimisticUser = { ...localMessage(targetId, "user", content, messages.length + 1, localImages(optimisticUserId, images)), id: optimisticUserId };
     const optimisticAssistant = { ...localMessage(targetId, "assistant", "", messages.length + 2), id: assistantKey };
     setMessages((current) => [...current, optimisticUser, optimisticAssistant]);
-    // Browser paint is frame-driven: even per-token DOM updates collapse to a
-    // single paint if the tokens arrive within one frame. Throttle rendering to
-    // a fixed cadence (~20 chars / 60ms) so the UI visibly streams regardless
-    // of how the browser coalesces SSE chunks.
+// 浏览器绘制由帧驱动：即使逐 token 更新 DOM，只要 token 在一帧内到达也会合并为
+// 一次绘制。按固定节奏（约 20 字符 / 60ms）限制渲染，使 UI 不受浏览器合并
+// SSE 分块方式影响，仍能显示流式效果。
     let pendingDelta = "";
     let streamTimer: number | null = null;
     const appendDelta = (delta: string) => {
@@ -299,8 +295,7 @@ export default function ChatPage() {
     };
     try {
       await streamAssistant(targetId, content, images, appendDelta);
-      // Let the throttled renderer flush any remaining buffered tokens before
-      // the effect reload replaces the optimistic message with the full one.
+// 在 effect 重新加载并用完整消息替换 optimistic 消息前，让节流渲染器刷新剩余 token。
       await new Promise<void>((resolve) => {
         const wait = () => {
           if (streamTimer != null || pendingDelta) window.setTimeout(wait, 50);
@@ -308,9 +303,8 @@ export default function ChatPage() {
         };
         wait();
       });
-      // P0.5-1: streaming is over — flip the flag so the [conversationId,
-      // streaming] effect reloads the persisted full message (the DB row now has
-      // the complete content), then refresh the sidebar history.
+// P0.5-1：流式处理结束，关闭标记，使 [conversationId, streaming] effect 重新加载
+// 持久化的完整消息（数据库行现在已有完整内容），然后刷新侧边栏历史。
       setStreaming(false);
       void loadHistory();
     } catch (error) {

@@ -1,4 +1,4 @@
-"""Persistent recommendation candidates for a research workspace."""
+"""研究 workspace 的持久化推荐候选。"""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from app.db.base import Base, TimestampMixin, UUIDPKMixin
 
 
 class PaperRecommendation(Base, UUIDPKMixin, TimestampMixin):
-    """A cached Semantic Scholar paper recommendation for one workspace."""
+    """一个 workspace 的 Semantic Scholar 论文缓存推荐。"""
 
     __tablename__ = "paper_recommendations"
 
@@ -21,8 +21,7 @@ class PaperRecommendation(Base, UUIDPKMixin, TimestampMixin):
     external_paper_id: Mapped[str] = mapped_column(
         String(255), nullable=False, index=True
     )
-    # Store the upstream snapshot so the recommendation page remains useful
-    # when Semantic Scholar is temporarily unavailable.
+# 保存上游快照，使 Semantic Scholar 暂时不可用时推荐页面仍可使用。
     paper: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     score: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     reasons: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)

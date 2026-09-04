@@ -1,4 +1,4 @@
-"""Persistent models for global and workspace-grounded AI chat."""
+"""全局和 workspace-grounded AI chat 的持久化模型。"""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from app.db.base import Base, TimestampMixin, UUIDPKMixin
 
 
 class ChatConversation(Base, UUIDPKMixin, TimestampMixin):
-    """A soft-deletable conversation scoped to its acting owner."""
+    """按实际操作者隔离、可软删除的会话。"""
 
     __tablename__ = "chat_conversations"
     __table_args__ = (
@@ -30,7 +30,7 @@ class ChatConversation(Base, UUIDPKMixin, TimestampMixin):
 
 
 class ChatMessage(Base, UUIDPKMixin, TimestampMixin):
-    """One user or assistant message in a conversation."""
+    """会话中的一条用户或 assistant 消息。"""
 
     __tablename__ = "chat_messages"
     __table_args__ = (
@@ -50,8 +50,8 @@ class ChatMessage(Base, UUIDPKMixin, TimestampMixin):
     prompt_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     completion_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     total_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    # Generation-only observability. Nullable for historical rows, failed
-    # calls, and non-streaming first-token latency which is not observable.
+    # 仅用于生成过程的可观测性。历史行、失败调用以及无法观测首 token 延迟的
+    # 非流式调用都允许为空。
     prompt_chars: Mapped[int | None] = mapped_column(Integer, nullable=True)
     response_chars: Mapped[int | None] = mapped_column(Integer, nullable=True)
     first_token_latency_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -59,19 +59,18 @@ class ChatMessage(Base, UUIDPKMixin, TimestampMixin):
     grounding_status: Mapped[str] = mapped_column(
         String(32), nullable=False, default="not_requested"
     )
-    # Immutable provenance snapshot for this answer. Paper rows remain in
-    # ``chat_message_evidence`` for source navigation; this field also records
-    # plan/report/code provenance without presenting those artifacts as papers.
+    # 本次回答的不可变 provenance 快照。Paper 行仍保留在 ``chat_message_evidence``
+    # 中用于 source navigation；此字段还记录 plan/report/code provenance，
+    # 但不会将这些 artifacts 展示为论文。
     source_manifest: Mapped[list[dict]] = mapped_column(JSON, nullable=False, default=list)
-    # Mechanical citation/source quality gate audit. This is deliberately a
-    # small JSON snapshot rather than a queryable document: it is read with
-    # the message and is not used for retrieval or filtering.
+    # 机械化 citation/source quality gate 审计。这是一个小型 JSON 快照，而不是可查询
+    # 文档：它与消息一起读取，不用于 retrieval 或 filtering。
     citation_quality: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
-    # Retrieval-only observability snapshot. It contains counts/status/timing,
-    # not raw query text or provider error details.
+    # 仅用于 retrieval 的可观测性快照。它包含 count/status/timing，不包含原始 query
+    # 文本或 provider 错误详情。
     retrieval_audit: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
-    # Stable, non-sensitive retrieval diagnosis.  Raw provider/Milvus errors
-    # stay in server logs and are never persisted into the workspace UI.
+    # 稳定且非敏感的 retrieval 诊断。原始 provider/Milvus 错误只保留在服务端日志中，
+    # 永远不会持久化到 workspace UI。
     retrieval_diagnostic_code: Mapped[str | None] = mapped_column(
         String(64), nullable=True
     )
@@ -88,10 +87,10 @@ class ChatMessage(Base, UUIDPKMixin, TimestampMixin):
 
 
 class ChatMessageImage(Base, UUIDPKMixin, TimestampMixin):
-    """A user-uploaded image attached to one chat message.
+    """附加到一条 chat 消息的用户上传图片。
 
-    Images are chat materials only. They are not Artifacts, are not indexed in
-    the workspace corpus, and are served through the chat ownership boundary.
+    图片仅属于 Chat 材料。它们不是 Artifact，不会被索引到工作区语料中，
+    并通过 Chat 所有权边界提供服务。
     """
 
     __tablename__ = "chat_message_images"
@@ -111,7 +110,7 @@ class ChatMessageImage(Base, UUIDPKMixin, TimestampMixin):
 
 
 class ChatMessageEvidence(Base, UUIDPKMixin, TimestampMixin):
-    """A persisted retrieval hit cited by one assistant message."""
+    """一条 assistant 消息引用的持久化检索命中。"""
 
     __tablename__ = "chat_message_evidence"
     __table_args__ = (

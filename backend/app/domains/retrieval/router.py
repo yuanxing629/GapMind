@@ -1,17 +1,18 @@
-"""Retrieval HTTP API router.
+"""Retrieval HTTP API 路由。
 
-Endpoints (per api_reference.md "Retrieval（计划）"):
-  POST /api/v1/workspaces/{wid}/retrieval/search            semantic search
-  POST /api/v1/workspaces/{wid}/retrieval/similar-work      find similar work for a paper
-  POST /api/v1/workspaces/{wid}/retrieval/counter-evidence  find counter-evidence for a claim
+Endpoints（依据 api_reference.md "Retrieval（计划）"）：
+  POST /api/v1/workspaces/{wid}/retrieval/search            语义搜索
+  POST /api/v1/workspaces/{wid}/retrieval/similar-work      查找论文的相似工作
+  POST /api/v1/workspaces/{wid}/retrieval/counter-evidence  查找 claim 的 counter-evidence
 """
 
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
-from app.core.deps import get_owned_workspace
+from app.core.deps import get_db, get_owned_workspace
 from app.domains.retrieval.schemas import RetrievalResponse
 from app.domains.retrieval.service import (
     find_counter_evidence,
@@ -27,7 +28,7 @@ router = APIRouter(
 
 
 # ------------------------------------------------------------------
-# Request schemas
+# 请求 schemas
 # ------------------------------------------------------------------
 
 
@@ -68,13 +69,13 @@ class CounterEvidenceRequest(BaseModel):
 
 
 # ------------------------------------------------------------------
-# Endpoints
+# 端点
 # ------------------------------------------------------------------
 
 
 @router.post("/search", response_model=RetrievalResponse)
 def api_semantic_search(workspace_id: str, body: SearchRequest) -> RetrievalResponse:
-    """Semantic search over workspace paper chunks."""
+    """在 workspace 论文分块上执行语义搜索。"""
     result = semantic_search(
         workspace_id=workspace_id,
         query=body.query,
@@ -89,12 +90,17 @@ def api_semantic_search(workspace_id: str, body: SearchRequest) -> RetrievalResp
 
 
 @router.post("/similar-work", response_model=RetrievalResponse)
-def api_similar_work(workspace_id: str, body: SimilarWorkRequest) -> RetrievalResponse:
-    """Find similar work from other papers in the workspace."""
+def api_similar_work(
+    workspace_id: str,
+    body: SimilarWorkRequest,
+    db: Session = Depends(get_db),
+) -> RetrievalResponse:
+    """从 workspace 的其他论文中查找相似工作。"""
     result = find_similar_work(
         workspace_id=workspace_id,
         paper_id=body.paper_id,
         top_k=body.top_k,
+        db=db,
         exclude_paper_ids=set(body.exclude_paper_ids) or None,
         use_reranker=body.use_reranker,
     )
@@ -105,8 +111,8 @@ def api_similar_work(workspace_id: str, body: SimilarWorkRequest) -> RetrievalRe
 
 @router.post("/counter-evidence", response_model=RetrievalResponse)
 def api_counter_evidence(workspace_id: str, body: CounterEvidenceRequest) -> RetrievalResponse:
-    """Find counter-evidence for a claim (reranked + LLM judged)."""
-    # The claim's source paper must never be returned as its own counter-evidence.
+    """查找 claim 的 counter-evidence（重排序 + LLM 判断）。"""
+# claim 的源论文永远不能作为自身的 counter-evidence 返回。
     excluded = set(body.exclude_paper_ids)
     if body.source_paper_id:
         excluded.add(body.source_paper_id)

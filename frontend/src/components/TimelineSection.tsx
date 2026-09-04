@@ -15,7 +15,7 @@ const ACTOR_COLOR: Record<string, string> = {
 };
 
 function summarize(e: TimelineEvent): string {
-  // Human-friendly label for common event types; falls back to event_type.
+// 常见事件类型的易读标签；没有映射时回退到 event_type。
   const map: Record<string, string> = {
     "paper.created": "添加了文献",
     "paper.uploaded": "上传了文献",

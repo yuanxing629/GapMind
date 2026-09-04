@@ -1,4 +1,4 @@
-"""Persist non-sensitive Chat generation timing and size metrics."""
+"""持久化非敏感的 Chat 生成耗时和大小指标。"""
 
 from __future__ import annotations
 

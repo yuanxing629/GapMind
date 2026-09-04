@@ -1,4 +1,4 @@
-"""Tests for bounded Semantic Scholar retry and failure classification."""
+"""Semantic Scholar 有界重试与失败分类测试。"""
 
 from __future__ import annotations
 

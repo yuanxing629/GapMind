@@ -1,4 +1,4 @@
-"""Tests for privacy-preserving generation observation aggregation."""
+"""保护隐私的生成观测聚合测试。"""
 
 from __future__ import annotations
 

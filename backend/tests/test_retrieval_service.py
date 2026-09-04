@@ -1,4 +1,4 @@
-"""Retrieval pipeline unit tests."""
+"""检索流水线单元测试。"""
 
 from __future__ import annotations
 

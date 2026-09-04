@@ -2273,6 +2273,29 @@ export interface components {
             source_artifact_ids?: string[];
             /** Images */
             images?: components["schemas"]["ChatImageInput"][];
+            /**
+             * Retrieval Mode
+             * @default dense
+             * @enum {string}
+             */
+            retrieval_mode: "dense" | "hybrid" | "graph";
+            /** Graph Expand */
+            graph_expand?: boolean | null;
+            /**
+             * Graph Max Hops
+             * @default 2
+             */
+            graph_max_hops: number;
+            /**
+             * Graph Node Limit
+             * @default 32
+             */
+            graph_node_limit: number;
+            /**
+             * Graph Edge Limit
+             * @default 64
+             */
+            graph_edge_limit: number;
         };
         /** ChatMessageEvidenceRead */
         ChatMessageEvidenceRead: {
@@ -2972,6 +2995,11 @@ export interface components {
             /** Confidence */
             confidence: number;
             /**
+             * Is Deleted
+             * @default false
+             */
+            is_deleted: boolean;
+            /**
              * Created At
              * Format: date-time
              */
@@ -3072,6 +3100,26 @@ export interface components {
             task_id?: string | null;
             /** Input Sha256 */
             input_sha256: string;
+            /** Knowledge Extraction Run Id */
+            knowledge_extraction_run_id?: string | null;
+            /** Knowledge Context Sha256 */
+            knowledge_context_sha256?: string | null;
+            /**
+             * Input Mode
+             * @default core_markdown_legacy_v1
+             */
+            input_mode: string;
+            /** Source Knowledge Item Ids */
+            source_knowledge_item_ids?: string[];
+            /** Source Evidence Span Ids */
+            source_evidence_span_ids?: string[];
+            /**
+             * Context Char Count
+             * @default 0
+             */
+            context_char_count: number;
+            /** Context Fallback Reason */
+            context_fallback_reason?: string | null;
             /** Schema Version */
             schema_version: string;
             /** Prompt Version */
@@ -3094,6 +3142,11 @@ export interface components {
             validation_errors?: string[];
             /** Fallback Reason */
             fallback_reason?: string | null;
+            /**
+             * Stale
+             * @default false
+             */
+            stale: boolean;
             /**
              * Created At
              * Format: date-time
@@ -3253,6 +3306,239 @@ export interface components {
              * @default false
              */
             skipped: boolean;
+            /** Input Mode */
+            input_mode?: string | null;
+            /** Knowledge Extraction Run Id */
+            knowledge_extraction_run_id?: string | null;
+            /**
+             * Dependency Status
+             * @default not_checked
+             */
+            dependency_status: string;
+        };
+        /**
+         * GraphRAGEdgeRead
+         * @description 经过校验的 graph 边；source 和 target 必须存在于路径节点中。
+         */
+        GraphRAGEdgeRead: {
+            /** Id */
+            id: string;
+            /** Type */
+            type: string;
+            /** Source */
+            source: string;
+            /** Target */
+            target: string;
+            /** Workspace Id */
+            workspace_id: string;
+            /** Paper Id */
+            paper_id?: string | null;
+            /** Supporting Item Ids */
+            supporting_item_ids?: string[];
+            /** Supporting Evidence Ids */
+            supporting_evidence_ids?: string[];
+            /**
+             * Review Status
+             * @default candidate
+             * @enum {string}
+             */
+            review_status: "confirmed" | "candidate" | "rejected";
+        };
+        /**
+         * GraphRAGEvidenceRead
+         * @description 为 graph 路径从 PostgreSQL 重新检索得到的 Evidence。
+         */
+        GraphRAGEvidenceRead: {
+            /** Evidence Span Id */
+            evidence_span_id: string;
+            /** Workspace Id */
+            workspace_id: string;
+            /** Paper Id */
+            paper_id: string;
+            /** Item Id */
+            item_id: string;
+            /** Artifact Id */
+            artifact_id?: string | null;
+            /** Chunk Id */
+            chunk_id?: string | null;
+            /** Section */
+            section?: string | null;
+            /**
+             * Excerpt
+             * @default
+             */
+            excerpt: string;
+            /** Start Char */
+            start_char?: number | null;
+            /** End Char */
+            end_char?: number | null;
+            /**
+             * Relation
+             * @default supports
+             */
+            relation: string;
+            /**
+             * Confidence
+             * @default 0
+             */
+            confidence: number;
+            /**
+             * Review Status
+             * @default candidate
+             * @enum {string}
+             */
+            review_status: "confirmed" | "candidate" | "rejected";
+            /**
+             * Query Relevance Score
+             * @default 0
+             */
+            query_relevance_score: number;
+        };
+        /**
+         * GraphRAGNodeRead
+         * @description 当前请求范围内、带有明确 provenance 身份的 graph 节点。
+         */
+        GraphRAGNodeRead: {
+            /** Id */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "paper" | "canonical_entity" | "knowledge_item" | "evidence_span" | "chunk";
+            /** Workspace Id */
+            workspace_id: string;
+            /** Label */
+            label: string;
+            /** Paper Id */
+            paper_id?: string | null;
+            /** Item Id */
+            item_id?: string | null;
+            /** Canonical Entity Id */
+            canonical_entity_id?: string | null;
+            /** Chunk Id */
+            chunk_id?: string | null;
+            /** Evidence Span Id */
+            evidence_span_id?: string | null;
+            /** Type */
+            type?: string | null;
+            /** Status */
+            status?: string | null;
+            /**
+             * Review Status
+             * @default candidate
+             * @enum {string}
+             */
+            review_status: "confirmed" | "candidate" | "rejected";
+        };
+        /**
+         * GraphRAGPathRead
+         * @description 有界且可审计的路径；它不是持久化的 scientific fact。
+         */
+        GraphRAGPathRead: {
+            /** Path Id */
+            path_id: string;
+            /** Workspace Id */
+            workspace_id: string;
+            /** Nodes */
+            nodes?: components["schemas"]["GraphRAGNodeRead"][];
+            /** Edges */
+            edges?: components["schemas"]["GraphRAGEdgeRead"][];
+            /** Supporting Paper Ids */
+            supporting_paper_ids?: string[];
+            /** Supporting Item Ids */
+            supporting_item_ids?: string[];
+            /** Supporting Evidence Ids */
+            supporting_evidence_ids?: string[];
+            /** Evidence */
+            evidence?: components["schemas"]["GraphRAGEvidenceRead"][];
+            /**
+             * Review Status
+             * @default candidate
+             * @enum {string}
+             */
+            review_status: "confirmed" | "candidate" | "rejected";
+        };
+        /**
+         * GraphRetrievalAuditRead
+         * @description 有界 GraphRAG 诊断信息；其本身不是回答证据。
+         */
+        GraphRetrievalAuditRead: {
+            /**
+             * Mode
+             * @default disabled
+             * @enum {string}
+             */
+            mode: "disabled" | "shadow";
+            /**
+             * Projection Version
+             * @default sql_graph_v1
+             */
+            projection_version: string;
+            /**
+             * Seed Count
+             * @default 0
+             */
+            seed_count: number;
+            /**
+             * Expanded Node Count
+             * @default 0
+             */
+            expanded_node_count: number;
+            /**
+             * Expanded Edge Count
+             * @default 0
+             */
+            expanded_edge_count: number;
+            /**
+             * Path Count
+             * @default 0
+             */
+            path_count: number;
+            /**
+             * Candidate Path Count
+             * @default 0
+             */
+            candidate_path_count: number;
+            /**
+             * Emitted Path Count
+             * @default 0
+             */
+            emitted_path_count: number;
+            /**
+             * Dropped Path Count
+             * @default 0
+             */
+            dropped_path_count: number;
+            /** Dropped Path Reasons */
+            dropped_path_reasons?: {
+                [key: string]: number;
+            };
+            /**
+             * Latency Ms
+             * @default 0
+             */
+            latency_ms: number;
+            /** Supporting Paper Ids */
+            supporting_paper_ids?: string[];
+            /** Supporting Evidence Ids */
+            supporting_evidence_ids?: string[];
+            /**
+             * Truncated
+             * @default false
+             */
+            truncated: boolean;
+            /** Truncation Reason */
+            truncation_reason?: string | null;
+            /**
+             * Fallback
+             * @default false
+             */
+            fallback: boolean;
+            /** Fallback Reason */
+            fallback_reason?: string | null;
+            /** Paths */
+            paths?: components["schemas"]["GraphRAGPathRead"][];
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -3363,6 +3649,25 @@ export interface components {
             target_label?: string | null;
             /** Relation Group */
             relation_group?: string | null;
+            /**
+             * Occurrence Count
+             * @default 0
+             */
+            occurrence_count: number;
+            /**
+             * Paper Count
+             * @default 0
+             */
+            paper_count: number;
+            /**
+             * Evidence Count
+             * @default 0
+             */
+            evidence_count: number;
+            /** Supporting Paper Ids */
+            supporting_paper_ids?: string[];
+            /** Supporting Item Ids */
+            supporting_item_ids?: string[];
         };
         /**
          * KnowledgeGraphNodeRead
@@ -3424,6 +3729,30 @@ export interface components {
              * @default 0
              */
             paper_count: number;
+            /**
+             * Mention Count
+             * @default 0
+             */
+            mention_count: number;
+            /**
+             * Knowledge Item Count
+             * @default 0
+             */
+            knowledge_item_count: number;
+            /**
+             * Confirmed Item Count
+             * @default 0
+             */
+            confirmed_item_count: number;
+            /** Aliases */
+            aliases?: string[];
+            /** Supporting Paper Ids */
+            supporting_paper_ids?: string[];
+            /**
+             * Supporting Paper Ids Truncated
+             * @default false
+             */
+            supporting_paper_ids_truncated: boolean;
             /** Review Status */
             review_status?: string | null;
         };
@@ -3495,6 +3824,8 @@ export interface components {
             workspace_counts?: {
                 [key: string]: number;
             };
+            /** Truncation Reason */
+            truncation_reason?: string | null;
             /** Seed Node Id */
             seed_node_id?: string | null;
             /**
@@ -3525,6 +3856,26 @@ export interface components {
              * @default 0
              */
             confidence: number;
+            /**
+             * Paper Count
+             * @default 0
+             */
+            paper_count: number;
+            /**
+             * Mention Count
+             * @default 0
+             */
+            mention_count: number;
+            /**
+             * Knowledge Item Count
+             * @default 0
+             */
+            knowledge_item_count: number;
+            /**
+             * Evidence Count
+             * @default 0
+             */
+            evidence_count: number;
         };
         /** KnowledgeItemListResponse */
         KnowledgeItemListResponse: {
@@ -4412,6 +4763,7 @@ export interface components {
              * @enum {string}
              */
             reranker_status: "applied" | "enabled_no_rerank" | "degraded" | "disabled" | "unknown";
+            graph?: components["schemas"]["GraphRetrievalAuditRead"];
         };
         /**
          * RetrievalResponse
@@ -6503,6 +6855,7 @@ export interface operations {
         parameters: {
             query?: {
                 kind?: string | null;
+                paper_id?: string | null;
             };
             header?: {
                 "X-User-ID"?: string | null;
@@ -6992,6 +7345,8 @@ export interface operations {
                 projection_mode?: string;
                 limit?: number;
                 offset?: number;
+                edge_limit?: number;
+                include_related_papers?: boolean;
             };
             header?: {
                 "X-User-ID"?: string | null;
@@ -7068,6 +7423,7 @@ export interface operations {
                 depth?: number;
                 limit?: number;
                 relation_type?: string | null;
+                projection_mode?: string;
             };
             header?: {
                 "X-User-ID"?: string | null;
@@ -7212,7 +7568,9 @@ export interface operations {
     };
     get_evidence_context_api_v1_workspaces__workspace_id__knowledge__item_id__evidence_context_get: {
         parameters: {
-            query?: never;
+            query?: {
+                evidence_span_id?: string | null;
+            };
             header?: {
                 "X-User-ID"?: string | null;
                 Authorization?: string | null;

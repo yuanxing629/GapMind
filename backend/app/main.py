@@ -1,7 +1,6 @@
-"""FastAPI application entry point.
+"""FastAPI 应用入口。
 
-Phase 0: app skeleton with health check + CORS + logging. Domain routers
-land in Phase 1+.
+Phase 0：提供 health check、CORS 和 logging 的 app 骨架。Domain router 在 Phase 1+ 接入。
 """
 
 from __future__ import annotations
@@ -68,11 +67,10 @@ _PUBLIC_PATHS = {
 
 @app.middleware("http")
 async def enforce_delivery_access(request: Request, call_next):
-    """Require delivery auth and workspace ownership outside development.
+    """在开发环境之外要求交付认证和工作区所有权。
 
-    This is intentionally a small deployment guard for the competition
-    package.  It is not intended to replace an institutional identity
-    provider, group membership service, or a full RBAC implementation.
+    这是为比赛交付包设置的轻量部署保护，不用于替代机构身份提供商、
+    群组成员服务或完整的 RBAC 实现。
     """
     path = request.url.path
     if (
@@ -130,9 +128,8 @@ async def enforce_delivery_access(request: Request, call_next):
             )
         user_id, session_id = resolved
     elif raw_session and settings.is_dev:
-        # Development tests and local clients resolve the cookie through the
-        # normal FastAPI dependency, which can use the injected test session.
-        # Do not replace it with the historical anonymous fallback here.
+# 开发测试和本地客户端通过普通 FastAPI dependency 解析 cookie，
+# 该 dependency 可以使用注入的测试 session。不要在这里替换为历史匿名回退。
         user_id = None
     else:
         try:
@@ -179,9 +176,8 @@ async def enforce_delivery_access(request: Request, call_next):
                             }
                         },
                     )
-                # Workspace access is owner-only. There are no shared member
-                # roles, so every operation for an owned workspace is allowed
-                # after the existence/ownership check above.
+# Workspace 访问仅限所有者。当前没有共享成员角色，因此通过上面的存在性/所有权
+# 检查后，所有者可以执行全部操作。
 
     if user_id is not None:
         request.state.user_id = user_id
@@ -194,5 +190,5 @@ app.include_router(api_router)
 
 @app.get("/")
 def root() -> dict[str, str]:
-    """Root redirect hint - real API lives under /api/v1."""
+    """根路径重定向提示，实际 API 位于 /api/v1 下。"""
     return {"name": "GapMind API", "docs": "/docs", "openapi": "/openapi.json"}

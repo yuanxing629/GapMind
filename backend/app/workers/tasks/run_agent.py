@@ -1,4 +1,4 @@
-"""Celery entry points for durable workspace agents."""
+"""持久化 workspace agent 的 Celery 入口。"""
 
 from __future__ import annotations
 

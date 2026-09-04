@@ -1,4 +1,4 @@
-"""Phase 3 extraction safety and provenance tests."""
+"""Phase 3 抽取安全性与来源追溯测试。"""
 
 from __future__ import annotations
 
@@ -329,7 +329,7 @@ def test_same_entity_keeps_independent_paper_mentions(db_session: Session) -> No
     assert {item.paper_id for item in mentions} == {paper1.id, paper2.id}
     assert mentions[0].canonical_entity_id == mentions[1].canonical_entity_id
 
-    # Retrying the same run is idempotent.
+    # 重试同一运行是幂等的。
     _write_extraction(db_session, paper1, run1, [_method_item()], [])
     db_session.commit()
     assert db_session.execute(
@@ -601,7 +601,7 @@ def test_celery_task_raises_when_business_task_failed(monkeypatch) -> None:
 
 
 # ==================================================================
-# P0 exact dedup integration
+# P0 精确去重集成测试
 # ==================================================================
 
 
@@ -642,7 +642,7 @@ def test_write_extraction_dedups_exact_duplicates(db_session: Session) -> None:
     paper, artifact = _paper_with_markdown(db_session, ws.id)
     run = _run(db_session, ws.id, paper, artifact)
 
-    # Two identical method items (same span + same content).
+    # 两个完全相同的方法项（范围和内容均相同）。
     counts = _write_extraction(
         db_session, paper, run, [_method_item(), _method_item()], []
     )
@@ -653,7 +653,7 @@ def test_write_extraction_dedups_exact_duplicates(db_session: Session) -> None:
         select(func.count()).select_from(KnowledgeItem)
     ).scalar_one() == 1
 
-    # The dropped duplicate is auditable as a rejection.
+    # 被丢弃的重复项会作为拒绝记录，支持审计。
     rejection = db_session.execute(
         select(ExtractionRejection).where(
             ExtractionRejection.stage == "dedup_exact"
@@ -670,14 +670,14 @@ def test_write_extraction_dedups_same_span_claim_limitation(db_session: Session)
     paper, artifact = _paper_with_markdown(db_session, ws.id)
     run = _run(db_session, ws.id, paper, artifact)
 
-    # Same span classified as BOTH a claim and a limitation.
+    # 同一范围同时被分类为 claim 和 limitation。
     claim = _claim_item(statement="Position bias is present.", start=100, end=200, confidence=0.9)
     limitation = _limitation_item(description="Position bias is present.", start=100, end=200, confidence=0.6)
 
     counts = _write_extraction(db_session, paper, run, [claim, limitation], [])
     db_session.commit()
 
-    # Higher-confidence claim survives; limitation is dropped with a rejection.
+    # 保留置信度更高的 claim；limitation 被丢弃并记录拒绝。
     assert counts == (1, 0, 1, 0)
     items = db_session.execute(select(KnowledgeItem)).scalars().all()
     assert len(items) == 1

@@ -1,9 +1,7 @@
-"""Artifact HTTP API router.
+"""Artifact HTTP API 路由。
 
-Phase 1b: read-only (list + get). Upload happens through the Paper router
-which delegates to ArtifactService.save_upload. A direct upload endpoint
-is intentionally not exposed - all artifacts should be created in the
-context of a Paper (or later, a Task result).
+Phase 1b：只读（list + get）。上传通过 Paper 路由完成，由其委托 ArtifactService.save_upload。
+刻意不暴露直接上传端点——所有 Artifact 都应在 Paper（或后续 Task 结果）的上下文中创建。
 """
 
 from __future__ import annotations
@@ -46,7 +44,11 @@ def _not_found(exc: Exception) -> HTTPException:
 )
 def list_artifacts(
     workspace_id: str,
-    kind: str | None = Query(None, pattern=r"^(pdf|parsed_text|parsed_markdown|chunk_index|report)$"),
+    kind: str | None = Query(
+        None,
+        pattern=r"^(pdf|parsed_text|parsed_markdown|chunk_index|paper_image|report)$",
+    ),
+    paper_id: str | None = Query(None),
     artifact_service: ArtifactService = Depends(_get_artifact_service),
     workspace_service: WorkspaceService = Depends(_get_workspace_service),
 ) -> list[ArtifactRead]:
@@ -54,7 +56,11 @@ def list_artifacts(
         workspace_service.get(workspace_id)
     except WorkspaceNotFoundError as e:
         raise _not_found(e) from e
-    items = artifact_service.list_by_workspace(workspace_id, kind=kind)
+    items = artifact_service.list_by_workspace(
+        workspace_id,
+        kind=kind,
+        paper_id=paper_id,
+    )
     return [ArtifactRead.model_validate(a) for a in items]
 
 
@@ -89,7 +95,7 @@ def download_artifact(
     artifact_service: ArtifactService = Depends(_get_artifact_service),
     workspace_service: WorkspaceService = Depends(_get_workspace_service),
 ) -> FileResponse:
-    """Download an artifact, including parsed_markdown source files."""
+    """下载 artifact，包括 parsed_markdown 源文件。"""
     try:
         workspace_service.get(workspace_id)
         artifact = artifact_service.get(artifact_id)
@@ -117,7 +123,7 @@ def view_artifact(
     artifact_service: ArtifactService = Depends(_get_artifact_service),
     workspace_service: WorkspaceService = Depends(_get_workspace_service),
 ) -> FileResponse:
-    """Serve an artifact inline for the in-app PDF reader."""
+    """以内嵌方式提供 artifact，供应用内 PDF 阅读器使用。"""
     try:
         workspace_service.get(workspace_id)
         artifact = artifact_service.get(artifact_id)

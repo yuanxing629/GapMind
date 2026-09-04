@@ -9,17 +9,15 @@ import type { ChatMessage } from "../../api/chat";
 import { apiBaseURL } from "../../api/client";
 import { chatFailureMessage, retrievalDiagnosticCopy } from "../../state/chatState";
 import ChatCitations from "./ChatCitations";
-import ChatSources from "./ChatSources";
+import ChatGraphAudit from "./ChatGraphAudit";
 import ChatAgentRunCard from "./ChatAgentRunCard";
 import type { AgentRunDetail } from "../../api/agent";
 
 /**
- * P0.5-3: the assistant often wraps inline math in plain brackets `[ LaTeX ]`
- * or `( LaTeX )`, which remark-math does not recognize (it expects `$...$` /
- * `\(...\)` / `\[...\]`). Normalize bracket-wrapped math to `$...$` and bare
- * `X_{sub}` subscripts to `$X_{sub}$` before rendering. Existing `$...$`
- * blocks and legal `\left[...\right]` pairs are protected so nothing is
- * double-wrapped.
+* P0.5-3：assistant 经常用普通括号包裹行内数学公式 `[ LaTeX ]` 或 `( LaTeX )`，
+* remark-math 无法识别（它要求 `$...$` / `\(...\)` / `\[...\]`）。渲染前将
+* 括号包裹的公式规范化为 `$...$`，并将裸的 `X_{sub}` 下标规范化为 `$X_{sub}$`。
+* 已有的 `$...$` 块和合法的 `\left[...\right]` 对会被保护，避免重复包裹。
  */
 export function normalizeConversationMath(content: string): string {
   const protectedBlocks: Array<[string, string]> = [];
@@ -74,34 +72,30 @@ export function normalizeConversationMath(content: string): string {
     return normalized;
   };
 
-  // 1. Protect code and already-valid dollar-delimited math. Convert the
-  //    LaTeX delimiters \\[...\\] and \\(...\\) because remark-math does not
-  //    parse those delimiters consistently in this rendering pipeline.
+// 1. 保护代码和已有的美元符号数学块。转换 LaTeX 分隔符 \\[...\\] 和 \\(...\\)，
+//    因为 remark-math 在此渲染流水线中无法稳定解析这些分隔符。
   let text = protect(content, /```[\s\S]*?```|\$\$[\s\S]*?\$\$|\$[^$\n]*\$/g);
   text = text.replace(/\\\[([\s\S]*?)\\\]/g, (_match, formula: string) => `\n$$\n${formula.trim()}\n$$\n`);
   text = text.replace(/\\\(([\s\S]*?)\\\)/g, (_match, formula: string) => `$${formula.trim()}$`);
   text = protect(text, /\\left\[[^\[\]]*\\right\]/g);
   text = protect(text, /\$\$[\s\S]*?\$\$|\$[^$\n]*\$/g);
 
-  // 2. `[ X \\in ... ]` and other bracket-wrapped formulas are not standard
-  // Markdown math. The scanner supports formulas split across multiple lines
-  // and does not touch ordinary citations or Markdown links.
+// 2. `[ X \\in ... ]` 等方括号公式不是标准 Markdown 数学格式。扫描器支持跨多行公式，
+//    不会处理普通 citation 或 Markdown 链接。
   text = normalizeDelimitedMath(text, "[", "]");
   text = protect(text, /\$\$[\s\S]*?\$\$|\$[^$\n]*\$/g);
 
-  // 3. Handle nested parenthesized equations such as `(G=(V,E))`. A simple
-  // regular expression stops at `(V,E)` and produces invalid LaTeX.
+// 3. 处理 `(G=(V,E))` 这类嵌套圆括号公式。简单正则会在 `(V,E)` 处停止，产生无效 LaTeX。
   text = normalizeDelimitedMath(text, "(", ")");
 
-  // 4. Protect generated math, then convert bare subscripts on the remaining
-  // plain text only.
+// 4. 保护已生成的数学块，然后只在剩余普通文本中转换裸下标。
   text = protect(text, /```[\s\S]*?```|\$\$[\s\S]*?\$\$|\$[^$\n]*\$/g);
   text = text.replace(/(^|[^$`\\])\b([A-Za-z])_(\{[^{}]*\}|[A-Za-z0-9]+)(?=\s|[^A-Za-z0-9_]|$)/g, (_match, prefix: string, base: string, sub: string) => {
     const clean = sub.startsWith("{") ? sub.slice(1, -1) : sub;
     return `${prefix}$${base}_{${clean.length === 1 ? clean : `\\mathrm{${clean}}`}}$`;
   });
 
-  // 5. Restore all protected spans.
+// 5. 恢复所有受保护的范围。
   for (const [key, val] of [...protectedBlocks].reverse()) text = text.split(key).join(val);
   return text;
 }
@@ -141,8 +135,8 @@ function ChatMessageItem({ conversationId, message, onRetry, retrying }: { conve
       {!isUser && message.status === "completed" && message.citation_check?.grounded_without_citations && <Typography.Text type="warning">已使用工作区证据，但回答未标注 [E] 引用，关键结论可能缺少直接支撑。</Typography.Text>}
       {!isUser && message.status === "completed" && message.citation_quality?.status === "rejected" && <Alert type="warning" showIcon message="回答未通过引用质量校验" description="当前回答已降级为证据不足提示，未将未验证结论展示为论文事实。" />}
       {!isUser && message.status === "completed" && message.source_check && !message.source_check.ok && <Typography.Text type="danger">检测到失效上下文来源标记：{message.source_check.broken.join("、")}，请核对来源。</Typography.Text>}
+      {!isUser && message.status === "completed" && message.retrieval_audit?.graph && <ChatGraphAudit audit={message.retrieval_audit.graph} />}
       {!isUser && conversationId && (message.citations?.length ?? 0) > 0 && <ChatCitations conversationId={conversationId} messageId={message.id} citations={message.citations ?? []} />}
-      {!isUser && message.status === "completed" && <ChatSources sources={message.sources ?? []} />}
     </div>
     {message.status === "completed" && <div className="gm-chat-message-actions"><Tooltip title={copied ? "已复制" : "复制"}><Button type="text" size="small" aria-label="复制消息" icon={copied ? <CheckOutlined /> : <CopyOutlined />} onClick={() => void copy()} /></Tooltip></div>}
   </article>;

@@ -1,8 +1,7 @@
-"""Timeline ORM models.
+"""Timeline ORM 模型。
 
-TimelineEvent is auto-recorded by the system whenever a meaningful research
-action happens - workspace created, paper uploaded, task transitioned, etc.
-Users never write Timeline entries directly.
+每当发生有意义的研究活动时，系统都会自动记录 TimelineEvent，例如创建 workspace、上传
+paper、切换 task 状态等。用户不能直接写入 Timeline 条目。
 """
 
 from __future__ import annotations
@@ -14,15 +13,11 @@ from app.db.base import Base, TimestampMixin, UUIDPKMixin
 
 
 class TimelineEvent(Base, UUIDPKMixin, TimestampMixin):
-    """A single auto-recorded research activity event.
+    """一条自动记录的研究活动事件。
 
-    `subject_type` + `subject_id` form a generic polymorphic pointer so we
-    can answer "what happened to paper X" without separate tables per subject.
-    `payload` carries event-specific data (filename, fields changed, etc.).
-    `actor` stores a short system/agent label or the authenticated user's
-    platform identity. User identities are UUIDs today, but the wider column
-    also keeps the timeline compatible with development/external identity
-    tokens.
+    `subject_type` + `subject_id` 构成通用的多态指针，因此无需为每种 subject 单独建表，
+    也能回答“paper X 发生了什么”。`payload` 携带事件专属数据（文件名、变更字段等）。
+    `actor` 保存简短的 system/agent 标签，或认证用户的平台身份 token。
     """
 
     __tablename__ = "timeline_events"

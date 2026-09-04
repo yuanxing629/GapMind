@@ -1,10 +1,8 @@
-"""CriticAgent (MA + W2): adversarial review + narrowing pass.
+"""CriticAgent（MA + W2）：对抗式审查与收窄流程。
 
-Carved out of the monolithic DiscoverService (MA-1 maintenance refactor) so
-the multi-agent Critic loop (verdict → challenges → narrowing) is
-self-contained and individually testable. DiscoverService instantiates one
-and delegates its existing ``_critic_*`` methods to it for backward
-compatibility with existing tests.
+本模块从单体 DiscoverService 中拆出（MA-1 维护性重构），使多智能体 Critic 循环
+（verdict → challenges → narrowing）自包含且可单独测试。DiscoverService 创建该服务，
+并将原有的 ``_critic_*`` 方法转发给它，以保持既有测试的兼容性。
 """
 
 from __future__ import annotations
@@ -25,11 +23,10 @@ from app.gateway.llm import LLMGateway
 
 logger = get_logger(__name__)
 
-# LLM prompt for the CriticAgent (Stage MA). After OpportunityAgent proposes
-# candidates, CriticAgent adversarially reviews each against the evidence
-# ledger and returns challenges + a verdict. The Orchestrator uses the verdict
-# to keep, narrow, or down-weight weak opportunities — this is the visible
-# "multi-agent collaboration" the demo shows (not raw model reasoning).
+# CriticAgent 的 LLM prompt（Stage MA）。OpportunityAgent 提出候选后，CriticAgent
+# 会针对 evidence ledger 对每个候选进行对抗式审阅，并返回 challenge 与 verdict。
+# Orchestrator 根据 verdict 保留、收窄或降低弱 opportunity 的权重；这就是 demo 展示的
+# “multi-agent collaboration”（不是原始模型推理过程）。
 CRITIC_SYSTEM_PROMPT = """\
 You are a rigorous, adversarial reviewer of proposed research opportunities. \
 For each candidate, identify weaknesses it must address before it can be \
@@ -52,11 +49,10 @@ Output a JSON object, nothing else:
 {"reviews": [{"index": 0, "verdict": "keep|narrow|reject", "challenges": ["..."], \
 "suggested_narrowing": "..."}, ...]}"""
 
-# Bounded Critic narrowing loop (MA). When the Critic marks a candidate
-# "narrow", the Orchestrator runs ONE focused counter-evidence pass on the
-# suggested narrower focus instead of unbounded re-synthesis. The outcome
-# (obstacle found vs direction clear) is recorded on the candidate and
-# surfaced to the user, keeping the multi-agent loop cheap and predictable.
+# 有界 Critic 收窄循环（MA）。当 Critic 将候选标记为 "narrow" 时，Orchestrator 会
+# 针对建议的收窄方向执行一次 focused counter-evidence pass，而不是进行无界重综合。
+# 结果（发现 obstacle 或方向清晰）会记录在候选上并展示给用户，使 multi-agent 循环
+# 保持低成本且可预测。
 MA_NARROW_MAX_ITERATIONS = 1
 MA_NARROW_COUNTER_TOP_K = 8
 MA_NARROW_OBSTACLE_CONFIDENCE = 0.6  # counter evidence at/above this confidence counts as an obstacle
@@ -74,14 +70,13 @@ def _make_empty_response(workspace_id: str, query: str, purpose: str) -> Retriev
     )
 
 
-# --------------------------------------------------------------------- helpers
+# --------------------------------------------------------------------- 辅助函数
 
 
 def collect_challenges(critic_reviews: list[dict[str, Any]], *, limit: int = 3) -> list[str]:
-    """Collect deduped challenges from narrow/reject verdicts (W2).
+    """从 narrow/reject 判定中收集去重后的挑战（W2）。
 
-    Fed back into the second synthesis pass as constraints so refined
-    opportunities explicitly respond to the critic's gaps.
+    作为约束反馈给第二次 synthesis，使收窄后的 opportunity 明确回应 Critic 指出的缺口。
     """
     seen: set[str] = set()
     out: list[str] = []
@@ -101,11 +96,10 @@ def collect_challenges(critic_reviews: list[dict[str, Any]], *, limit: int = 3) 
 def apply_reviews(
     candidates: list[dict[str, Any]], critic_reviews: list[dict[str, Any]]
 ) -> dict[str, int]:
-    """Attach critic reviews and down-weight weak candidates.
+    """附加 critic 审查结果并降低弱候选的权重。
 
-    Returns verdict counts. ``reject`` candidates are down-weighted to at
-    most 0.3 confidence and ``narrow`` to 0.45, so they surface as weaker
-    opportunities without being silently dropped (HITL preserves them).
+    返回各 verdict 的数量。``reject`` 候选的 confidence 最高降至 0.3，``narrow`` 最高
+    降至 0.45，使其作为较弱的 opportunity 展示，但不会被静默丢弃（HITL 仍可处理）。
     """
     verdict_counts = {"keep": 0, "narrow": 0, "reject": 0}
     for review in critic_reviews:
@@ -128,7 +122,7 @@ def apply_reviews(
 
 
 def narrowing_obstacle(counter: RetrievalResponse) -> bool:
-    """True when focused counter evidence already covers the narrowed claim."""
+    """当聚焦后的 counter evidence 已覆盖收窄后的 claim 时返回 True。"""
     for item in counter.items:
         if (
             item.judgement in {"contradicts", "qualifies"}
@@ -138,14 +132,14 @@ def narrowing_obstacle(counter: RetrievalResponse) -> bool:
     return False
 
 
-# --------------------------------------------------------------------- service
+# --------------------------------------------------------------------- 服务
 
 
 class CriticService:
-    """CriticAgent orchestration: review → challenges → narrowing pass.
+    """CriticAgent 编排：审查 → 挑战 → 收窄流程。
 
-    Composed by ``DiscoverService``; callers should go through that
-    facade so existing tests using ``service._critic_*`` keep working.
+    由 ``DiscoverService`` 组合；调用方应通过该 facade 访问，以保持使用
+    ``service._critic_*`` 的既有测试正常运行。
     """
 
     def __init__(
@@ -170,13 +164,11 @@ class CriticService:
         similar: RetrievalResponse,
         counter: RetrievalResponse,
     ) -> list[dict[str, Any]]:
-        """Adversarially review proposed candidates (CriticAgent).
+        """对提议的候选执行对抗式审查（CriticAgent）。
 
-        Returns per-candidate verdicts (keep/narrow/reject) with challenges,
-        used by the Orchestrator to down-weight or flag weak opportunities.
-        On LLM failure it returns ``[]`` — the run keeps the candidates and
-        records a critic-failed step, so the pipeline never blocks on the
-        critic.
+        返回每个候选的 verdict（keep/narrow/reject）和 challenges，供 Orchestrator
+        降低弱 opportunity 的权重或标记它们。LLM 失败时返回 ``[]``；run 保留候选并记录
+        critic-failed 步骤，因此流水线不会因 Critic 阻塞。
         """
         if not candidates:
             return []
@@ -239,13 +231,12 @@ class CriticService:
         candidates: list[dict[str, Any]],
         critic_reviews: list[dict[str, Any]],
     ) -> int:
-        """One bounded narrowing pass for Critic-flagged "narrow" candidates.
+        """对 Critic 标记为 "narrow" 的候选执行一次有界收窄。
 
-        For each narrow candidate with a suggested narrowing, runs a focused
-        counter-evidence retrieval on the narrowed focus and records whether an
-        obstacle was found. The candidate is never silently dropped — the
-        outcome is recorded on ``candidate["narrowing_pass"]`` so HITL can see
-        the narrowing trail. Returns the number of candidates narrowed.
+        对每个带有收窄建议的 narrow 候选，在收窄后的焦点上执行聚焦反证检索，
+        并记录是否发现障碍。候选不会被静默丢弃——结果记录在
+        ``candidate["narrowing_pass"]`` 中，供 HITL 查看收窄轨迹。
+        返回被收窄的候选数量。
         """
         by_index: dict[int, dict[str, Any]] = {}
         for review in critic_reviews:

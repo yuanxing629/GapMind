@@ -1,9 +1,9 @@
-"""Retrieval service layer - chunk indexing and semantic search.
+"""检索 service 层：分块索引与语义搜索。
 
-Step ④: Read chunks JSONL (Contract B) → embed via BGE-M3 → insert Milvus.
-Step ⑤: semantic_search / find_similar_work / find_counter_evidence (Phase 3).
+步骤 ④：读取 chunks JSONL（Contract B）→ 使用 BGE-M3 向量化 → 写入 Milvus。
+步骤 ⑤：semantic_search / find_similar_work / find_counter_evidence（Phase 3）。
 
-Pipeline stages (Contract D retrieval_stage):
+流水线阶段（Contract D retrieval_stage）：
   candidate_recall → reranked → llm_judged
 """
 
@@ -11,13 +11,17 @@ from __future__ import annotations
 
 import json
 import time
-from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 from pydantic import ValidationError
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.core.logging import get_logger
+from app.domains.artifact.models import Artifact
+from app.domains.artifact.service import ArtifactService
+from app.domains.paper.models import Paper
 from app.domains.retrieval import milvus_client
 from app.domains.retrieval.schemas import (
     ChunkRecord,
@@ -31,23 +35,19 @@ from app.gateway.reranker import get_reranker_gateway
 
 logger = get_logger(__name__)
 
-# Chunks JSONL root: backend/data/chunks/{workspace_id}/{paper_id}.jsonl
-DATA_ROOT = Path(__file__).resolve().parents[3] / "data" / "chunks"
-
-# Similar Work aggregation: at most this many chunks per paper inside the top-K.
-# The pipeline over-fetches from Milvus, so this is a cap on the *post-aggregation*
-# candidate pool, not on the raw Milvus recall — recall quality is preserved.
+# Similar Work 聚合：Top-K 中每篇论文最多保留这么多分块。
+# 流程会从 Milvus 过量召回，因此这是对“聚合后”候选池的限制，而不是原始 Milvus
+# 召回的限制——召回质量得以保留。
 SIMILAR_WORK_MAX_CHUNKS_PER_PAPER = 2
 
-# Counter Evidence aggregation: a tighter cap. Counter evidence per claim is
-# usually concentrated in a handful of papers; capping prevents one paper's
-# multiple contradicting chunks from crowding out the rare genuinely
-# qualifying hit from a different paper.
+# Counter Evidence 聚合：使用更严格的上限。每个 claim 的反证通常集中在少数论文中；
+# 限制上限可以避免一篇论文的多个 contradicting 分块挤掉另一篇论文中少见但真正
+# qualifying 的命中。
 COUNTER_EVIDENCE_MAX_CHUNKS_PER_PAPER = 3
 
-# Role priority for sorting Counter Evidence results. Lower number = higher
-# priority. Counter-evidence search's value is in contradicts / qualifies;
-# overlaps and supports are admitted only to be explicit about absence.
+# Counter Evidence 结果的排序角色优先级。数字越小，优先级越高。
+# 反证检索的价值在于 contradicts / qualifies；保留 overlaps 和 supports，
+# 只是为了明确说明没有更强反证。
 COUNTER_ROLE_PRIORITY: dict[str, int] = {
     "contradicts": 0,
     "qualifies": 1,
@@ -56,10 +56,8 @@ COUNTER_ROLE_PRIORITY: dict[str, int] = {
     "unknown": 3,
 }
 
-# Sections whose presence is rarely the answer to "is this paper similar work".
-# These typically cite the related work rather than describe it — keeping them
-# in the candidate pool causes a small set of high-citation papers to dominate
-# the Top-K purely through reference density.
+# 这些章节通常很少能回答“这篇论文是否属于相似工作”。它们一般只是引用相关工作，
+# 而不是描述相关工作；保留在候选池中会让少数高被引论文仅凭参考文献密度占据 Top-K。
 LOW_VALUE_SECTIONS: frozenset[str] = frozenset({
     "references",
     "bibliography",
@@ -71,9 +69,8 @@ LOW_VALUE_SECTIONS: frozenset[str] = frozenset({
     "supplementary material",
 })
 
-# Keep this mapping intentionally small and user-facing.  Provider/Milvus
-# exception strings are logged for operators, but never returned as an API
-# diagnostic because they can expose topology or credential-related details.
+# 有意保持这个映射较小并面向用户。Provider/Milvus 异常字符串会记录到运维日志，
+# 但不会作为 API 诊断返回，因为它们可能暴露拓扑或凭据相关细节。
 RETRIEVAL_DIAGNOSTIC_MESSAGES: dict[str, str] = {
     "embedding_unavailable": "工作区论文检索暂时无法生成查询向量。请检查 embedding API Key、服务地址和网络后重试。",
     "milvus_unavailable": "工作区论文检索暂时无法连接向量库。请检查 Milvus、etcd 和 minio 基础设施后重试。",
@@ -88,7 +85,7 @@ def _diagnostic_message(code: str) -> str:
 
 
 def _classify_failure(exc: Exception, *, stage: str) -> str:
-    """Map a retrieval-stage failure to a stable, non-sensitive code."""
+    """将检索阶段失败映射为稳定且不敏感的代码。"""
 
     if stage == "embedding":
         return "embedding_unavailable"
@@ -138,7 +135,7 @@ def _failed_response(
 
 
 # ==================================================================
-# Step ④: Index paper chunks into Milvus
+# 步骤 ④：将论文分块索引到 Milvus
 # ==================================================================
 
 
@@ -146,11 +143,12 @@ def index_paper_chunks(
     workspace_id: str,
     paper_id: str,
     *,
+    db: Session,
     force_reindex: bool = False,
 ) -> IndexChunksResult:
-    """Main entry: load chunks JSONL → embed → insert into Milvus.
+    """主入口：加载 chunk_index Artifact → 向量化 → 写入 Milvus。
 
-    Idempotent: skips chunks already indexed unless force_reindex=True.
+    幂等执行：除非 force_reindex=True，否则跳过已索引分块。
     """
     start_time = time.perf_counter()
     gateway = get_embedding_gateway()
@@ -162,8 +160,8 @@ def index_paper_chunks(
         embedding_dim=gateway.dim,
     )
 
-    # 1. Load chunks from JSONL
-    chunks = _load_chunks_jsonl(workspace_id, paper_id)
+# 1. 从 JSONL 加载分块
+    chunks = _load_chunks_jsonl(db, workspace_id, paper_id)
     if not chunks:
         result.error = f"No chunks found for paper {paper_id}"
         logger.warning("index.no_chunks", workspace_id=workspace_id, paper_id=paper_id)
@@ -171,12 +169,15 @@ def index_paper_chunks(
 
     result.total_chunks = len(chunks)
 
-    # 2. Idempotency: skip already-indexed chunks
+# 2. 幂等性：跳过已经索引的分块
     if force_reindex:
-        milvus_client.delete_by_paper(paper_id)
+        milvus_client.delete_by_paper(paper_id, workspace_id=workspace_id)
         to_index = chunks
     else:
-        existing_ids = milvus_client.get_existing_chunk_ids(paper_id)
+        existing_ids = milvus_client.get_existing_chunk_ids(
+            paper_id,
+            workspace_id=workspace_id,
+        )
         to_index = [c for c in chunks if c.chunk_id not in existing_ids]
         result.skipped_count = len(chunks) - len(to_index)
 
@@ -190,7 +191,7 @@ def index_paper_chunks(
         )
         return result
 
-    # 3. Embed texts via BGE-M3
+# 3. 使用 BGE-M3 将文本向量化
     texts = [c.text for c in to_index]
     logger.info(
         "index.embedding_start",
@@ -199,7 +200,7 @@ def index_paper_chunks(
     )
     embedding_result = gateway.embed_texts(texts)
 
-    # 4. Build Milvus records
+# 4. 构建 Milvus 记录
     records: list[dict[str, Any]] = []
     for chunk, vector in zip(
         to_index,
@@ -218,7 +219,7 @@ def index_paper_chunks(
             "embedding": vector,
         })
 
-    # 5. Insert into Milvus (batch to avoid single huge request)
+# 5. 写入 Milvus（分批处理，避免单次请求过大）
     batch_size = 100
     total_inserted = 0
     for i in range(0, len(records), batch_size):
@@ -239,11 +240,79 @@ def index_paper_chunks(
     return result
 
 
-def _load_chunks_jsonl(workspace_id: str, paper_id: str) -> list[ChunkRecord]:
-    """Read and validate chunks from the JSONL file (Contract B)."""
-    jsonl_path = DATA_ROOT / workspace_id / f"{paper_id}.jsonl"
-    if not jsonl_path.exists():
-        logger.warning("index.jsonl_not_found", path=str(jsonl_path))
+def _find_chunk_index_artifact(
+    db: Session,
+    workspace_id: str,
+    paper_id: str,
+) -> Artifact | None:
+    """在论文所属工作区内解析其规范 chunk_index Artifact。"""
+    paper = db.get(Paper, paper_id)
+    if paper is None or paper.is_deleted or paper.workspace_id != workspace_id:
+        logger.warning(
+            "index.paper_not_found_or_wrong_workspace",
+            paper_id=paper_id,
+            workspace_id=workspace_id,
+        )
+        return None
+
+    if paper.chunk_index_artifact_id:
+        artifact = db.get(Artifact, paper.chunk_index_artifact_id)
+        if (
+            artifact is not None
+            and not artifact.is_deleted
+            and artifact.workspace_id == workspace_id
+            and artifact.kind == "chunk_index"
+        ):
+            return artifact
+        logger.warning(
+            "index.chunk_index_artifact_invalid",
+            paper_id=paper_id,
+            artifact_id=paper.chunk_index_artifact_id,
+        )
+
+# 兼容 Paper 指针填充之前创建的历史记录。只在同一工作区内搜索不可变的
+# chunk-index 类型；绝不回退到未限定范围的文件系统路径。
+    filenames = {
+        f"{paper_id}_chunks.jsonl",
+        f"{paper_id}_chunks_rebuilt.jsonl",
+    }
+    candidates = db.execute(
+        select(Artifact)
+        .where(
+            Artifact.workspace_id == workspace_id,
+            Artifact.kind == "chunk_index",
+            Artifact.is_deleted.is_(False),
+            Artifact.original_filename.in_(filenames),
+        )
+        .order_by(Artifact.created_at.desc())
+    ).scalars()
+    return next(iter(candidates), None)
+
+
+def _load_chunks_jsonl(
+    db: Session,
+    workspace_id: str,
+    paper_id: str,
+) -> list[ChunkRecord]:
+    """从论文的存储 Artifact 读取并校验分块（契约 B）。"""
+    artifact = _find_chunk_index_artifact(db, workspace_id, paper_id)
+    if artifact is None:
+        logger.warning(
+            "index.chunk_index_artifact_not_found",
+            paper_id=paper_id,
+            workspace_id=workspace_id,
+        )
+        return []
+
+    jsonl_path = ArtifactService(db).resolve_abs_path(artifact)
+    if not jsonl_path.exists() or not jsonl_path.is_file():
+        logger.warning(
+            "index.chunk_index_file_not_found",
+            paper_id=paper_id,
+            workspace_id=workspace_id,
+            artifact_id=artifact.id,
+            path=str(jsonl_path),
+        )
         return []
 
     chunks: list[ChunkRecord] = []
@@ -255,6 +324,17 @@ def _load_chunks_jsonl(workspace_id: str, paper_id: str) -> list[ChunkRecord]:
             try:
                 raw = json.loads(line)
                 chunk = ChunkRecord.model_validate(raw)
+                if chunk.workspace_id != workspace_id or chunk.paper_id != paper_id:
+                    logger.warning(
+                        "index.chunk_scope_mismatch",
+                        artifact_id=artifact.id,
+                        line=line_num,
+                        expected_workspace_id=workspace_id,
+                        expected_paper_id=paper_id,
+                        actual_workspace_id=chunk.workspace_id,
+                        actual_paper_id=chunk.paper_id,
+                    )
+                    continue
                 chunks.append(chunk)
             except (json.JSONDecodeError, ValidationError) as e:
                 logger.warning(
@@ -270,12 +350,14 @@ def find_chunk_record(
     workspace_id: str,
     paper_id: str,
     chunk_id: str,
+    *,
+    db: Session,
 ) -> ChunkRecord | None:
-    """Resolve a retrieved Milvus hit back to its immutable chunk offsets."""
+    """将检索到的 Milvus 命中解析为存储中的不可变偏移。"""
     return next(
         (
             chunk
-            for chunk in _load_chunks_jsonl(workspace_id, paper_id)
+            for chunk in _load_chunks_jsonl(db, workspace_id, paper_id)
             if chunk.chunk_id == chunk_id
         ),
         None,
@@ -283,7 +365,7 @@ def find_chunk_record(
 
 
 # ==================================================================
-# Step ⑤: Retrieval functions (Contract D output)
+# 步骤 ⑤：检索函数（输出契约 D）
 # ==================================================================
 
 
@@ -297,15 +379,13 @@ def semantic_search(
     use_reranker: bool = True,
     diversify_by_paper: bool = False,
 ) -> RetrievalResponse:
-    """General semantic search within a workspace.
+    """在 workspace 内执行通用语义搜索。
 
-    Pipeline: vector recall → (optional) rerank → optional paper diversity → return.
-    ``exclude_paper_ids`` is pushed into the Milvus filter (see
-    ``milvus_client.search``) and surfaced on ``filters_applied``.
-    ``diversify_by_paper`` is intended for answer generation: it retains the
-    strongest chunk from each paper after reranking so one long paper cannot
-    consume every evidence slot. It is opt-in to preserve the public semantic
-    search API's chunk-level behaviour.
+    流程：向量召回 →（可选）重排序 →（可选）论文多样化 → 返回。
+    ``exclude_paper_ids`` 会下推到 Milvus 过滤器（见 ``milvus_client.search``），
+    并通过 ``filters_applied`` 返回。
+    ``diversify_by_paper`` 面向回答生成：重排序后每篇论文只保留最强分块，
+    避免一篇长论文占用全部证据槽位。它默认关闭，以保持公开语义搜索 API 的分块级行为。
     """
     start_time = time.perf_counter()
     request_id = str(uuid4())
@@ -321,7 +401,7 @@ def semantic_search(
             "reranker_enabled": use_reranker,
             "reranker_applied": False,
         }
-        # Stage 1: Vector recall (over-fetch for reranker)
+# 阶段 1：向量召回（为 reranker 过量召回）
         recall_k = top_k * 3 if use_reranker else top_k
         query_vector = gateway.embed_one(query)
         stage = "milvus"
@@ -347,7 +427,7 @@ def semantic_search(
                 filters_applied=filters_applied,
             )
 
-        # Stage 2: Rerank
+# 阶段 2：重排序
         diagnostic_codes: list[str] = []
         filters_applied["recall_count"] = len(hits)
         filters_applied["reranker_applied"] = use_reranker and len(hits) > 1
@@ -410,13 +490,14 @@ def find_similar_work(
     paper_id: str,
     top_k: int = 10,
     *,
+    db: Session,
     use_reranker: bool = True,
     exclude_paper_ids: set[str] | None = None,
 ) -> RetrievalResponse:
-    """Find chunks from other papers that are similar to the given paper.
+    """查找与给定论文相似的其他论文分块。
 
-    Pipeline: multi-vector recall → exclude same paper → (optional) rerank → return.
-    Uses the paper's own chunks as queries (multi-vector recall).
+    流程：多向量召回 → 排除同论文 →（可选）rerank → 返回。
+    使用该论文自身的 chunk 作为查询（多向量召回）。
     """
     start_time = time.perf_counter()
     request_id = str(uuid4())
@@ -425,8 +506,8 @@ def find_similar_work(
     try:
         gateway = get_embedding_gateway()
         stage = "data"
-        # Load representative chunks from the target paper as queries
-        chunks = _load_chunks_jsonl(workspace_id, paper_id)
+# 加载目标论文中的代表性分块作为查询
+        chunks = _load_chunks_jsonl(db, workspace_id, paper_id)
         if not chunks:
             return _failed_response(
                 request_id=request_id,
@@ -437,21 +518,19 @@ def find_similar_work(
                 diagnostic_code="unknown",
             )
 
-        # Use up to 5 representative chunks (spread across the paper)
+# 最多使用 5 个代表性分块（均匀覆盖论文内容）
         sample_indices = _spread_sample_indices(len(chunks), max_samples=5)
         query_texts = [chunks[i].text for i in sample_indices]
 
-        # Embed all query chunks
+# 将所有查询分块向量化
         stage = "embedding"
         embed_result = gateway.embed_texts(query_texts)
         stage = "milvus"
 
-        # Exclusion set: the source paper is ALWAYS excluded (it's "similar
-        # work" by definition), plus any caller-supplied papers.
+# 排除集合：源论文始终排除（按定义它不能是“相似工作”），另外加入调用方提供的论文。
         excluded = set(exclude_paper_ids or set()) | {paper_id}
 
-        # Search for each, collecting hits. Exclusion is pushed down into the
-        # Milvus filter so excluded papers never enter the recall pool.
+# 分别搜索并收集命中。将排除条件下推到 Milvus 过滤器，避免被排除论文进入召回池。
         seen_chunk_ids: set[str] = set()
         all_hits: list[dict[str, Any]] = []
 
@@ -463,9 +542,8 @@ def find_similar_work(
                 exclude_paper_ids=excluded,
             )
             for hit in hits:
-                # Defensive drop: Milvus's filter should already exclude
-                # ``excluded``, but a buggy / partial-implementation should
-                # never leak the source paper into "similar work" results.
+# 防御性剔除：Milvus 过滤器本应已经排除 ``excluded``，但即使过滤器存在缺陷或
+# 只实现了部分逻辑，也不能让源论文泄漏到“相似工作”结果中。
                 if hit.get("paper_id") in excluded:
                     continue
                 hit_chunk_id = hit.get("chunk_id", "")
@@ -488,16 +566,15 @@ def find_similar_work(
                 filters_applied={"excluded_paper_ids": sorted(excluded)},
             )
 
-        # Step 1: drop low-value sections (References / Acknowledgments etc.)
-        # These rarely contain genuinely "similar work" — they just cite it.
+# 步骤 1：剔除低价值章节（References / Acknowledgments 等）。
+# 这些章节很少包含真正的“相似工作”，通常只是引用它们。
         filtered_hits = [h for h in all_hits if not _is_low_value_section(h.get("section"))]
         if not filtered_hits:
-            # All candidates were low-value; fall back to whatever we have.
+# 所有候选都是低价值章节时，回退到现有候选。
             filtered_hits = all_hits
 
-        # Step 2: paper-level aggregation + per-paper chunk cap.
-        # Group by paper, take the top MAX_CHUNKS_PER_PAPER chunks from each,
-        # then re-merge into a single candidate pool ordered by score.
+# 步骤 2：论文级聚合与单论文分块上限。
+# 按论文分组，每篇取 MAX_CHUNKS_PER_PAPER 个最高分分块，再按分数重新合并为候选池。
         by_paper: dict[str, list[dict[str, Any]]] = {}
         for hit in filtered_hits:
             pid = hit.get("paper_id") or ""
@@ -507,14 +584,13 @@ def find_similar_work(
             hits.sort(key=lambda h: h.get("score", 0.0), reverse=True)
             candidates.extend(hits[:SIMILAR_WORK_MAX_CHUNKS_PER_PAPER])
 
-        # Step 3: rerank the diversified candidate pool (or sort by score if reranker disabled).
+# 步骤 3：对多样化候选池重排序（未启用 reranker 时按分数排序）。
         diagnostic_codes: list[str] = []
         if use_reranker and len(candidates) > 1:
             rerank_query = query_texts[0][:500]
-            # Rerank the whole pool, then blend with the raw vector score and
-            # keep the top chunk per paper: the top-k slots then surface k
-            # DISTINCT papers, and papers the reranker alone would demote (same
-            # topic, different phrasing) stay in contention.
+# 对整个候选池重排序，再与原始向量分数融合，并为每篇论文只保留最高分分块：
+# 这样 Top-K 槽位可以呈现 k 篇不同论文，而仅凭 reranker 会被降权的论文
+#（主题相同但措辞不同）仍有机会保留。
             reranked_all = _rerank_hits(rerank_query, candidates, len(candidates), diagnostic_codes)
             items = _hybrid_rerank_top_k(candidates, reranked_all, top_k)
         else:
@@ -568,11 +644,11 @@ def find_counter_evidence(
     use_judge: bool = True,
     exclude_paper_ids: set[str] | None = None,
 ) -> RetrievalResponse:
-    """Find chunks that may contradict or qualify a given claim.
+    """查找可能反驳或限定给定 claim 的分块。
 
-    Pipeline: vector recall → rerank → LLM/NLI judge → return.
-    Contract D requirement: counter_evidence MUST pass through rerank or
-    LLM/NLI judgement. retrieval_stage = 'llm_judged' when judge is used.
+    流程：向量召回 → rerank → LLM/NLI judge → 返回。
+    Contract D 要求 counter_evidence 必须经过 rerank 或 LLM/NLI 判断；使用 judge 时，
+    retrieval_stage = 'llm_judged'。
     """
     start_time = time.perf_counter()
     request_id = str(uuid4())
@@ -580,10 +656,8 @@ def find_counter_evidence(
 
     try:
         gateway = get_embedding_gateway()
-        # Stage 1: Vector recall (over-fetch). Exclusion of the claim's source
-        # paper is pushed down into the Milvus filter so the source's own
-        # chunks never enter the recall pool — otherwise they would crowd out
-        # genuinely countering evidence.
+# 阶段 1：向量召回（过量召回）。将 claim 源论文的排除条件下推到 Milvus 过滤器，
+# 使源论文自身的分块不会进入召回池——否则它们会挤掉真正的反证。
         recall_k = top_k * 3 if (use_reranker or use_judge) else top_k
         query_vector = gateway.embed_one(claim_text)
         stage = "milvus"
@@ -593,9 +667,8 @@ def find_counter_evidence(
             top_k=recall_k,
             exclude_paper_ids=exclude_paper_ids,
         )
-        # Belt-and-suspenders: the Milvus filter is the primary exclusion,
-        # but a defensive drop guards against filter-syntax regressions in
-        # specific Milvus versions.
+# 双重保障：Milvus 过滤器负责主要排除，防御性剔除用于防止特定 Milvus 版本中
+# 过滤语法回归导致的泄漏。
         if exclude_paper_ids:
             hits = [hit for hit in hits if hit.get("paper_id") not in exclude_paper_ids]
 
@@ -606,8 +679,7 @@ def find_counter_evidence(
                 workspace_id=workspace_id,
                 query=claim_text,
                 purpose="counter_evidence",
-                # No Milvus candidates at all. Crucially: this is NOT a system
-                # failure — we just couldn't find anything similar enough.
+# 完全没有 Milvus 候选。重要的是：这不是系统失败，只是没有找到足够相似的内容。
                 status="succeeded",
                 items=[],
                 total=0,
@@ -616,10 +688,8 @@ def find_counter_evidence(
                 empty_reason="retrieval_empty",
             )
 
-        # Stage 2: Rerank the whole recall pool, then keep the top chunk per
-        # paper so the top-k slots surface k DISTINCT papers. A single paper's
-        # many chunks would otherwise crowd out counter evidence from other
-        # papers — and the Gate measures recall at the paper level.
+# 阶段 2：对整个召回池重排序，再为每篇论文保留最高分分块，使 Top-K 槽位呈现 k 篇
+# 不同论文。一篇论文的大量分块否则会挤掉其他论文的反证，而 Gate 按论文级别衡量召回。
         diagnostic_codes: list[str] = []
         if use_reranker and len(hits) > 1:
             reranked_items = _paper_max_top_k(
@@ -630,21 +700,19 @@ def find_counter_evidence(
                 [_hit_to_result_item(hit) for hit in hits], top_k
             )
 
-        # Stage 3: LLM Judgement (NLI classification)
+# 阶段 3：LLM 判断（NLI 分类）
         if use_judge and reranked_items:
             items = _judge_items(claim_text, reranked_items)
         else:
             items = reranked_items
 
-        # Stage 4: paper-diversify + role-priority sort. Counter evidence per
-        # claim typically concentrates in a handful of papers; cap each
-        # paper's contribution so one paper's many contradicting chunks don't
-        # crowd out a single qualifying hit from a different paper.
+# 阶段 4：论文多样化与角色优先级排序。每个 claim 的反证通常集中在少数论文中；
+# 限制每篇论文的贡献，避免一篇论文的多个 contradicting 分块挤掉另一篇论文中
+# 单个 qualifying 命中。
         items = _diversify_and_sort_counter_items(items)
 
-        # Determine status: judge-failed sentinel (any zero-confidence unknown)
-        # pushes the response into "degraded" so the UI can distinguish it
-        # from a clean "no counter-evidence found".
+# 确定状态：Judge 失败哨兵（任意零置信度 unknown）会将响应置为 "degraded"，
+# 让 UI 能区分它与干净的“没有找到反证”。
         status = "succeeded"
         if diagnostic_codes:
             status = "degraded"
@@ -657,17 +725,12 @@ def find_counter_evidence(
 
         latency = (time.perf_counter() - start_time) * 1000
 
-        # Decide empty_reason. Three mutually exclusive cases the UI must
-        # distinguish (see ``CounterEmptyReason``):
-        #   1. retrieval_empty              → Milvus returned 0 candidates
-        #   2. judge_failed                 → Judge couldn't classify any candidate
-        #                                       (zero-confidence unknown sentinel)
-        #   3. genuinely_no_counter_evidence → Judge ran but only supports /
-        #                                       overlaps / non-zero-confidence unknowns
-        #                                       came back — no real counter-evidence
-        #                                       exists in the workspace.
-        # The fourth case (items contain contradicts/qualifies) sets no
-        # empty_reason — the top-K is good as-is.
+# 确定 empty_reason。UI 必须区分以下三个互斥状态（见 ``CounterEmptyReason``）：
+#   1. retrieval_empty：Milvus 返回 0 个候选
+#   2. judge_failed：Judge 无法对任何候选分类（零置信度 unknown 哨兵）
+#   3. genuinely_no_counter_evidence：Judge 已运行，但只返回 supports /
+#      overlaps / 非零置信度 unknown，没有真正的反证存在于工作区中。
+# 第四种情况（items 包含 contradicts/qualifies）不设置 empty_reason，Top-K 可直接使用。
         empty_reason: str | None = None
         has_counter_role = any(
             item.judgement in ("contradicts", "qualifies") for item in items
@@ -716,7 +779,7 @@ def find_counter_evidence(
 
 
 # ==================================================================
-# Internal pipeline stages
+# 内部流程阶段
 # ==================================================================
 
 
@@ -726,14 +789,14 @@ def _rerank_hits(
     top_k: int,
     diagnostic_codes: list[str] | None = None,
 ) -> list[RetrievalResultItem]:
-    """Rerank Milvus hits using cross-encoder, return top_k items."""
+    """使用 cross-encoder 对 Milvus 命中重排序并返回 top_k 条目。"""
     reranker = get_reranker_gateway()
     documents = [hit.get("text", "") for hit in hits]
 
     try:
         rerank_result = reranker.rerank(query, documents, top_n=top_k)
     except Exception as e:
-        # Graceful degradation: fall back to vector score ordering
+# 优雅降级：回退到按向量分数排序
         logger.warning(
             "retrieval.rerank_failed_fallback",
             error=str(e),
@@ -744,7 +807,7 @@ def _rerank_hits(
         hits_sorted = sorted(hits, key=lambda h: h.get("score", 0.0), reverse=True)
         return [_hit_to_result_item(hit) for hit in hits_sorted[:top_k]]
 
-    # Map reranked indices back to hits
+# 将重排序后的索引映射回命中结果
     items: list[RetrievalResultItem] = []
     for rerank_hit in rerank_result.hits[:top_k]:
         if rerank_hit.index < len(hits):
@@ -760,7 +823,7 @@ def _judge_items(
     claim: str,
     items: list[RetrievalResultItem],
 ) -> list[RetrievalResultItem]:
-    """Apply LLM judgement to reranked items (counter_evidence only)."""
+    """对重排序后的条目应用 LLM 判断（仅用于 counter_evidence）。"""
     judge = get_judgement_gateway()
     batch_size = 8
     for batch_start in range(0, len(items), batch_size):
@@ -782,7 +845,7 @@ def _judge_items(
 
 
 # ==================================================================
-# Helpers
+# 辅助函数
 # ==================================================================
 
 
@@ -791,7 +854,7 @@ def _hit_to_result_item(
     *,
     retrieval_stage: str = "candidate_recall",
 ) -> RetrievalResultItem:
-    """Convert a Milvus search hit to a RetrievalResultItem."""
+    """将 Milvus 搜索命中转换为 RetrievalResultItem。"""
     return RetrievalResultItem(
         result_id=str(uuid4()),
         source_scope="workspace",
@@ -807,12 +870,11 @@ def _hit_to_result_item(
 
 
 def _is_low_value_section(section: str | None) -> bool:
-    """True if a chunk's section is one we drop from Similar Work candidates.
+    """判断分块章节是否属于会从 Similar Work 候选中剔除的章节。
 
-    References / Acknowledgments / Appendix etc. usually cite related work
-    rather than describing it — they produce noise that pushes out genuine
-    topical matches. Match is case-insensitive and ignores leading/trailing
-    whitespace (section labels in real chunks are inconsistently cased).
+    References / Acknowledgments / Appendix 等章节通常只引用相关工作，而不是描述相关
+    方法，会产生噪声并挤出真正的主题匹配。匹配不区分大小写，并忽略首尾空白（真实
+    chunk 中的章节标签大小写并不一致）。
     """
     if not section:
         return False
@@ -823,16 +885,13 @@ def _paper_max_top_k(
     items: list[RetrievalResultItem],
     top_k: int,
 ) -> list[RetrievalResultItem]:
-    """Keep the highest-scoring item per paper, then the top ``top_k`` papers.
+    """每篇论文保留最高分条目，再保留前 ``top_k`` 篇论文。
 
-    The retrieval stages over-fetch at the *chunk* level, so without this a
-    single paper's many chunks can occupy several of the top-k slots and crowd
-    out other papers. The Gate (and the UI) measures similarity / counter
-    evidence at the *paper* level — unique papers in the top-k — so keeping
-    one chunk per paper makes every slot surface a distinct paper.
+    检索阶段在 *chunk* 层过召回；没有这一步时，同一论文的多个 chunk 会占据多个 top-k
+    槽位，挤出其他论文。Gate（以及 UI）在 *paper* 层衡量相似工作 / counter evidence，
+    即 top-k 中的唯一论文数，因此每篇论文保留一个 chunk 可以让每个槽位展示不同论文。
 
-    Items without a ``paper_id`` cannot be paper-deduplicated; they are kept
-    to fill any remaining slots.
+    没有 ``paper_id`` 的条目无法按论文去重，会用于填充剩余槽位。
     """
     if not items:
         return []
@@ -858,15 +917,13 @@ def _hybrid_rerank_top_k(
     top_k: int,
     alpha: float = 0.5,
 ) -> list[RetrievalResultItem]:
-    """Rank candidate chunks by a blend of raw vector score and rerank score.
+    """按原始向量分数与重排序分数的融合值对候选分块排序。
 
-    The cross-encoder is a strong relevance signal, but for paper-level
-    *similar work* it can be too narrow — it demotes papers that share the
-    topic yet phrase it differently (the demo Gate missed GSAT / DIR this
-    way). Blending the raw Milvus score back in keeps those works in
-    contention. Scores are min-max normalized per source, then combined as
-    ``alpha * raw + (1 - alpha) * rerank``; the top chunk per paper is kept so
-    the top-k slots surface distinct papers.
+    cross-encoder 是很强的相关性信号，但对于 paper-level 的 *similar work* 可能过窄——
+    它会降低与查询共享 topic、但表述不同的论文（demo Gate 曾因此漏掉 GSAT / DIR）。
+    将原始 Milvus score 融回后，可以让这些论文继续参与竞争。分数按来源做 min-max
+    归一化，再按 ``alpha * raw + (1 - alpha) * rerank`` 合并；每篇论文只保留最高分
+    chunk，使 top-k 槽位展示不同论文。
     """
     if not reranked:
         return []
@@ -896,22 +953,21 @@ def _hybrid_rerank_top_k(
 def _diversify_and_sort_counter_items(
     items: list[RetrievalResultItem],
 ) -> list[RetrievalResultItem]:
-    """Apply role-priority sort + per-paper chunk cap to Counter Evidence items.
+    """对 Counter Evidence 条目应用角色优先级排序和单论文分块上限。
 
-    Sort key:
-      1. role priority (contradicts < qualifies < supports/overlaps < unknown)
-      2. judgement_confidence desc (within same role)
-      3. score desc (within same role + confidence; tie-break on reranker score)
-      4. paper diversity cap: at most ``COUNTER_EVIDENCE_MAX_CHUNKS_PER_PAPER``
-         chunks from any single paper survive.
+    排序键：
+      1. role 优先级（contradicts < qualifies < supports/overlaps < unknown）
+      2. judgement_confidence 降序（同一 role 内）
+      3. score 降序（同一 role 和 confidence 内，最后按 reranker score 打破平局）
+      4. 论文多样性上限：每篇论文最多保留 ``COUNTER_EVIDENCE_MAX_CHUNKS_PER_PAPER`` 个 chunk。
 
-    The cap is applied AFTER sort so we keep the most-confident role
-    representations of each paper, not the first N by score.
+    上限在排序后应用，因此保留的是每篇论文 confidence 最高的 role 表示，而不是按
+    score 取前 N 条。
     """
     if not items:
         return items
 
-    # Sort by (role priority, -confidence, -score, stable order for ties)
+# 按（角色优先级、-confidence、-score、平局时的稳定顺序）排序
     def sort_key(item: RetrievalResultItem) -> tuple[int, float, float]:
         return (
             COUNTER_ROLE_PRIORITY.get(item.judgement, 99),
@@ -921,7 +977,7 @@ def _diversify_and_sort_counter_items(
 
     ranked = sorted(items, key=sort_key)
 
-    # Apply per-paper cap.
+# 应用单论文上限。
     by_paper_count: dict[str, int] = {}
     capped: list[RetrievalResultItem] = []
     for item in ranked:
@@ -934,7 +990,7 @@ def _diversify_and_sort_counter_items(
 
 
 def _spread_sample_indices(total: int, max_samples: int = 5) -> list[int]:
-    """Pick evenly spread indices from [0, total) for representative sampling."""
+    """从 [0, total) 中均匀选择索引，用于代表性采样。"""
     if total <= max_samples:
         return list(range(total))
     step = total / max_samples

@@ -1,4 +1,4 @@
-"""Persist chat context source passports."""
+"""持久化 Chat 上下文来源护照。"""
 
 from __future__ import annotations
 

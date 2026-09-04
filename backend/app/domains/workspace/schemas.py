@@ -1,9 +1,9 @@
-"""Workspace Pydantic schemas.
+"""Workspace 的 Pydantic schemas。
 
-Separate Create / Update / Read shapes so the API surface is explicit:
-- Create: required name, optional profile fields
-- Update: every field optional (PATCH semantics)
-- Read: full workspace, returned from GET/POST/PATCH
+分离 Create / Update / Read 结构，使 API surface 明确：
+- Create：name 必填，profile 字段可选
+- Update：所有字段可选（PATCH 语义）
+- Read：完整 workspace，由 GET/POST/PATCH 返回
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class WorkspaceBase(BaseModel):
-    """Shared fields between Create and Update - all optional except name."""
+    """Create 与 Update 共用的字段，除 name 外均可选。"""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -42,22 +42,21 @@ class WorkspaceBase(BaseModel):
 
 
 class WorkspaceCreate(WorkspaceBase):
-    """Body for POST /api/v1/workspaces."""
+    """POST /api/v1/workspaces 的请求体。"""
 
     name: str = Field(..., min_length=1, max_length=255)
 
 
 class WorkspaceUpdate(WorkspaceBase):
-    """Body for PATCH /api/v1/workspaces/{id}.
+    """PATCH /api/v1/workspaces/{id} 的请求体。
 
-    All fields optional. Fields set to None are ignored (not nulled-out) -
-    use explicit empty string for text fields or empty list for list fields
-    if you want to clear them.
+    所有字段均可选。设为 None 的字段会被忽略（不会置空）；若要清除字段，请对文本
+    使用显式空字符串，对列表使用空列表。
     """
 
 
 class WorkspaceRead(BaseModel):
-    """Full workspace as returned from the API."""
+    """API 返回的完整 workspace。"""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -77,7 +76,7 @@ class WorkspaceRead(BaseModel):
 
 
 class WorkspaceListResponse(BaseModel):
-    """Paginated list response."""
+    """分页列表响应。"""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -88,12 +87,12 @@ class WorkspaceListResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# W0 research readiness (GET /workspaces/{id}/readiness)
+# W0 研究就绪度（GET /workspaces/{id}/readiness）
 # ---------------------------------------------------------------------------
 
 
 class ReadinessBlockingAction(BaseModel):
-    """One explainable blocking step: what to do, why, and where."""
+    """一个可解释的阻塞步骤：做什么、为什么以及在哪里做。"""
 
     action: str
     reason: str
@@ -101,11 +100,11 @@ class ReadinessBlockingAction(BaseModel):
 
 
 class ReadinessDimension(BaseModel):
-    """One readiness dimension (corpus / retrieval / knowledge / discover / research).
+    """一个就绪度维度（corpus / retrieval / knowledge / discover / research）。
 
-    ``ready`` means usable; ``waiting`` means a background pipeline task is
-    still running (not a user action); otherwise the dimension is blocked and
-    ``blocking_actions`` explains what to do and where.
+    ``ready`` 表示可用；``waiting`` 表示后台流水线 task
+    仍在运行（不是用户操作）；否则该维度会被标记为阻塞，并由 ``blocking_actions``
+    说明应做什么以及在哪里做。
     """
 
     key: str
@@ -117,7 +116,7 @@ class ReadinessDimension(BaseModel):
 
 
 class WorkspaceReadinessCounts(BaseModel):
-    """Single-source counts used by the overview progress bar and stats."""
+    """概览进度条和统计信息使用的单一来源计数。"""
 
     papers: int = 0
     papers_with_pdf: int = 0
@@ -136,7 +135,7 @@ class WorkspaceReadinessCounts(BaseModel):
 
 
 class ReadinessRecommendedAction(BaseModel):
-    """The single next step the user should take."""
+    """用户下一步应该执行的唯一操作。"""
 
     title: str
     description: str
@@ -145,7 +144,7 @@ class ReadinessRecommendedAction(BaseModel):
 
 
 class WorkspaceReadiness(BaseModel):
-    """Full readiness document returned by GET /workspaces/{id}/readiness."""
+    """GET /workspaces/{id}/readiness 返回的完整就绪度文档。"""
 
     workspace_id: str
     counts: WorkspaceReadinessCounts

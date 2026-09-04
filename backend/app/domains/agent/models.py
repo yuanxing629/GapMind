@@ -1,4 +1,4 @@
-"""Persistent state for auditable, workspace-scoped agents."""
+"""可审计、按 workspace 限定的 agents 持久化状态。"""
 
 from __future__ import annotations
 

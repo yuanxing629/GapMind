@@ -21,7 +21,7 @@ evaluation/chat/
 └── reports/         # 本机评测产物，gitignore
 ```
 
-## Gold Set
+## Gold Set：黄金集
 
 每个 `questions[]` 都应由人工标注：
 

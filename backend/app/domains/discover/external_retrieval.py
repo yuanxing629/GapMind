@@ -1,14 +1,11 @@
-"""ExternalRetrievalService: Semantic Scholar external novelty search + OA import.
+"""ExternalRetrievalService：Semantic Scholar 外部新颖性搜索与 OA 导入。
 
-Carved out of the monolithic DiscoverService (MA-1 maintenance refactor).
-Owns everything that talks to the outside world for the external-novelty
-stage: query construction, S2 relevance/exact lookups, role judgement, OA PDF
-import, and the full-text pipeline state machine that resumes a run once an
-imported paper is ready.
+该服务从单体 DiscoverService 中拆出（MA-1 维护性重构）。
+它负责外部新颖性阶段所有与外部世界交互的工作：查询构建、S2 相关性/精确查找、角色判断、
+OA PDF 导入，以及在导入论文准备好后恢复运行的全文流水线状态机。
 
-It holds a ``service`` back-reference (the DiscoverService facade) so shared
-helpers like ``_cancelled`` / ``_claim_text`` / ``_parse_json`` stay in one
-place instead of being duplicated.
+它持有 ``service`` 反向引用（DiscoverService 门面），使 ``_cancelled`` / ``_claim_text`` /
+``_parse_json`` 等共享辅助函数集中在一个位置，而不是重复实现。
 """
 
 from __future__ import annotations
@@ -48,7 +45,7 @@ S2_FIELDS = "paperId,externalIds,title,abstract,year,authors,openAccessPdf,url,p
 PIPELINE_PENDING_STATUSES = {"queued", "running", "waiting_for_user"}
 RETRYABLE_EXTERNAL_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
 
-# LLM prompt for external candidate role judgement (Stage 3).
+# 外部候选角色判断的 LLM prompt（Stage 3）。
 EXTERNAL_ROLE_SYSTEM_PROMPT = """\
 You classify whether external research papers serve as counter-evidence for a \
 research question.
@@ -71,16 +68,14 @@ Output a JSON object, nothing else:
 {"roles": [{"index": 0, "role": "similar|overlap|qualifies|contradicts|unknown", \
 "confidence": 0.0-1.0}, ...]}"""
 
-# LLM prompt for external-query axis decomposition (Stage 3). The research
-# question alone (long prose) is a poor Semantic Scholar relevance query; the
-# LLM decomposes it into concise, term-rich search queries that target
-# foundational methods, overlapping work, counter-evidence, and evaluation /
-# critique literature — with the workspace's extracted methods/limitations as
-# context so queries cross research axes with the workspace's named methods.
+# 外部 query 研究轴拆解的 LLM prompt（Stage 3）。单独使用研究问题的长段文字，
+# 作为 Semantic Scholar relevance query 的效果较差；LLM 会将其拆解为简洁且术语丰富的
+# 搜索 query，分别覆盖基础方法、重叠工作、反证和评估/批评文献，并以 workspace 提取的
+# method/limitation 为上下文，使 query 能够跨越研究轴并覆盖 workspace 中命名的方法。
 EXTERNAL_QUERY_AXIS_SYSTEM_PROMPT = 'You write effective search queries to find EXTERNAL papers that challenge, overlap with, or foundationally support a research question. The papers must be relevant to the question but are NOT required to be in the user\'s workspace.\n\nRules:\n- Write CONCISE keyword-style queries (3-8 words), never full sentences\n- Prefer SPECIFIC method names and established concept terms over generic topic phrases (e.g. "graph information bottleneck" or "invariant risk minimization", not just "interpretable GNN")\n- Turn at least 2 of the workspace\'s abbreviated method names into concrete queries using their FULL names, so the search finds the method\'s paper plus its variants and critiques\n- Cover distinct angles: foundational methods, overlapping prior work, counter-evidence / critiques, evaluation benchmarks, and the domain axis (e.g. distribution shift) when present\n- Do not quote the workspace paper titles verbatim\n- Never repeat the same idea in two queries\n\nAlso choose up to 4 workspace method names whose papers you want surfaced PRECISELY (these are searched by exact title, so give the full descriptive name — expand abbreviations). Prefer methods that are foundational or likely to have counter-evidence / variants. Do not list the same method twice.\n\nExamples of good queries:\n- "graph information bottleneck"\n- "invariant risk minimization out-of-distribution"\n- "saliency maps sanity checks"\n- "explanation robustness adversarial perturbations"\n- "graph rationalization environment augmentation"\n\nOutput a JSON object, nothing else:\n{"queries": ["...", "...", "..."], "exact_lookups": ["Method Full Name", "...", "..."]}'
 
-# Keep the persisted prompt text and the enforced lookup budget aligned even
-# for deployments that still load this compact legacy prompt literal.
+# 即使某些部署仍加载这个精简的 legacy prompt literal，也要保持持久化 prompt 文本
+# 与强制执行的 lookup budget 一致。
 EXTERNAL_QUERY_AXIS_SYSTEM_PROMPT = EXTERNAL_QUERY_AXIS_SYSTEM_PROMPT.replace(
     "up to 4 workspace method names", "up to 2 workspace method names"
 )
@@ -108,20 +103,17 @@ Output a JSON object, nothing else:
 {"role": "similar|overlap|qualifies|contradicts|unknown", \
 "confidence": 0.0-1.0}"""
 
-# Stage 3 external-query construction budget. A handful of focused queries
-# covers more angles than the literal claim wording while keeping S2 API
-# calls and the LLM role-judge batches bounded. The LLM-decomposed axis
-# queries are the highest-value external-search keys, so they are prioritized
-# over raw workspace signals and generic keywords.
-# Keep the default request budget below the provider's introductory API-key
-# rate guidance while retaining dedicated primary/counter/evaluation axes.
-# Successful responses are cached, so a retry run does not repeat cached work.
-EXTERNAL_QUERY_MAX_TOTAL = 8  # max external search queries per run
-EXTERNAL_QUERY_AXIS_COUNT = 5  # LLM-generated axis queries to request
-EXTERNAL_QUERY_MAX_EXACT_LOOKUPS = 2  # LLM-selected method names to look up by exact title
+# Stage 3 外部 query 构建预算。少量聚焦 query 比直接使用 claim 原文能覆盖更多角度，
+# 同时保持 S2 API 调用和 LLM 角色判断 batch 有界。LLM 拆解出的研究轴 query 是价值最高
+# 的外部搜索 key，因此优先级高于原始 workspace 信号和通用关键词。
+# 默认 request budget 保持低于 provider 对 API key 的初始速率建议，同时保留 primary、
+# counter、evaluation 三类专用研究轴。成功响应会被缓存，重试 run 不会重复缓存工作。
+EXTERNAL_QUERY_MAX_TOTAL = 8  # 每个 run 的外部搜索 query 最大数
+EXTERNAL_QUERY_AXIS_COUNT = 5  # 请求的 LLM 生成研究轴 query 数
+EXTERNAL_QUERY_MAX_EXACT_LOOKUPS = 2  # 通过 exact title lookup 的 LLM 选定方法名称数
 EXTERNAL_QUERY_SIGNAL_TYPES = ("method", "claim", "task", "limitation")
-EXTERNAL_QUERY_MIN_CONFIDENCE = 0.3  # skip low-confidence extracted signals
-EXTERNAL_QUERY_MAX_KEYWORDS = 2  # generic user keywords are lowest priority
+EXTERNAL_QUERY_MIN_CONFIDENCE = 0.3  # 跳过低置信度的抽取信号
+EXTERNAL_QUERY_MAX_KEYWORDS = 2  # 通用用户关键词的优先级最低
 EXTERNAL_QUERY_MIN_SUCCESS_RATE = 0.8
 EXTERNAL_MIN_CANDIDATES_FOR_CLEAN_STATUS = 2
 EXTERNAL_COUNTER_TOKENS = {
@@ -132,26 +124,25 @@ EXTERNAL_EVALUATION_TOKENS = {
     "evaluation", "benchmark", "metric", "metrics", "test", "testing",
     "assess", "assessment", "实验", "评估", "指标",
 }
-# Reciprocal-rank-fusion constant for merging per-query result lists (P2-4).
-RRF_K = 60  # standard RRF smoothing: dampens per-query position differences
-# Architectural components are not named research contributions, so they are
-# poor external-search keys; deprioritize them so real method names win.
+# 用于合并各 query 结果列表的 reciprocal-rank-fusion 常量（P2-4）。
+RRF_K = 60  # 标准 RRF 平滑参数：减弱不同 query 结果位置的差异
+# Architecture component 不是命名的研究贡献，因此不适合作为外部搜索 key；
+# 降低其优先级，让真正的方法名称优先。
 EXTERNAL_METHOD_COMPONENT_TOKENS = {
     "pool", "module", "layer", "encoder", "decoder", "aggregation",
     "step", "fourier", "regularization", "block",
 }
 
 
-# --------------------------------------------------------------------- helpers
+# --------------------------------------------------------------------- 辅助函数
 
 
 def normalize_pdf_url(url: str) -> str:
-    """Normalize an open-access PDF URL for download (W1).
+    """规范化开放获取 PDF 下载地址（W1）。
 
-    Semantic Scholar occasionally returns `http://` or scheme-relative
-    (`//host/...`) URLs, and arXiv `abs` pages are HTML, not PDFs.
-    ``download_pdf`` requires HTTPS, so normalize to a fetchable absolute
-    ``https://`` URL here; non-fetchable schemes fall through to ``no_pdf``.
+    Semantic Scholar 偶尔返回 `http://` 或相对协议（`//host/...`）地址，
+    arXiv 的 `abs` 页面是 HTML 而不是 PDF。``download_pdf`` 要求 HTTPS，
+    因此在这里规范化为可获取的绝对 ``https://`` 地址；不可获取的协议最终进入 ``no_pdf``。
     """
     url = (url or "").strip()
     if not url:
@@ -166,7 +157,7 @@ def normalize_pdf_url(url: str) -> str:
 
 
 def external_role(query: str, item: dict[str, Any]) -> str:
-    """Cheap word-overlap heuristic role; LLM refinement follows in _judge_external_roles."""
+    """低成本的词重叠启发式角色判断；随后由 _judge_external_roles 使用 LLM 优化。"""
     haystack = f"{item.get('title', '')} {item.get('abstract', '')}".lower()
     tokens = [token for token in re.findall(r"[a-z0-9]{4,}", query.lower()) if token not in {"with", "from", "under", "using"}]
     overlap = sum(token in haystack for token in tokens)
@@ -174,7 +165,7 @@ def external_role(query: str, item: dict[str, Any]) -> str:
 
 
 def title_verified(name: str, title: str) -> bool:
-    """Accept an exact-title lookup hit when the query words appear in the title."""
+    """当查询词出现在标题中时，接受精确标题查找命中。"""
     query_words = set(re.findall(r"[a-z0-9]+", name.lower()))
     title_words = set(re.findall(r"[a-z0-9]+", title.lower()))
     if len(query_words) < 2:
@@ -182,14 +173,14 @@ def title_verified(name: str, title: str) -> bool:
     return query_words.issubset(title_words)
 
 
-# --------------------------------------------------------------------- service
+# --------------------------------------------------------------------- 服务
 
 
 class ExternalRetrievalService:
-    """External novelty search + OA full-text import orchestration.
+    """外部新颖性搜索与 OA 全文导入编排。
 
-    Composed by ``DiscoverService``; callers should go through that facade so
-    existing tests using ``service._external_*`` keep working.
+    由 ``DiscoverService`` 组合使用；调用方应通过该门面访问，以保持使用
+    ``service._external_*`` 的既有测试继续有效。
     """
 
     def __init__(
@@ -205,7 +196,7 @@ class ExternalRetrievalService:
         self.external_search = external_search
         self.service = service  # DiscoverService facade for shared helpers
 
-    # ---------------------------------------------------------- pipeline state
+# ---------------------------------------------------------- pipeline 状态
     def _paper_pipeline_state(self, paper_id: str) -> dict[str, Any]:
         paper = self.db.get(Paper, paper_id)
         if paper is None or paper.is_deleted:
@@ -220,7 +211,11 @@ class ExternalRetrievalService:
             return {"ready": False, "failed": True, "error": "Knowledge extraction failed."}
         span_count = int(
             self.db.execute(
-                select(func.count()).select_from(EvidenceSpan).where(EvidenceSpan.paper_id == paper.id)
+                select(func.count()).select_from(EvidenceSpan).where(
+                    EvidenceSpan.workspace_id == paper.workspace_id,
+                    EvidenceSpan.paper_id == paper.id,
+                    EvidenceSpan.is_deleted.is_(False),
+                )
             ).scalar()
             or 0
         )
@@ -320,16 +315,13 @@ class ExternalRetrievalService:
             "verification": summary,
         }
 
-    # ---------------------------------------------------------- query building
+# ---------------------------------------------------------- query 构建
     def _external_query_text(self, item: KnowledgeItem) -> str:
-        """Render a KnowledgeItem as an external-search query string.
+        """将 KnowledgeItem 渲染为外部搜索查询字符串。
 
-        Methods render as their descriptive name: a multi-word canonical name
-        is used as-is; an all-caps abbreviation is expanded from the leading
-        noun phrase of its description (e.g. ``IRM`` → "Invariant Risk
-        Minimization") when available. Limitations render as their short
-        canonical name (caveats → counter-evidence); claims render as their
-        statement.
+        method 使用描述性名称：多词 canonical name 原样使用；全大写缩写在可用时根据描述开头的
+        名词短语展开（例如 ``IRM`` -> “Invariant Risk Minimization”）。limitation 使用短的
+        canonical name（caveats -> counter-evidence）；claim 使用其 statement。
         """
         content = item.content or {}
         if item.type == "claim":
@@ -346,19 +338,17 @@ class ExternalRetrievalService:
                 if full and len(full.split()) >= 2 and full.lower() != name.lower() and first not in {"a", "an", "the"}:
                     return full
             return name
-        # limitations and tasks: short canonical names carry the most signal;
-        # long descriptions dilute S2 relevance matching.
+        # limitation 和 task：较短的 canonical name 携带的信号最强；过长的 description
+        # 会稀释 S2 relevance matching。
         return item.canonical_name.strip()
 
     def _external_query_signal_items(self, workspace_id: str, types: tuple[str, ...] | None = None) -> list[KnowledgeItem]:
-        """Workspace items ordered by usefulness for external queries.
+        """按对外部查询的有用程度排列工作区项。
 
-        Methods first (named entities → strongest external-search keys),
-        deprioritizing architectural components (Pool/Module/Layer) and
-        parenthesized sub-module aliases ("Self-Denoising (SD)") so real named
-        methods (GIB, IRM, SubgraphX, GSAT…) surface; then limitations (caveats
-        → counter-evidence), claims, tasks. Rejected and low-confidence items
-        are skipped so a noisy extraction cannot pollute the external search.
+        method 优先（命名实体是最强的外部搜索键），降低架构组件（Pool/Module/Layer）和括号子模块别名
+       （“Self-Denoising (SD)”）的优先级，使真实命名方法（GIB、IRM、SubgraphX、GSAT…）出现；
+        之后是 limitation（caveats -> counter-evidence）、claim、task。跳过 rejected 和低置信度项，
+        避免噪声抽取污染外部搜索。
         """
         types = types or EXTERNAL_QUERY_SIGNAL_TYPES
         items = list(
@@ -394,7 +384,7 @@ class ExternalRetrievalService:
         return items
 
     def _external_query_signal_texts(self, workspace_id: str, *, max_methods: int = 24, max_limitations: int = 6, max_claims: int = 6) -> str:
-        """Compact workspace signals rendered for the axis-query LLM prompt."""
+        """将工作区信号压缩为 axis-query LLM 提示词文本。"""
         lines: list[str] = []
         methods = self._external_query_signal_items(workspace_id, types=("method",))[:max_methods]
         if methods:
@@ -408,7 +398,7 @@ class ExternalRetrievalService:
         return "\n".join(lines)
 
     def _external_method_full_names(self, workspace_id: str, *, max_names: int = 40) -> list[str]:
-        """Deduplicated method full-name queries used to ground LLM axis queries."""
+        """去重后的方法全名查询，用于为 LLM 研究轴查询提供依据。"""
         names: list[str] = []
         seen: set[str] = set()
         for item in self._external_query_signal_items(workspace_id, types=("method",)):
@@ -423,15 +413,12 @@ class ExternalRetrievalService:
         return names
 
     def _axis_queries_from_llm(self, run: DiscoverRun, primary: str) -> tuple[list[str], list[str]]:
-        """Decompose the research question into external-search queries (LLM).
+        """将研究问题分解为外部搜索查询（LLM）。
 
-        Long prose is a poor relevance-search query. The LLM turns the
-        research question into concise keyword-style queries that target the
-        foundational / overlapping / counter / evaluation literature, using
-        the workspace's extracted methods and limitations as context. It also
-        picks up to 2 workspace method names to look up by exact title
-        (``exact_lookups``). On LLM failure or a malformed response it returns
-        ``([], [])`` so the caller falls back to workspace-signal queries.
+        长段落不适合作为相关性搜索查询。LLM 会将研究问题转换为简洁的关键词查询，
+        分别面向基础、重叠、反证和评测文献，并使用工作区抽取的方法和局限作为上下文。
+        它还会选择最多 2 个工作区方法名进行精确标题查找（``exact_lookups``）。
+        LLM 失败或响应格式错误时返回 ``([], [])``，使调用方回退到工作区信号查询。
         """
         signals = self._external_query_signal_texts(run.workspace_id)
         user_prompt = (
@@ -484,16 +471,13 @@ class ExternalRetrievalService:
             return [], []
 
     def _external_query_plan(self, run: DiscoverRun, primary: str) -> tuple[list[str], list[str]]:
-        """Build external-search queries and exact-lookup names.
+        """构建外部搜索查询和精确查找名称。
 
-        Returns ``(queries, exact_lookups)``. The primary query is the run's
-        claim/topic (the research question itself). The LLM decomposes the
-        research question into concise axis queries (foundational methods,
-        counter-evidence, evaluation/critique, domain axis) and picks up to 2
-        method names to look up by exact title. On LLM failure, or to fill the
-        remaining budget, workspace-derived signals are used: method names,
-        then limitations/claims/tasks, then generic user keywords last.
-        Queries are deduped and capped by ``EXTERNAL_QUERY_MAX_TOTAL``.
+        返回 ``(queries, exact_lookups)``。主查询是本次运行的 claim/topic（即研究问题本身）。
+        LLM 将研究问题分解为简洁的轴查询（基础方法、反证、评测/批评、领域轴），
+        并选择最多 2 个方法名进行精确标题查找。LLM 失败或需要填充剩余预算时，使用工作区信号：
+        先方法名，再 limitation/claim/task，最后才使用用户通用关键词。查询会去重并受
+        ``EXTERNAL_QUERY_MAX_TOTAL`` 限制。
         """
         queries: list[str] = []
         seen: set[str] = set()
@@ -512,20 +496,18 @@ class ExternalRetrievalService:
             add(axis_query)
             if len(queries) >= EXTERNAL_QUERY_MAX_TOTAL:
                 return queries, lookups
-        # Ground method names the LLM referenced: an embellished query like
-        # "graph information bottleneck sufficiency necessity" surfaces
-        # rationalization papers but often misses the method's own paper. The
-        # exact method full-name matches S2 relevance far better, so each
-        # method name mentioned in an axis query is also added as a clean
-        # query (deduped).
+        # 补充 LLM 引用的方法名称：类似 "graph information bottleneck sufficiency necessity" 的
+        # 修饰型 query 虽能找到 rationalization 论文，却经常漏掉方法本身的论文。方法完整
+        # 名称与 S2 relevance 的匹配效果好得多，因此 axis query 中出现的每个方法名称也
+        # 会作为干净 query 加入（去重后）。
         method_names = self._external_method_full_names(run.workspace_id)
         lookup_set = {name.strip().lower() for name in lookups if name.strip()}
         for axis_query in axis:
             axis_lower = axis_query.lower()
             for name in method_names:
                 if len(name) >= 4 and name.lower() in axis_lower:
-                    # Exact lookups already fetch these method papers precisely;
-                    # a relevance-query duplicate would only burn query budget.
+                    # Exact lookup 已经精确获取这些方法论文；重复的 relevance query 只会
+                    # 消耗 query budget。
                     if name.strip().lower() in lookup_set:
                         continue
                     if add(name) and len(queries) >= EXTERNAL_QUERY_MAX_TOTAL:
@@ -549,17 +531,15 @@ class ExternalRetrievalService:
         return queries, lookups
 
     def _build_external_queries(self, run: DiscoverRun, primary: str) -> list[str]:
-        """Backward-compatible list wrapper around ``_external_query_plan``."""
+        """围绕 ``_external_query_plan`` 的向后兼容列表包装器。"""
         return self._external_query_plan(run, primary)[0]
 
     @staticmethod
     def _query_purpose(query: str, index: int) -> str:
-        """Assign a stable audit purpose without another LLM call.
+        """无需再次调用 LLM，为查询分配稳定的审计用途。
 
-        The axis-query prompt intentionally returns concise strings rather than
-        a second schema.  Position identifies the primary question; distinctive
-        counter-evidence/evaluation terms identify the high-value axes, and the
-        remaining queries are method/overlap exploration.
+        轴查询提示词刻意返回简洁字符串，而不是第二个 schema。位置用于识别主问题；
+        特有的反证/评测词用于识别高价值轴，其余查询用于方法/重叠探索。
         """
 
         if index == 0:
@@ -571,25 +551,21 @@ class ExternalRetrievalService:
             return "evaluation"
         return "method_overlap"
 
-    # ---------------------------------------------------------------- verify
+# ---------------------------------------------------------------- 校验
     def _external_verify(
         self,
         run: DiscoverRun,
         queries: list[str],
         exact_lookups: list[str] | None = None,
     ) -> int:
-        """Search Semantic Scholar across several queries and merge candidates.
+        """通过多个查询搜索 Semantic Scholar 并合并候选项。
 
-        ``queries[0]`` is the run's research question (claim/topic); the rest
-        are extra angles built by ``_external_query_plan``. Results are
-        deduped by ``external_paper_id`` and assigned fresh sequential ranks.
-        Each candidate records the query that surfaced it, so the audit trail
-        shows which workspace signal produced which candidate.
+        ``queries[0]`` 是本次运行的研究问题（claim/topic）；其余查询是
+        ``_external_query_plan`` 构建的额外角度。结果按 ``external_paper_id`` 去重并分配新的连续排名。
+        每个候选项都会记录发现它的查询，因此审计轨迹可以显示哪个工作区信号产生了哪个候选项。
 
-        ``exact_lookups`` are method names searched by exact title with
-        title-verification — relevance search can be diluted by axis-suffix
-        terms, so LLM-selected method names get a precise, verified pass whose
-        hits are prepended to the merged candidates.
+        ``exact_lookups`` 是按精确标题搜索并校验标题的方法名——相关性搜索可能被轴后缀词稀释，
+        因此 LLM 选择的方法名会经过一次精确校验流程，其命中项会置于合并候选项之前。
         """
         existing = int(self.db.execute(select(func.count()).select_from(DiscoverExternalCandidate).where(DiscoverExternalCandidate.discover_run_id == run.id)).scalar() or 0)
         if existing:
@@ -631,9 +607,8 @@ class ExternalRetrievalService:
         for index, query in enumerate(queries):
             purpose = self._query_purpose(query, index)
             try:
-                # Every query fetches the full top_k: recall of the gate is
-                # capped by per-query truncation, and merging dedupes anyway.
-                # (Same S2 API call count regardless of the limit parameter.)
+                # 每个 query 都获取完整的 top_k：gate 的 recall 受每个 query 的截断限制，
+                # 而合并过程本身会去重。（无论 limit 参数如何变化，S2 API 调用次数相同。）
                 limit = top_k
                 raw = self.external_search.search(
                     query=query[:200],
@@ -710,8 +685,8 @@ class ExternalRetrievalService:
             )
             return 0
 
-        # Exact-title lookups for LLM-selected method names (title-verified).
-        # Best-effort: a failed lookup only skips that name, never fails the run.
+        # 对 LLM 选定的方法名称执行 exact-title lookup（已校验 title）。
+        # 采用 best-effort：lookup 失败只跳过该名称，不会使整个 run 失败。
         lookup_hits: list[tuple[str, dict[str, Any], str]] = []
         exact_lookup_records: list[dict[str, Any]] = []
         exact_lookup_failures: list[dict[str, Any]] = []
@@ -754,17 +729,14 @@ class ExternalRetrievalService:
                     continue
                 lookup_hits.append((str(item["paperId"]), item, f"exact: {name[:120]}"))
                 lookup_record.update({"status": "succeeded", "result_count": 1})
-                break  # one verified paper per lookup name
+                break  # 每个 lookup name 只保留一篇已验证论文
             exact_lookup_records.append(lookup_record)
 
-        # Reciprocal-rank fusion across queries, so the merged top-K reflects
-        # cross-query agreement instead of query order (P2-4: a critique-axis
-        # query's own top hit ranked ~31 under the old round-robin append even
-        # though the query was nearly the paper's title). A paper surfaced by
-        # several queries outranks a single-query hit at the same position;
-        # citation count breaks ties so foundational classics surface over
-        # incidental matches. Verified lookup hits stay prepended — they are
-        # the most certain matches.
+        # 在 query 之间执行 reciprocal-rank fusion，使合并后的 top-K 体现跨 query 的一致性，
+        # 而不是 query 顺序（P2-4：旧的 round-robin append 曾将 critique-axis query 的首个
+        # 结果排到约第 31 位，尽管该 query 几乎就是论文标题）。被多个 query 找到的论文
+        # 优先于同一位置的单 query 命中；平分时使用 citation count，让基础经典论文优先
+        # 于偶然匹配。已验证的 lookup 命中继续置顶，因为它们是最确定的匹配。
         merged: list[tuple[str, dict[str, Any], str]] = []
         seen: set[str] = set()
         for pid, item, source_query in lookup_hits:
@@ -884,31 +856,28 @@ class ExternalRetrievalService:
             },
         }
         self.db.commit()
-        # Refine candidate roles (similar/overlap/qualify/contradict/unknown)
-        # with the LLM — the heuristic only gives similar/unknown. Failure
-        # keeps the heuristic role; candidates remain auditable. Roles are
-        # judged against the research question (the primary query).
+        # 使用 LLM 优化候选角色（similar/overlap/qualify/contradict/unknown）；heuristic 只提供
+        # similar/unknown。失败时保留 heuristic role，候选仍可审计。角色判断依据是研究问题
+        # （主查询）。
         if rows:
             self._judge_external_roles(run, primary, rows)
         return len(rows)
 
-    # -------------------------------------------------------------- role judge
+    # -------------------------------------------------------------- 角色判断
     def _judge_external_roles(
         self,
         run: DiscoverRun,
         query: str,
         candidates: list[DiscoverExternalCandidate],
     ) -> None:
-        """LLM-refine external candidate roles.
+        """使用 LLM 优化外部候选项角色。
 
-        ``external_role`` is a cheap word-overlap heuristic that only yields
-        similar/unknown. Stage 3 requires discriminating similar / overlap /
-        qualify / contradict / unknown so Discover can tell which external
-        paper might *challenge* an opportunity, not just resemble it.
+        ``external_role`` 是只返回 similar/unknown 的低成本词重叠启发式规则。
+        Stage 3 需要区分 similar / overlap / qualify / contradict / unknown，
+        使 Discover 能识别哪篇外部论文可能*挑战*一个机会，而不只是与它相似。
 
-        This batch-judges candidates against the research question using the
-        LLM gateway. On failure it silently keeps the heuristic role (the
-        candidate rows already carry a role from ``external_role``).
+        该方法使用 LLM 网关批量对照研究问题判断候选项。失败时静默保留启发式角色
+        （候选行已经携带 ``external_role`` 产生的角色）。
         """
         if not candidates:
             return
@@ -965,18 +934,16 @@ class ExternalRetrievalService:
                         candidate.role_confidence = 0.3
             except Exception as exc:
                 logger.warning("discover.external_role_judge_failed", error=str(exc))
-                # Keep the heuristic role (already set on the rows) on failure.
-        # Persist refined roles once, after all batches.
+                # 失败时保留 heuristic role（该角色已设置在各行上）。
+        # 所有 batch 完成后一次性持久化优化后的角色。
         self.db.commit()
 
     def _judge_external_fulltext_roles(self, run: DiscoverRun, query: str) -> int:
-        """Best-effort re-judge roles of verified full-text candidates (W1).
+        """尽力重新判断已验证全文候选项的角色（W1）。
 
-        Metadata-level roles (title+abstract) are refined once the imported
-        paper's parsed text is available. Idempotent: rows already marked
-        ``fulltext_role_judged`` are skipped; an LLM failure keeps the
-        metadata role and marks ``fulltext_role_tried`` so a later resume can
-        retry without looping forever.
+        导入论文的解析文本可用后，再优化元数据级角色（标题+摘要）。该操作是幂等的：
+        已标记 ``fulltext_role_judged`` 的行会跳过；LLM 失败时保留元数据角色并标记
+        ``fulltext_role_tried``，以便后续恢复时重试且不会无限循环。
         """
         rows = list(
             self.db.execute(
@@ -1046,7 +1013,7 @@ class ExternalRetrievalService:
         return judged
 
     def _read_paper_text(self, paper: Paper) -> str:
-        """Read the imported paper's parsed plain text (best-effort)."""
+        """尽力读取已导入论文的解析纯文本。"""
         if not paper.parsed_text_artifact_id:
             return ""
         artifact = self.db.get(Artifact, paper.parsed_text_artifact_id)
@@ -1059,13 +1026,12 @@ class ExternalRetrievalService:
         except OSError:
             return ""
 
-    # ----------------------------------------------------------------- import
+# ----------------------------------------------------------------- 导入
     def _candidate_pdf_urls(self, row: DiscoverExternalCandidate) -> list[tuple[str, str]]:
-        """Return ordered, deduplicated PDF sources for one candidate.
+        """返回一个候选项的有序去重 PDF 来源。
 
-        ``openAccessPdf`` is a provider hint, not a guarantee. arXiv is the
-        only deterministic fallback currently available from the persisted S2
-        identifiers; landing-page URLs are intentionally not treated as PDFs.
+        ``openAccessPdf`` 是提供商提示，不是保证。当前从持久化 S2 标识符中唯一可确定的回退来源是
+        arXiv；落地页地址不会被当作 PDF。
         """
         raw = row.snapshot_payload or {}
         sources: list[tuple[str, str]] = []
@@ -1093,11 +1059,10 @@ class ExternalRetrievalService:
         return unique
 
     def _import_selected_candidates(self, run: DiscoverRun) -> None:
-        """Best-effort import of user-selected OA PDFs.
+        """尽力导入用户选择的 OA PDF。
 
-        Import is deliberately explicit: metadata-only candidates never become
-        full-text evidence. Parsing/indexing remains in the existing worker
-        pipeline and the candidate stays visibly pending until it completes.
+        导入过程刻意保持显式：仅元数据候选项绝不会变成全文证据。
+        解析/索引仍由现有 worker 流水线执行，候选项在完成前保持可见的 pending 状态。
         """
         client = SemanticScholarClient()
         rows = list(self.db.execute(select(DiscoverExternalCandidate).where(DiscoverExternalCandidate.discover_run_id == run.id, DiscoverExternalCandidate.verification_status == "selected")).scalars())
@@ -1180,7 +1145,7 @@ class ExternalRetrievalService:
         self.db.commit()
 
     def _ensure_paper_pipeline(self, workspace_id: str, paper_id: str) -> None:
-        """Safely restart only the missing/failed existing pipeline stage."""
+        """安全地仅重启缺失或失败的现有流水线阶段。"""
         paper = self.db.get(Paper, paper_id)
         if paper is None or paper.is_deleted:
             return

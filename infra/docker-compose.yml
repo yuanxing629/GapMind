@@ -8,7 +8,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gapmind}
       POSTGRES_DB: ${POSTGRES_DB:-gapmind}
     ports:
-      # bind loopback only: services are reached via localhost, never exposed publicly
+      # 仅绑定 loopback：服务通过 localhost 访问，不对公网暴露
       - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data

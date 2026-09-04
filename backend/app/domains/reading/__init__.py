@@ -1,1 +1,1 @@
-"""Reading library domain."""
+"""阅读库 domain。"""

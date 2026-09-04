@@ -1,7 +1,6 @@
-"""Semantic Scholar Academic Graph API client.
+"""Semantic Scholar Academic Graph API 客户端。
 
-The API key is intentionally kept on the backend. The frontend talks to our
-own API and never receives the Semantic Scholar credential.
+API key 有意保存在后端。前端只访问我们的 API，永远不会收到 Semantic Scholar 凭据。
 """
 
 from __future__ import annotations
@@ -31,10 +30,9 @@ def semantic_scholar_failure_kind(
     timeout: bool = False,
     transport: bool = False,
 ) -> str:
-    """Return a stable category for an upstream failure.
+    """为上游失败返回稳定的分类。
 
-    Raw exception text remains available for diagnostics, while this category
-    is safe to use in product summaries and recovery decisions.
+    原始异常文本仍可用于诊断，但该分类可安全用于产品摘要和恢复决策。
     """
     if timeout or status_code == 504:
         return "timeout"
@@ -48,7 +46,7 @@ def semantic_scholar_failure_kind(
 
 
 class SemanticScholarError(Exception):
-    """An error returned by, or raised while calling, Semantic Scholar."""
+    """Semantic Scholar 返回或调用过程中抛出的错误。"""
 
     def __init__(
         self,
@@ -65,15 +63,15 @@ class SemanticScholarError(Exception):
 
 
 class SemanticScholarClient:
-    """Small synchronous client for the Academic Graph paper endpoints."""
+    """Academic Graph 论文端点的轻量同步客户端。"""
 
     def __init__(self, timeout: float = 20.0) -> None:
         self.base_url = settings.semantic_scholar_base_url.rstrip("/") + "/"
         self.timeout = timeout
 
     def _headers(self) -> dict[str, str]:
-        # API keys are optional for Semantic Scholar, but recommended. Do not
-        # send an empty header when local development has no key configured.
+        # Semantic Scholar 的 API key 可选但推荐配置。本地开发未配置 key 时，
+        # 不要发送空请求头。
         if settings.semantic_scholar_api_key:
             return {"x-api-key": settings.semantic_scholar_api_key}
         return {}
@@ -157,14 +155,14 @@ class SemanticScholarClient:
 
     @staticmethod
     def _retry_delay(attempt: int, retry_after: str | None) -> float:
-        """Calculate a bounded delay for a retry attempt."""
+        """计算重试尝试的有界等待时间。"""
         try:
             retry_after_seconds = float(retry_after) if retry_after else 0.0
         except ValueError:
             retry_after_seconds = 0.0
         exponential = max(0.0, settings.semantic_scholar_retry_backoff) * (2**attempt)
-        # Do not let a malformed or unexpectedly large upstream header block
-        # a worker indefinitely. The shared request slot protects the retry.
+        # 不要让格式错误或异常大的上游请求头使 worker 无限阻塞。
+        # 共享请求槽会保护重试过程。
         return min(30.0, max(retry_after_seconds, exponential))
 
     def search(
@@ -178,7 +176,7 @@ class SemanticScholarClient:
         token: str | None = None,
         **filters: Any,
     ) -> dict[str, Any]:
-        """Search papers using relevance search or bulk sorted search."""
+        """使用 relevance 搜索或批量排序搜索论文。"""
 
         is_relevance = sort == "relevance"
         path = "paper/search" if is_relevance else "paper/search/bulk"
@@ -205,12 +203,10 @@ class SemanticScholarClient:
         return payload
 
     def download_pdf(self, url: str, *, max_bytes: int = 50 * 1024 * 1024) -> bytes:
-        """Download and validate an open-access PDF.
+        """下载并校验开放获取 PDF。
 
-        OA URLs often point to a publisher or repository rather than
-        Semantic Scholar itself. Retry only transient failures, preserve the
-        actual HTTP status for diagnosis, and never treat an HTML landing page
-        as a PDF.
+        OA URL 通常指向 publisher 或 repository，而不是 Semantic Scholar 本身。只重试
+        transient failure，保留实际 HTTP 状态用于诊断，并且绝不将 HTML landing page 当作 PDF。
         """
         if not url.lower().startswith("https://"):
             raise SemanticScholarError(
@@ -302,7 +298,7 @@ class SemanticScholarClient:
         )
 
     def get_paper(self, paper_id: str, *, fields: str) -> dict[str, Any]:
-        """Fetch one paper by Semantic Scholar, DOI, arXiv, or Corpus ID."""
+        """通过 Semantic Scholar、DOI、arXiv 或 Corpus ID 获取一篇论文。"""
 
         encoded_id = quote(paper_id, safe=":")
         return self._get(f"paper/{encoded_id}", {"fields": fields})

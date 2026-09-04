@@ -1,10 +1,9 @@
-"""MA-12 real end-to-end validation: run a Discover run against the real DB.
+"""MA-12 真实端到端验证：在真实数据库上运行 Discover。
 
-Executes the multi-agent orchestration (AgentStep handoff + CriticAgent +
-narrowing loop) on real PostgreSQL + Milvus + LLM, then dumps the resulting
-AgentRun/AgentStep sequence and opportunity critic reviews for inspection.
+在真实 PostgreSQL + Milvus + LLM 上执行多智能体编排（AgentStep 交接 + CriticAgent +
+收窄循环），然后导出 AgentRun/AgentStep 序列及 opportunity 批评审核结果供检查。
 
-Run from backend/ (needs .env for DEEPSEEK / SILICONFLOW keys).
+从 backend/ 目录运行（需要 .env 中的 REMOTE / SILICONFLOW 密钥）。
 """
 
 from __future__ import annotations

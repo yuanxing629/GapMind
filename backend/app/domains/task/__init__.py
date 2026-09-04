@@ -1,6 +1,5 @@
-"""Task runtime domain.
+"""Task 运行时领域。
 
-Manages long-running async tasks (PDF parse, embed, extract, discover).
-State machine: Queued -> Running -> WaitingForUser | Succeeded | Failed |
-Cancelled.
+管理长时间运行的 async task（PDF parse、embed、extract、discover）。
+状态机：Queued → Running → WaitingForUser | Succeeded | Failed | Cancelled。
 """

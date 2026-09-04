@@ -1,8 +1,8 @@
-"""Add extraction rejection audit records.
+"""增加抽取拒绝审计记录。
 
-Revision ID: 0007_extraction_rejections
-Revises: 0006_knowledge_provenance
-Create Date: 2026-07-26
+Revision ID：0007_extraction_rejections
+Revises：0006_knowledge_provenance
+创建日期：2026-07-26
 """
 from __future__ import annotations
 

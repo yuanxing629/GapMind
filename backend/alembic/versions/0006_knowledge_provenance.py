@@ -1,8 +1,8 @@
-"""Add canonical entities and versioned extraction provenance.
+"""增加规范实体和版本化抽取来源追溯。
 
-Revision ID: 0006_knowledge_provenance
-Revises: 0005_paper_markdown
-Create Date: 2026-07-25
+Revision ID：0006_knowledge_provenance
+Revises：0005_paper_markdown
+创建日期：2026-07-25
 """
 from __future__ import annotations
 

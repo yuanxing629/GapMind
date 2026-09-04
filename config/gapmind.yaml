@@ -1,0 +1,137 @@
+# GapMind 稳定运行时默认值。
+#
+# 将密钥和部署相关端点保存在 .env 或 .env.local 中。
+# 环境变量优先于此文件中的值。
+
+app:
+  env: development
+  host: 0.0.0.0
+  port: 8000
+  log_level: INFO
+  storage_dir: ./storage
+
+workspace:
+  storage_quota_bytes: 524288000
+
+parser:
+  provider: pymupdf
+  fallback_enabled: true
+  mineru_api_url: http://127.0.0.1:8002
+  mineru_timeout_seconds: 1800
+  # 原始 PDF 是阅读来源；默认不持久化派生图片。
+  return_images: false
+
+auth:
+  required: false
+  cookie_name: gm_session
+  csrf_cookie_name: gm_csrf
+  cookie_secure: false
+  session_idle_hours: 12
+  session_max_days: 30
+  invite_ttl_hours: 72
+  password_reset_ttl_minutes: 30
+  max_password_bytes: 0
+  login_rate_limit: 10
+  login_rate_window_seconds: 300
+
+database:
+  url: postgresql+psycopg://gapmind:gapmind@localhost:5432/gapmind
+
+redis:
+  host: localhost
+  port: 6379
+  url: redis://localhost:6379/0
+  broker_url: redis://localhost:6379/1
+  result_backend: redis://localhost:6379/2
+
+milvus:
+  host: localhost
+  port: 19530
+  collection_prefix: gapmind_
+
+# .env 的配置高于 gapmind.yaml。
+# 这里用于提供非敏感默认值，记录配置结构，不保存 API KEY
+# 当 .env 缺少配置时作为兜底
+remote:
+  base_url: https://api.deepseek.com
+  model: deepseek-v4-flash
+
+vision:
+  base_url: ""
+  model: ""
+
+backup:
+  base_url: ""
+  model: ""
+
+gap_extractor:
+  base_url: http://127.0.0.1:11434
+  model: research-dataset-qwen3:run7-q8-templatefix
+  model_digest: ""
+  timeout_seconds: 600
+  repair_attempts: 2
+  num_ctx: 32768
+  num_predict: 4096
+  temperature: 0.01
+  top_p: 1.0
+  repeat_penalty: 1.05
+  seed: 42
+  remote_enabled: false
+  remote_base_url: ""
+  remote_model: ""
+  remote_max_tokens: 4096
+
+gap:
+  extraction_context_mode: knowledge_context_v1
+  allow_legacy_markdown_fallback: true
+  context_max_chars: 24000
+  # 回填期间保持 false；所有已有论文成功完成知识抽取后，生产环境才可切换为 true。
+  require_knowledge: false
+
+chat:
+  history_message_limit: 20
+  history_char_limit: 60000
+  max_input_chars: 12000
+  max_image_count: 3
+  max_image_bytes: 8388608
+  prompt_max_context_chars: 48000
+  rag_top_k: 6
+  rag_max_context_chars: 18000
+  plan_max_context_chars: 6000
+  artifact_max_context_chars: 6000
+  workspace_profile_max_context_chars: 2000
+  graphrag_shadow_enabled: true
+  graphrag_projection_version: sql_graph_v1
+  graphrag_max_hops: 2
+  graphrag_node_limit: 32
+  graphrag_edge_limit: 64
+  graphrag_timeout_ms: 250
+
+evidence:
+  freshness_max_age_days: 30
+
+agent:
+  rag_top_k: 10
+  code_max_files: 30
+  code_max_chars: 300000
+
+embedding:
+  base_url: https://api.siliconflow.cn/v1
+  model: BAAI/bge-m3
+  dimension: 1024
+
+retrieval:
+  dedup_semantic: false
+
+reranker:
+  model: BAAI/bge-reranker-v2-m3
+
+semantic_scholar:
+  base_url: https://api.semanticscholar.org/graph/v1
+  rate_interval: 1.1
+  retry_count: 2
+  retry_backoff: 1.5
+  search_cache_ttl: 900
+
+cors:
+  origins: http://localhost:5173,http://localhost:3000

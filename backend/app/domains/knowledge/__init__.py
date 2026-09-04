@@ -1,6 +1,5 @@
-"""Knowledge domain.
+"""Knowledge 领域。
 
-KnowledgeItems are the 17 typed research objects (Paper, Method, Task,
-Dataset, Claim, Evidence, Limitation, etc.). Each item carries provenance,
-evidence references, confidence, and a verification status.
+KnowledgeItem 是 17 种带类型的研究对象（Paper、Method、Task、Dataset、Claim、Evidence、
+Limitation 等）。每个条目都携带 provenance、证据引用、confidence 和 verification status。
 """

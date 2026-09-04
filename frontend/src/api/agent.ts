@@ -82,7 +82,7 @@ export const agentApi = {
     const url = URL.createObjectURL(response.data);
     const link = document.createElement("a");
     link.href = url;
-    // server sends X-File-Name (URL-encoded, RFC 5987); parse it, else fall back
+// server 发送 X-File-Name（URL 编码，RFC 5987）；先解析，否则回退
     const headers = response.headers as unknown as Record<string, string>;
     const rawName = headers["x-file-name"] ?? "";
     link.download = rawName ? decodeURIComponent(rawName) : "artifact";

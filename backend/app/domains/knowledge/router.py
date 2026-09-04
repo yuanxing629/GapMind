@@ -1,32 +1,29 @@
-"""Knowledge HTTP API router (read-only for Phase 1b).
+"""Knowledge HTTP API 路由（Phase 1b 只读）。
 
-Endpoints:
-  GET /api/v1/workspaces/{wid}/knowledge            list items (filter by type/status)
-  GET /api/v1/workspaces/{wid}/knowledge/{kid}      get one item
-  GET /api/v1/workspaces/{wid}/knowledge/{kid}/evidence   list evidence spans
-  GET /api/v1/workspaces/{wid}/knowledge/relations  list relations (filter by item_id)
+端点：
+  GET /api/v1/workspaces/{wid}/knowledge：列出条目（按 type/status 过滤）
+  GET /api/v1/workspaces/{wid}/knowledge/{kid}：获取单个条目
+  GET /api/v1/workspaces/{wid}/knowledge/{kid}/evidence：列出 evidence span
+  GET /api/v1/workspaces/{wid}/knowledge/relations：列出关系（按 item_id 过滤）
 
-Domain exceptions raised here are translated into HTTP responses by the
-central handler registered in ``app.core.exception_handlers``. The two
-exceptions to that rule are:
+这里抛出的 domain exception 会由 ``app.core.exception_handlers`` 注册的中央
+handler 转换为 HTTP 响应。以下两类异常例外处理：
 
-  * cross-workspace 404s (we deliberately raise ``KnowledgeItemNotFoundError``
-    when an item id belongs to a different workspace, to avoid leaking
-    existence)
-  * local artefact problems (``evidence_source_*``) that aren't tied to a
-    domain exception class
+* 跨 workspace 的 404（有意抛出 ``KnowledgeItemNotFoundError``，避免泄露条目存在性）；
+* 与本地 artifact 相关、但不属于 domain exception class 的 ``evidence_source_*`` 问题。
 """
 
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_db, get_owned_workspace
 from app.domains.knowledge.schemas import (
+    EvidenceContextRead,
     EvidenceSpanListResponse,
     EvidenceSpanRead,
-    EvidenceContextRead,
     ExtractionRejectionListResponse,
     ExtractionRejectionRead,
     KnowledgeGraphResponse,
@@ -131,8 +128,8 @@ def list_knowledge(
     )
 
 
-# IMPORTANT: this route MUST be declared BEFORE /knowledge/{item_id} so
-# FastAPI does not match the literal "relations" as an item_id.
+# 重要：该路由必须声明在 /knowledge/{item_id} 之前，避免 FastAPI 将字面量
+# "relations" 匹配为 item_id。
 @router.get(
     "/workspaces/{workspace_id}/knowledge/relations",
     response_model=KnowledgeRelationListResponse,
@@ -176,13 +173,15 @@ def get_knowledge_graph(
     min_confidence: float | None = Query(None, ge=0.0, le=1.0),
     relation_type: str | None = Query(None),
     status: str | None = Query(None),
-    projection_mode: str = Query("all", pattern="^(all|landscape|claims|evidence)$"),
+    projection_mode: str = Query("all", pattern="^(all|workspace|landscape|claims|evidence)$"),
     limit: int = Query(100, ge=1, le=200),
     offset: int = Query(0, ge=0),
+    edge_limit: int = Query(160, ge=1, le=400),
+    include_related_papers: bool = Query(False),
     service: KnowledgeService = Depends(_get_knowledge_service),
     workspace_service: WorkspaceService = Depends(_get_workspace_service),
 ) -> KnowledgeGraphResponse:
-    """Return a self-contained, workspace-scoped graph projection."""
+    """返回自包含、按 workspace 限定的 graph 投影。"""
     workspace_service.get(workspace_id)
 
     projection = service.graph_projection(
@@ -196,6 +195,8 @@ def get_knowledge_graph(
         projection_mode=projection_mode,
         limit=limit,
         offset=offset,
+        edge_limit=edge_limit,
+        include_related_papers=include_related_papers,
     )
     return KnowledgeGraphResponse(
         workspace_id=workspace_id,
@@ -203,7 +204,7 @@ def get_knowledge_graph(
         edges=projection.edges,
         total_nodes=projection.total_nodes,
         total_edges=projection.total_edges,
-        truncated=projection.has_more,
+        truncated=projection.truncated,
         limit=limit,
         offset=offset,
         projection_mode=projection_mode,
@@ -213,6 +214,7 @@ def get_knowledge_graph(
         node_counts=projection.node_counts,
         relation_counts=projection.relation_counts,
         workspace_counts=projection.workspace_counts,
+        truncation_reason=projection.truncation_reason,
     )
 
 
@@ -223,7 +225,7 @@ def get_knowledge_graph(
 def search_knowledge_graph_nodes(
     workspace_id: str,
     q: str = Query(..., min_length=1, max_length=255),
-    projection_mode: str = Query("all", pattern="^(all|landscape|claims|evidence)$"),
+    projection_mode: str = Query("all", pattern="^(all|workspace|landscape|claims|evidence)$"),
     limit: int = Query(12, ge=1, le=50),
     service: KnowledgeService = Depends(_get_knowledge_service),
     workspace_service: WorkspaceService = Depends(_get_workspace_service),
@@ -250,10 +252,41 @@ def get_knowledge_graph_neighbors(
     depth: int = Query(1, ge=1, le=2),
     limit: int = Query(100, ge=1, le=200),
     relation_type: str | None = Query(None),
+    projection_mode: str = Query("all", pattern="^(all|workspace|landscape|claims|evidence)$"),
     service: KnowledgeService = Depends(_get_knowledge_service),
     workspace_service: WorkspaceService = Depends(_get_workspace_service),
 ) -> KnowledgeGraphResponse:
     workspace_service.get(workspace_id)
+    if projection_mode == "workspace":
+        projection = service.workspace_graph_projection(
+            workspace_id=workspace_id,
+            relation_type=relation_type,
+            node_limit=limit,
+            edge_limit=min(400, limit * 2),
+            focus_node_id=node_id,
+            focus_depth=depth,
+        )
+        return KnowledgeGraphResponse(
+            workspace_id=workspace_id,
+            nodes=projection.nodes,
+            edges=projection.edges,
+            total_nodes=projection.total_nodes,
+            total_edges=projection.total_edges,
+            truncated=projection.truncated,
+            limit=limit,
+            offset=0,
+            projection_mode="workspace",
+            loaded_nodes=len(projection.nodes),
+            loaded_edges=len(projection.edges),
+            has_more=projection.has_more,
+            node_counts=projection.node_counts,
+            relation_counts=projection.relation_counts,
+            workspace_counts=projection.workspace_counts,
+            seed_node_id=node_id,
+            depth=depth,
+            truncation_reason=projection.truncation_reason,
+        )
+
     nodes, edges = service.graph_neighbors(
         workspace_id=workspace_id,
         node_id=node_id,
@@ -290,9 +323,7 @@ def get_knowledge_item(
     workspace_service: WorkspaceService = Depends(_get_workspace_service),
 ) -> KnowledgeItemRead:
     workspace_service.get(workspace_id)
-    item = service.get_item(item_id)
-    if item.workspace_id != workspace_id:
-        raise KnowledgeItemNotFoundError(item_id)
+    item = service.get_item(item_id, workspace_id=workspace_id)
     return KnowledgeItemRead.model_validate(item)
 
 
@@ -327,10 +358,8 @@ def list_evidence(
     workspace_service: WorkspaceService = Depends(_get_workspace_service),
 ) -> EvidenceSpanListResponse:
     workspace_service.get(workspace_id)
-    item = service.get_item(item_id)
-    if item.workspace_id != workspace_id:
-        raise KnowledgeItemNotFoundError(item_id)
-    spans = service.list_evidence_for_item(item_id)
+    item = service.get_item(item_id, workspace_id=workspace_id)
+    spans = service.list_evidence_for_item(item_id, workspace_id=workspace_id)
     return EvidenceSpanListResponse(
         items=[EvidenceSpanRead.model_validate(s) for s in spans],
         total=len(spans),
@@ -344,6 +373,7 @@ def list_evidence(
 def get_evidence_context(
     workspace_id: str,
     item_id: str,
+    evidence_span_id: str | None = Query(None, min_length=1),
     db: Session = Depends(get_db),
     service: KnowledgeService = Depends(_get_knowledge_service),
     workspace_service: WorkspaceService = Depends(_get_workspace_service),
@@ -353,15 +383,40 @@ def get_evidence_context(
     from app.domains.paper.models import Paper
 
     workspace_service.get(workspace_id)
-    item = service.get_item(item_id)
-    if item.workspace_id != workspace_id:
-        raise KnowledgeItemNotFoundError(item_id)
+    item = service.get_item(item_id, workspace_id=workspace_id)
 
-    spans = service.list_evidence_for_item(item_id)
-    artifact_id = next((span.artifact_id for span in spans if span.artifact_id), None)
-    paper_id = next((span.paper_id for span in spans if span.paper_id), None) or item.paper_id
+    spans = service.list_evidence_for_item(item_id, workspace_id=workspace_id)
+    selected_span = None
+    if evidence_span_id is not None:
+        selected_span = next((span for span in spans if str(span.id) == str(evidence_span_id)), None)
+        if selected_span is None or str(selected_span.paper_id) != str(item.paper_id):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={
+                    "error": "evidence_source_not_found",
+                    "message": "Evidence span is not available for this knowledge item",
+                },
+            )
+        spans = [selected_span]
+
+    artifact_id = (
+        selected_span.artifact_id
+        if selected_span is not None
+        else next((span.artifact_id for span in spans if span.artifact_id), None)
+    )
+    paper_id = (
+        selected_span.paper_id
+        if selected_span is not None
+        else next((span.paper_id for span in spans if span.paper_id), None)
+    ) or item.paper_id
     if artifact_id is None and paper_id:
-        paper = db.get(Paper, paper_id)
+        paper = db.scalar(
+            select(Paper).where(
+                Paper.id == paper_id,
+                Paper.workspace_id == workspace_id,
+                Paper.is_deleted.is_(False),
+            )
+        )
         artifact_id = paper.parsed_markdown_artifact_id if paper else None
     if not artifact_id:
         raise HTTPException(
@@ -371,8 +426,14 @@ def get_evidence_context(
                 "message": "No parsed markdown artifact is linked to this item",
             },
         )
-    artifact = db.get(Artifact, artifact_id)
-    if artifact is None or artifact.is_deleted or artifact.workspace_id != workspace_id:
+    artifact = db.scalar(
+        select(Artifact).where(
+            Artifact.id == artifact_id,
+            Artifact.workspace_id == workspace_id,
+            Artifact.is_deleted.is_(False),
+        )
+    )
+    if artifact is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"error": "evidence_source_not_found", "message": "Evidence artifact not found"},

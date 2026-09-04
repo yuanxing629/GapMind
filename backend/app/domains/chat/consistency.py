@@ -1,10 +1,8 @@
-"""Consistency checks for LLM outputs that cite evidence as [E1] / [E2].
+"""校验以 [E1] / [E2] 形式引用证据的 LLM 输出的一致性。
 
-The Workspace RAG prompt instructs the model to back key claims with [En]
-markers that map to evidence ranks. This module validates that those markers
-are real — a broken marker (referencing evidence that does not exist) means the
-model hallucinated a citation, and a grounded answer with no markers at all is
-a "key claims unsupported" signal. Pure functions, no I/O.
+Workspace RAG prompt 要求模型使用映射到证据排名的 [En] 标记支撑关键主张。
+本模块校验这些标记是否真实——失效标记（引用不存在的证据）意味着模型幻觉式生成了引用，
+而 grounded 回答完全没有标记则表示“key claims unsupported”。本模块是纯函数，不执行 I/O。
 """
 
 from __future__ import annotations
@@ -18,7 +16,7 @@ SOURCE_MARKER_PATTERN = re.compile(r"\[(P|D|C)(\d+)\]")
 
 @dataclass
 class CitationCheckResult:
-    """Outcome of validating [En] markers in one text against evidence indices."""
+    """校验一段文本中的 [En] 标记与证据索引后的结果。"""
     referenced: list[int] = field(default_factory=list)
     valid: list[int] = field(default_factory=list)
     broken: list[int] = field(default_factory=list)
@@ -28,7 +26,7 @@ class CitationCheckResult:
 
 @dataclass
 class SourceMarkerCheckResult:
-    """Outcome of validating non-paper source markers in one answer."""
+    """校验一条回答中非论文来源标记后的结果。"""
 
     referenced: list[str] = field(default_factory=list)
     broken: list[str] = field(default_factory=list)
@@ -36,10 +34,9 @@ class SourceMarkerCheckResult:
 
 
 def check_citation_markers(text: str, valid_indices: set[int]) -> CitationCheckResult:
-    """Return referenced / valid / broken [En] markers.
+    """返回被引用、有效和失效的 [En] 标记。
 
-    ``valid_indices`` is the set of evidence ranks that actually exist. Any
-    marker whose index is not in the set is a hallucinated citation.
+    ``valid_indices`` 是实际存在的证据排名集合。不在集合中的标记均视为幻觉式引用。
     """
     referenced = sorted({int(m) for m in CITATION_PATTERN.findall(text or "")})
     valid = [i for i in referenced if i in valid_indices]
@@ -48,11 +45,10 @@ def check_citation_markers(text: str, valid_indices: set[int]) -> CitationCheckR
 
 
 def message_citation_check(content: str, citation_ranks: list[int], *, grounded: bool) -> CitationCheckResult:
-    """Check a chat assistant message's [En] markers against its citations.
+    """校验 chat assistant 消息中的 [En] 标记与其 citations。
 
-    ``grounded`` is True when the message was produced with workspace evidence
-    (grounding_status == "grounded"); a grounded answer with no markers flags
-    "key claims unsupported".
+    当消息使用工作区证据生成时 ``grounded`` 为 True（grounding_status == "grounded"）；
+    grounded 回答没有标记时，标记为“key claims unsupported”。
     """
     result = check_citation_markers(content, set(r for r in citation_ranks if r is not None))
     result.grounded_without_citations = grounded and not result.referenced
@@ -60,7 +56,7 @@ def message_citation_check(content: str, citation_ranks: list[int], *, grounded:
 
 
 def source_marker_check(content: str, valid_markers: set[str]) -> SourceMarkerCheckResult:
-    """Validate [P1]/[D1]/[C1] markers against a persisted source passport."""
+    """校验 [P1]/[D1]/[C1] 标记与持久化 source passport。"""
 
     referenced = sorted(
         {f"[{kind}{index}]" for kind, index in SOURCE_MARKER_PATTERN.findall(content or "")}

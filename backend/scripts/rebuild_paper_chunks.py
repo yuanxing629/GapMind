@@ -1,10 +1,9 @@
-"""Rebuild exact-source chunks without rerunning knowledge extraction.
+"""在不重新运行知识抽取的情况下重建精确来源分块。
 
-This repair utility is intended for papers parsed before the exact chunk
-slice fix. It creates a new immutable chunk_index artifact, replaces the
-exported JSONL, updates the Paper pointer, and force-reindexes Milvus.
+该修复工具用于处理精确分块切片修复前解析的论文。它创建新的不可变 chunk_index Artifact，
+更新 Paper 指针，并强制重建 Milvus 索引。
 
-Run from backend/:
+从 backend/ 目录运行：
 
     python scripts/rebuild_paper_chunks.py --paper-id <uuid> --paper-id <uuid>
 """
@@ -25,14 +24,11 @@ import app.db.models  # noqa: E402,F401
 from app.db.session import SessionLocal  # noqa: E402
 from app.domains.artifact.chunker import chunk_parsed_pdf  # noqa: E402
 from app.domains.artifact.models import Artifact  # noqa: E402
-from app.domains.artifact.pdf_parser import parse_pdf  # noqa: E402
+from app.domains.artifact.pdf_parser import ParsedPdf, parse_pdf  # noqa: E402
 from app.domains.artifact.service import ArtifactService  # noqa: E402
 from app.domains.paper.models import Paper  # noqa: E402
 from app.domains.retrieval.service import index_paper_chunks  # noqa: E402
-from app.workers.tasks.parse_pdf import (  # noqa: E402
-    _chunk_to_dict,
-    _export_chunks_jsonl,
-)
+from app.workers.tasks.parse_pdf import _chunk_to_dict  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -48,33 +44,70 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Rebuild JSONL and Paper pointer without force-reindexing Milvus.",
     )
+    parser.add_argument(
+        "--from-current-parsed-text",
+        action="store_true",
+        help=(
+            "Rebuild from the current immutable parsed_text artifact instead "
+            "of reparsing the PDF; preserves existing evidence offsets."
+        ),
+    )
     return parser.parse_args()
 
 
-def rebuild_paper(paper_id: str, *, skip_milvus: bool) -> None:
+def _parsed_from_existing_text(text: str) -> ParsedPdf:
+    """在不改变现有 source text 的情况下创建 chunker 输入。"""
+    page_ranges: list[tuple[int, int]] = []
+    cursor = 0
+    pages = text.split("\f")
+    for index, page in enumerate(pages):
+        start = cursor
+        end = start + len(page)
+        page_ranges.append((start, end))
+        cursor = end + (1 if index < len(pages) - 1 else 0)
+    return ParsedPdf(
+        full_text=text,
+        page_count=max(1, len(page_ranges)),
+        page_char_ranges=page_ranges,
+    )
+
+
+def rebuild_paper(
+    paper_id: str,
+    *,
+    skip_milvus: bool,
+    from_current_parsed_text: bool = False,
+) -> None:
     db = SessionLocal()
     try:
         paper = db.get(Paper, paper_id)
         if paper is None or paper.is_deleted:
             raise RuntimeError(f"Paper not found: {paper_id}")
-        if not paper.primary_artifact_id or not paper.parsed_text_artifact_id:
-            raise RuntimeError(f"Paper lacks PDF or parsed_text: {paper_id}")
+        if not paper.parsed_text_artifact_id:
+            raise RuntimeError(f"Paper lacks parsed_text: {paper_id}")
 
         artifacts = ArtifactService(db)
-        pdf_artifact = db.get(Artifact, paper.primary_artifact_id)
         text_artifact = db.get(Artifact, paper.parsed_text_artifact_id)
-        if pdf_artifact is None or text_artifact is None:
-            raise RuntimeError(f"Paper artifacts are missing: {paper_id}")
+        if text_artifact is None or text_artifact.is_deleted:
+            raise RuntimeError(f"Paper parsed_text artifact is missing: {paper_id}")
 
-        parsed = parse_pdf(artifacts.resolve_abs_path(pdf_artifact).read_bytes())
         existing_text = artifacts.resolve_abs_path(text_artifact).read_text(
             encoding="utf-8"
         )
-        if parsed.full_text != existing_text:
-            raise RuntimeError(
-                "Reparsed text differs from the current parsed_text artifact; "
-                "use a full reparse instead."
-            )
+        if from_current_parsed_text:
+            parsed = _parsed_from_existing_text(existing_text)
+        else:
+            if not paper.primary_artifact_id:
+                raise RuntimeError(f"Paper lacks PDF: {paper_id}")
+            pdf_artifact = db.get(Artifact, paper.primary_artifact_id)
+            if pdf_artifact is None or pdf_artifact.is_deleted:
+                raise RuntimeError(f"Paper PDF artifact is missing: {paper_id}")
+            parsed = parse_pdf(artifacts.resolve_abs_path(pdf_artifact).read_bytes())
+            if parsed.full_text != existing_text:
+                raise RuntimeError(
+                    "Reparsed text differs from the current parsed_text artifact; "
+                    "use --from-current-parsed-text to preserve evidence offsets."
+                )
 
         chunks = chunk_parsed_pdf(
             parsed,
@@ -103,8 +136,6 @@ def rebuild_paper(paper_id: str, *, skip_milvus: bool) -> None:
             mime_type="application/jsonl",
             kind="chunk_index",
         )
-        _export_chunks_jsonl(paper.workspace_id, paper.id, chunks)
-
         paper = db.get(Paper, paper.id)
         paper.chunk_index_artifact_id = chunk_artifact.id
         paper.chunk_count = len(chunks)
@@ -118,6 +149,7 @@ def rebuild_paper(paper_id: str, *, skip_milvus: bool) -> None:
             result = index_paper_chunks(
                 paper.workspace_id,
                 paper.id,
+                db=db,
                 force_reindex=True,
             )
             if result.error:
@@ -133,7 +165,11 @@ def rebuild_paper(paper_id: str, *, skip_milvus: bool) -> None:
 def main() -> int:
     args = parse_args()
     for paper_id in args.paper_ids:
-        rebuild_paper(paper_id, skip_milvus=args.skip_milvus)
+        rebuild_paper(
+            paper_id,
+            skip_milvus=args.skip_milvus,
+            from_current_parsed_text=args.from_current_parsed_text,
+        )
     return 0
 
 

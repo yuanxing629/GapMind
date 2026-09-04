@@ -1,12 +1,12 @@
-"""Timeline HTTP API router (read-only).
+"""Timeline HTTP API 路由（只读）。
 
-Endpoints:
-  GET /api/v1/workspaces/{wid}/timeline               list (filterable)
+接口：
+  GET /api/v1/workspaces/{wid}/timeline               列表（可筛选）
   GET /api/v1/workspaces/{wid}/timeline/{subject_type}/{subject_id}
-                                                      list events for a subject
+                                                      列出某个 subject 的事件
 
-Domain exceptions raised here are translated into HTTP responses by the
-central handler registered in ``app.core.exception_handlers``.
+这里抛出的 domain exception 会由注册在 ``app.core.exception_handlers`` 中的集中处理器
+转换为 HTTP 响应。
 """
 
 from __future__ import annotations

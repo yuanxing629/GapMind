@@ -21,7 +21,7 @@ import {
   ReadOutlined,
   ReloadOutlined,
 } from "@ant-design/icons";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import PageHeader from "../components/common/PageHeader";
 import SemanticPaperSearch from "../components/SemanticPaperSearch";
 import paperApi from "../api/paper";
@@ -30,6 +30,7 @@ import workspaceApi from "../api/workspace";
 import type { Workspace } from "../api/types/workspace";
 import type { Paper } from "../api/types/domain";
 import { useAppStore } from "../store/appStore";
+import { readingPaperPath, resolveReadingWorkspace } from "../components/layout/navigation";
 
 const { Text, Paragraph } = Typography;
 
@@ -41,21 +42,27 @@ const STATUS_META: Record<ReadingStatus, { label: string; color: string }> = {
 
 export default function ReadingPage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { message, modal } = App.useApp();
   const currentWorkspaceId = useAppStore((state) => state.currentWorkspaceId);
+  const requestedWorkspaceId = searchParams.get("workspace_id");
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [workspaceId, setWorkspaceId] = useState<string | undefined>(currentWorkspaceId ?? undefined);
+  const [workspaceSelectionError, setWorkspaceSelectionError] = useState(false);
+  const [workspaceSelectionResolved, setWorkspaceSelectionResolved] = useState(false);
   const [items, setItems] = useState<ReadingPaper[]>([]);
   const [loading, setLoading] = useState(true);
   const [workspacesLoading, setWorkspacesLoading] = useState(true);
 
   const load = useCallback(async () => {
-    if (!workspaceId) {
+    if (workspacesLoading || !workspaceSelectionResolved) return;
+    if (!workspaceId || workspaceSelectionError) {
       setItems([]);
       setLoading(false);
       return;
     }
     setLoading(true);
+    setItems([]);
     try {
       const [papersResponse, readingResponse] = await Promise.all([
         paperApi.list(workspaceId, { limit: 100 }),
@@ -99,18 +106,46 @@ export default function ReadingPage() {
     } finally {
       setLoading(false);
     }
-  }, [message, workspaceId, workspaces]);
+  }, [message, workspaceId, workspaceSelectionError, workspaceSelectionResolved, workspaces, workspacesLoading]);
 
   useEffect(() => {
+    let cancelled = false;
+    setWorkspacesLoading(true);
     workspaceApi
       .list({ limit: 200 })
       .then((response) => {
+        if (cancelled) return;
         setWorkspaces(response.items);
-        if (!workspaceId && response.items[0]) setWorkspaceId(response.items[0].id);
       })
-      .catch(() => setWorkspaces([]))
-      .finally(() => setWorkspacesLoading(false));
-  }, [workspaceId]);
+      .catch(() => {
+        if (!cancelled) setWorkspaces([]);
+      })
+      .finally(() => {
+        if (!cancelled) setWorkspacesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (workspacesLoading) return;
+    const resolved = resolveReadingWorkspace(
+      requestedWorkspaceId,
+      currentWorkspaceId,
+      workspaces.map((workspace) => workspace.id),
+    );
+    setWorkspaceSelectionError(resolved.invalidRequested);
+    setWorkspaceId(resolved.workspaceId);
+    setWorkspaceSelectionResolved(true);
+    if (resolved.workspaceId && requestedWorkspaceId !== resolved.workspaceId) {
+      setSearchParams((previous) => {
+        const next = new URLSearchParams(previous);
+        next.set("workspace_id", resolved.workspaceId as string);
+        return next;
+      }, { replace: true });
+    }
+  }, [currentWorkspaceId, requestedWorkspaceId, setSearchParams, workspaces, workspacesLoading]);
 
   useEffect(() => {
     void load();
@@ -119,7 +154,7 @@ export default function ReadingPage() {
   const openImportedPaper = async (paper: Paper) => {
     try {
       const readingPaper = await readingApi.add(paper.id);
-      navigate(`/reading/${readingPaper.paper_id}`);
+      navigate(readingPaperPath(readingPaper.paper_id));
     } catch (error) {
       message.error(`加入阅读库失败：${(error as Error).message}`);
     }
@@ -130,10 +165,18 @@ export default function ReadingPage() {
       const readingPaper = paper.reading_item_id
         ? paper
         : await readingApi.add(paper.paper_id);
-      navigate(`/reading/${readingPaper.paper_id}`);
+      navigate(readingPaperPath(readingPaper.paper_id));
     } catch (error) {
       message.error(`打开论文失败：${(error as Error).message}`);
     }
+  };
+
+  const handleWorkspaceChange = (nextWorkspaceId: string) => {
+    setSearchParams((previous) => {
+      const next = new URLSearchParams(previous);
+      next.set("workspace_id", nextWorkspaceId);
+      return next;
+    }, { replace: true });
   };
 
   const remove = (paper: ReadingPaper) => {
@@ -171,7 +214,7 @@ export default function ReadingPage() {
               placeholder="选择课题空间"
               style={{ minWidth: 220 }}
               options={workspaces.map((workspace) => ({ value: workspace.id, label: workspace.name }))}
-              onChange={setWorkspaceId}
+              onChange={handleWorkspaceChange}
             />
             <Button icon={<ReloadOutlined />} onClick={() => void load()} loading={loading}>
               刷新
@@ -180,7 +223,16 @@ export default function ReadingPage() {
         }
       />
 
-      {!workspaceId && (
+      {workspaceSelectionError ? (
+        <Alert
+          showIcon
+          type="error"
+          message="无法打开这个课题空间"
+          description="链接中的课题空间不存在、已被删除或你没有访问权限。为避免显示其他课题的数据，阅读库已停止加载。"
+          action={<Button onClick={() => navigate("/workspaces")}>返回课题空间</Button>}
+          style={{ marginBottom: 16 }}
+        />
+      ) : !workspaceId && (
         <Alert
           showIcon
           type="info"

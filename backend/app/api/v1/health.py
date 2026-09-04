@@ -1,10 +1,8 @@
-"""Health check endpoints.
+"""健康检查端点。
 
-``/health`` is a cheap liveness probe. ``/health/ready`` reports the
-dependencies that are required by the local research workspace and returns a
-non-2xx response when a required dependency is unavailable. Provider checks
-are deliberately split into configuration checks and network checks so a key
-being present is never presented as proof that an external service is healthy.
+``/health`` 是轻量存活探针。``/health/ready`` 报告本地科研工作区所需的依赖，
+当必要依赖不可用时返回非 2xx 响应。提供商检查刻意拆分为配置检查和网络检查，
+因此不会把存在密钥误认为外部服务健康的证据。
 """
 
 from __future__ import annotations
@@ -31,7 +29,7 @@ router = APIRouter(prefix="/health", tags=["health"])
 @router.get("")
 @router.get("/")
 def health() -> dict[str, str]:
-    """Liveness check - always 200 if the process is up."""
+    """存活检查：进程运行时始终返回 200。"""
     return {"status": "ok", "env": settings.app_env}
 
 
@@ -48,7 +46,7 @@ def _error(*, detail: str, checked: str = "network") -> dict[str, str]:
 
 
 def _check_database() -> dict[str, str]:
-    """Run a bounded SQL probe without exposing connection details."""
+    """执行有界 SQL 探测，不暴露连接细节。"""
     from app.db.session import SessionLocal
 
     try:
@@ -82,7 +80,7 @@ def _check_redis() -> dict[str, str]:
 
 
 def _check_milvus() -> dict[str, str]:
-    """Check Milvus connectivity without creating or loading a collection."""
+    """检查 Milvus 连通性，不创建或加载 collection。"""
     try:
         from app.domains.retrieval import milvus_client
 
@@ -106,7 +104,7 @@ def _check_storage() -> dict[str, str]:
 
 
 def _check_worker() -> dict[str, str]:
-    """Check that at least one Celery worker answers the control ping."""
+    """检查至少有一个 Celery worker 响应 control ping。"""
     try:
         from app.workers.celery_app import celery_app
 
@@ -136,7 +134,7 @@ def _readiness_checks() -> dict[str, dict[str, str]]:
         "milvus": _check_milvus(),
         "storage": _check_storage(),
         "celery_worker": _check_worker(),
-        "llm": _check_configured(llm.ping, missing="llm_api_key_missing"),
+        "llm": _check_configured(llm.ping, missing="llm_config_missing"),
         "embedding": _check_configured(embedding.ping, missing="embedding_api_key_missing"),
         "reranker": _check_configured(reranker.ping, missing="reranker_api_key_missing"),
         "semantic_scholar": _check_configured(
@@ -154,19 +152,16 @@ def _readiness_checks() -> dict[str, dict[str, str]]:
 
 @router.get("/ready")
 def readiness() -> JSONResponse:
-    """Return dependency readiness with a truthful HTTP status.
+    """返回依赖就绪状态，并使用真实反映状态的 HTTP 状态码。
 
-    Database, Redis, Milvus, storage, LLM and Embedding are required for the
-    core workspace path. A Celery worker is required for asynchronous
-    extraction/agent paths. Reranker and Semantic Scholar are reported but do
-    not make the API entirely unavailable because the product has explicit
-    degraded/partial-success paths for them.
+    Database、Redis、Milvus、storage、LLM 和 Embedding 是核心工作区路径的必要依赖。
+    异步抽取/Agent 路径需要 Celery worker。Reranker 和 Semantic Scholar 会被报告，
+    但不会使 API 完全不可用，因为产品为它们提供了明确的 degraded/partial-success 路径。
     """
     checks = _readiness_checks()
     required = ("database", "redis", "milvus", "storage", "llm", "embedding", "auth")
-    # ``checks`` is kept injectable for unit tests and deployment probes; a
-    # legacy probe that does not know the newer auth check should not crash
-    # the endpoint. The production implementation always includes ``auth``.
+    # ``checks`` 保持可注入，以供单元测试和部署探针使用；不了解新版 auth 检查的
+    # legacy 探针不应导致端点崩溃。生产实现始终包含 ``auth``。
     required_failures = [
         name for name in required if name in checks and checks[name]["status"] != "ok"
     ]

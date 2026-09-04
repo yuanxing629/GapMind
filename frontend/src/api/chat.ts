@@ -1,4 +1,5 @@
 import apiClient, { apiBaseURL, getCsrfToken } from "./client";
+import type { GraphRAGPath } from "./types/knowledge";
 
 export interface ChatImageInput {
   filename: string;
@@ -53,7 +54,7 @@ export interface ChatMessageImage {
   size_bytes: number;
   created_at: string;
   updated_at: string;
-  /** Browser-only data URL used by optimistic messages before persistence. */
+/** 持久化前由 optimistic 消息使用的、仅浏览器可用的 data URL。 */
   data_url?: string;
 }
 
@@ -85,6 +86,36 @@ export interface RetrievalAudit {
   final_paper_count: number;
   latency_ms: number;
   reranker_status: "applied" | "enabled_no_rerank" | "degraded" | "disabled" | "unknown";
+  graph: GraphRetrievalAudit;
+}
+
+export interface GraphRetrievalAudit {
+  mode: "disabled" | "shadow";
+  projection_version: string;
+  seed_count: number;
+  expanded_node_count: number;
+  expanded_edge_count: number;
+  path_count: number;
+  candidate_path_count: number;
+  emitted_path_count: number;
+  dropped_path_count: number;
+  dropped_path_reasons: Record<string, number>;
+  latency_ms: number;
+  supporting_paper_ids: string[];
+  supporting_evidence_ids: string[];
+  truncated: boolean;
+  truncation_reason: string | null;
+  fallback: boolean;
+  fallback_reason: string | null;
+  paths: GraphRAGPath[];
+}
+
+export interface ChatRetrievalOptions {
+  retrievalMode?: "dense" | "hybrid" | "graph";
+  graphExpand?: boolean;
+  graphMaxHops?: number;
+  graphNodeLimit?: number;
+  graphEdgeLimit?: number;
 }
 
 export interface SourceCheck {
@@ -199,28 +230,38 @@ export const chatApi = {
     const { data } = await apiClient.delete<{ id: string; deleted: boolean }>(`/chat/conversations/${id}`);
     return data;
   },
-  async sendNew(content: string, workspaceId?: string, context: { researchPlanId?: string; sourceArtifactIds?: string[]; images?: ChatImageInput[] } = {}) {
+  async sendNew(content: string, workspaceId?: string, context: { researchPlanId?: string; sourceArtifactIds?: string[]; images?: ChatImageInput[] } & ChatRetrievalOptions = {}) {
     const { data } = await apiClient.post<ChatSendResponse>("/chat/conversations/send", {
       content,
       workspace_id: workspaceId ?? null,
       research_plan_id: context.researchPlanId ?? null,
       source_artifact_ids: context.sourceArtifactIds ?? [],
       images: context.images ?? [],
+      retrieval_mode: context.retrievalMode ?? "dense",
+      graph_expand: context.graphExpand,
+      graph_max_hops: context.graphMaxHops ?? 2,
+      graph_node_limit: context.graphNodeLimit ?? 32,
+      graph_edge_limit: context.graphEdgeLimit ?? 64,
     });
     return data;
   },
-  async sendMessage(id: string, content: string, context: { researchPlanId?: string; sourceArtifactIds?: string[]; images?: ChatImageInput[] } = {}) {
+  async sendMessage(id: string, content: string, context: { researchPlanId?: string; sourceArtifactIds?: string[]; images?: ChatImageInput[] } & ChatRetrievalOptions = {}) {
     const { data } = await apiClient.post<ChatSendResponse>(`/chat/conversations/${id}/messages`, {
       content,
       research_plan_id: context.researchPlanId ?? null,
       source_artifact_ids: context.sourceArtifactIds ?? [],
       images: context.images ?? [],
+      retrieval_mode: context.retrievalMode ?? "dense",
+      graph_expand: context.graphExpand,
+      graph_max_hops: context.graphMaxHops ?? 2,
+      graph_node_limit: context.graphNodeLimit ?? 32,
+      graph_edge_limit: context.graphEdgeLimit ?? 64,
     });
     return data;
   },
-  async streamSend(conversationId: string, content: string, context: { researchPlanId?: string; sourceArtifactIds?: string[]; images?: ChatImageInput[] } = {}): Promise<Response> {
-    // SSE uses the same API base as Axios so a separately hosted frontend can
-    // carry the session cookie with an explicit CORS configuration.
+  async streamSend(conversationId: string, content: string, context: { researchPlanId?: string; sourceArtifactIds?: string[]; images?: ChatImageInput[] } & ChatRetrievalOptions = {}): Promise<Response> {
+// SSE 与 Axios 使用相同的 API base，使单独托管的前端可以在明确的 CORS 配置下
+// 携带 session cookie。
     const csrf = getCsrfToken();
     return fetch(`${apiBaseURL.replace(/\/$/, "")}/chat/conversations/${conversationId}/messages/stream`, {
       method: "POST",
@@ -234,6 +275,11 @@ export const chatApi = {
         research_plan_id: context.researchPlanId ?? null,
         source_artifact_ids: context.sourceArtifactIds ?? [],
         images: context.images ?? [],
+        retrieval_mode: context.retrievalMode ?? "dense",
+        graph_expand: context.graphExpand,
+        graph_max_hops: context.graphMaxHops ?? 2,
+        graph_node_limit: context.graphNodeLimit ?? 32,
+        graph_edge_limit: context.graphEdgeLimit ?? 64,
       }),
     });
   },

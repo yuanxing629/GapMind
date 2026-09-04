@@ -1,6 +1,6 @@
-"""Model Gateway - unified interface for LLM and Embedding providers.
+"""Model Gateway：LLM 与 Embedding provider 的统一接口。
 
-Phase 0: skeleton only. Concrete LLM calls will be wired in Phase 2-3.
+Phase 0：仅提供骨架。具体的 LLM 调用将在 Phase 2-3 接入。
 """
 
 from app.gateway.embedding import EmbeddingGateway, get_embedding_gateway

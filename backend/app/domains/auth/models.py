@@ -1,8 +1,7 @@
-"""Authentication and platform-identity ORM models.
+"""认证与平台身份 ORM 模型。
 
-Authentication identities are deliberately separate from research content
-ownership. A platform administrator is a role on a user, not the owner of
-every historical workspace.
+认证身份刻意与研究内容所有权分离。平台管理员是用户的一种角色，
+而不是每个历史工作区的所有者。
 """
 
 from __future__ import annotations
@@ -16,7 +15,7 @@ from app.db.base import Base, TimestampMixin, UUIDPKMixin
 
 
 class User(Base, UUIDPKMixin, TimestampMixin):
-    """A human or system identity that can sign in to GapMind."""
+    """可以登录 GapMind 的人类或系统身份。"""
 
     __tablename__ = "users"
 
@@ -43,7 +42,7 @@ class User(Base, UUIDPKMixin, TimestampMixin):
 
 
 class UserRole(Base, TimestampMixin):
-    """Many-to-many platform roles for a user."""
+    """用户的平台多对多角色。"""
 
     __tablename__ = "user_roles"
 
@@ -56,7 +55,7 @@ class UserRole(Base, TimestampMixin):
 
 
 class UserInvite(Base, UUIDPKMixin, TimestampMixin):
-    """Single-use invitation issued by a platform administrator."""
+    """平台管理员发放的一次性邀请。"""
 
     __tablename__ = "user_invites"
 
@@ -82,7 +81,7 @@ class UserInvite(Base, UUIDPKMixin, TimestampMixin):
 
 
 class UserSession(Base, UUIDPKMixin, TimestampMixin):
-    """Server-side session record; only a digest is persisted."""
+    """服务端 session 记录，仅持久化摘要。"""
 
     __tablename__ = "user_sessions"
 
@@ -107,7 +106,7 @@ class UserSession(Base, UUIDPKMixin, TimestampMixin):
 
 
 class PasswordResetToken(Base, UUIDPKMixin, TimestampMixin):
-    """Short-lived, single-use password reset token."""
+    """短时有效的一次性密码重置 token。"""
 
     __tablename__ = "password_reset_tokens"
 
@@ -129,7 +128,7 @@ class PasswordResetToken(Base, UUIDPKMixin, TimestampMixin):
 
 
 class AuthAuditEvent(Base, UUIDPKMixin, TimestampMixin):
-    """Minimal audit trail for authentication-sensitive actions."""
+    """认证敏感操作的最小审计轨迹。"""
 
     __tablename__ = "auth_audit_events"
 

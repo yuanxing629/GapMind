@@ -1,4 +1,4 @@
-"""Strict API contracts for the asynchronous Discover workflow."""
+"""异步 Discover 工作流的严格 API 契约。"""
 
 from __future__ import annotations
 
@@ -238,7 +238,7 @@ class ResearchPlanRead(BaseModel):
 
 
 class EvidenceManifestItem(BaseModel):
-    """One evidence row in the passport — a single support/similar/counter entry."""
+    """passport 中的一条证据行——一条 support/similar/counter 记录。"""
     relation: str
     source_scope: str
     evidence_level: str
@@ -251,12 +251,11 @@ class EvidenceManifestItem(BaseModel):
 
 
 class EvidenceManifest(BaseModel):
-    """Unified evidence-credibility passport for an AI-generated research artifact.
+    """AI 生成研究 artifact 的统一证据可信度 passport。
 
-    Aggregates what the artifact can honestly claim: how much evidence, from
-    how many independent papers, full-text vs metadata, gate status, versions,
-    and human-review state — so a "confidence" number is never conflated with
-    evidence coverage. Reused across Opportunity / Plan / Chat / AgentArtifact.
+    汇总 artifact 能够如实声称的内容：证据数量、独立论文数量、全文与元数据的区别、
+    gate 状态、版本和人工审查状态，避免将 "confidence" 数字与证据覆盖度混为一谈。
+    Opportunity / Plan / Chat / AgentArtifact 共用该结构。
     """
     model_config = {"protected_namespaces": ()}
 
@@ -323,11 +322,10 @@ class ResearchPlanListResponse(BaseModel):
 
 
 class DiscoverRunListResponse(BaseModel):
-    """Standard list envelope for ``GET /discover/runs``.
+    """``GET /discover/runs`` 的标准列表封装。
 
-    Defined explicitly so the front-end's OpenAPI codegen produces a
-    stable shape and so the endpoint can declare ``response_model=...``
-    instead of returning a hand-written dict.
+    显式定义该结构，使前端 OpenAPI codegen 生成稳定的类型，并允许 endpoint 声明
+    ``response_model=...``，而不是返回手写 dict。
     """
     items: list["DiscoverRunRead"]
     total: int
@@ -360,7 +358,7 @@ class DecisionRequest(BaseModel):
 
 
 class ResearchOpportunityListResponse(OpportunityListResponse):
-    """Backward-compatible alias used by the prototype endpoint."""
+    """原型端点使用的向后兼容别名。"""
 
 
 class PlanCreateResponse(BaseModel):

@@ -1,4 +1,4 @@
-"""Timeline Pydantic schemas."""
+"""Timeline 的 Pydantic schemas。"""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ class TimelineListResponse(BaseModel):
 
 
 class TimelineRecordInternal(BaseModel):
-    """Internal schema used by other services to record events."""
+    """供其他 service 记录事件使用的内部 schema。"""
 
     workspace_id: str
     event_type: str

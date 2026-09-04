@@ -1,4 +1,4 @@
-"""Parsing and semantic validation for Schema 3.0 model output."""
+"""Schema 3.0 模型输出的解析和语义校验。"""
 
 from __future__ import annotations
 
@@ -58,7 +58,7 @@ def parse_model_json(content: str) -> dict[str, Any]:
 
 
 def categorize_validation_errors(errors: list[str]) -> list[str]:
-    """Map free-form validator messages to a small auditable taxonomy."""
+    """将自由格式校验器消息映射为精简、可审计的分类。"""
 
     categories: set[str] = set()
     for error in errors:
@@ -84,11 +84,10 @@ def categorize_validation_errors(errors: list[str]) -> list[str]:
 
 
 def classify_failure_kind(markdown: str, errors: list[str]) -> str:
-    """Classify a failed extraction without turning it into a fabricated result.
+    """对失败抽取进行分类，但不将其伪造为结果。
 
-    This is intentionally conservative: only obvious short/unsuitable inputs get
-    a content label. Everything else stays ``invalid_output`` so a model failure
-    can be retried or sent to the explicitly authorized backup.
+    这里采用保守策略：只有明显过短或不适合处理的输入才会得到 content 标签。其他情况
+    都保持为 ``invalid_output``，以便重试或发送给已明确授权的备用模型。
     """
 
     normalized = " ".join(markdown.lower().split())

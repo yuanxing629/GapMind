@@ -1,4 +1,4 @@
-"""Add an owner identity to workspaces for delivery-time isolation."""
+"""为工作区增加所有者身份，用于交付时隔离。"""
 
 from __future__ import annotations
 

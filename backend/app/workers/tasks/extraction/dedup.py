@@ -1,37 +1,28 @@
-"""Claim/limitation deduplication for knowledge extraction (P0 exact + P1 semantic).
+"""知识抽取的 claim/limitation 去重（P0 精确 + P1 语义）。
 
-During LLM extraction, the same evidence span can surface more than once:
+LLM 抽取过程中，同一证据范围可能出现多次：
 
-  * the same fact is extracted twice across batch boundaries → two items
-    with identical (type, span, content);
-  * the same span is classified both as a claim and as a limitation (the
-    LLM-as-a-Judge case in RG-1) → two items sharing a span but different
-    types.
+* 同一事实跨批次被抽取两次，产生两个具有相同（type、span、content）的条目；
+* 同一范围同时被分类为 claim 和 limitation（RG-1 中的 LLM-as-a-Judge 案例），
+  从而产生共享范围但类型不同的两个项。
 
-``dedup_exact`` collapses both cases before anything is written, and
-returns the rejected items so the caller can record them as
-``ExtractionRejection`` rows (auditable, never hard-deleted).
+``dedup_exact`` 会在写入任何内容前合并这两类情况，并返回被拒绝的项，
+以便调用方将其记录为 ``ExtractionRejection`` 行（可审计，绝不硬删除）。
 
-RG-1 also surfaced *near*-duplicates: the same fact extracted at two
-*different* spans (e.g. "KG coverage 65.8%" twice as limitations). Those
-need embedding similarity, which is ``dedup_semantic`` (P1, feature-flagged
-behind ``retrieval_dedup_semantic``). It is deliberately conservative:
+RG-1 还发现了*近似*重复项：同一事实在两个*不同*范围中被抽取
+（例如 “KG coverage 65.8%” 两次都被抽取为 limitation）。这类情况需要使用向量相似度，
+对应 ``dedup_semantic``（P1，通过 ``retrieval_dedup_semantic`` 功能开关控制）。该策略刻意保持保守：
 
-  * only items from the SAME paper (``source_provenance.paper_id``) are
-    compared — across-paper items are never merged, even at high similarity;
-  * only same-``type`` items are merged (a claim is never folded into a
-    limitation);
-  * similarity must reach ``SEMANTIC_DUP_THRESHOLD`` (0.90) — we'd rather
-    keep two near-duplicates than silently merge two distinct facts.
+  * 只比较同一篇论文（``source_provenance.paper_id``）中的项——即使相似度很高，也绝不合并跨论文项；
+  * 只合并相同 ``type`` 的项（claim 绝不会并入 limitation）；
+  * 相似度必须达到 ``SEMANTIC_DUP_THRESHOLD``（0.90）——宁可保留两个近似重复项，也不静默合并两个不同事实。
 
-Method/task/dataset items already carry a shared ``canonical_entity_id``
-(see ``KnowledgeService.get_or_create_canonical_entity``); exact-span
-duplicates of those are still worth dropping so the graph doesn't get two
-nearly-identical mentions.
+Method/task/dataset 项已经携带共享的 ``canonical_entity_id``
+（见 ``KnowledgeService.get_or_create_canonical_entity``）；这些项的精确范围重复项仍应丢弃，
+避免图谱中出现两个几乎相同的提及。
 
-This module is deliberately side-effect free (pure functions over
-``list[dict]``) so it can be unit-tested without a DB or LLM — same
-pattern as ``extraction/batching.py`` / ``llm_caller.py``.
+本模块刻意不产生副作用（仅处理 ``list[dict]`` 的纯函数），因此无需数据库或 LLM 就能进行单元测试，
+与 ``extraction/batching.py`` / ``llm_caller.py`` 的模式一致。
 """
 
 from __future__ import annotations
@@ -40,22 +31,20 @@ import hashlib
 import math
 from typing import Any, Callable
 
-# Types that participate in cross-type same-span collision resolution.
-# A method and a claim sharing a span are distinct facts; only claim vs
-# limitation are treated as alternative classifications of one fact.
+# 参与跨类型同范围冲突处理的类型。Method 与 claim 共享范围时仍是不同事实；
+# 只有 claim 与 limitation 被视为同一事实的不同分类。
 _DEDUP_CROSS_TYPES = frozenset({"claim", "limitation"})
 
-# P1 semantic threshold. 0.9 is deliberately conservative: we'd rather keep
-# two near-duplicates than silently merge two distinct facts.
+# P1 语义阈值。0.9 是有意设置的保守值：宁可保留两个近重复项，也不静默合并
+# 两个不同事实。
 SEMANTIC_DUP_THRESHOLD = 0.90
 
 
 def content_signature(content: dict[str, Any] | None) -> str:
-    """Stable signature of the substantive content text.
+    """实质内容文本的稳定签名。
 
-    Uses the claim statement / limitation description (the part that
-    carries meaning) rather than the whole content dict, which may carry
-    non-normalized extras (scope, conditions, severity).
+    使用 claim statement / limitation description（承载语义的部分），而不是整个
+    content dict；后者可能包含尚未规范化的额外字段（scope、conditions、severity）。
     """
     content = content or {}
     text = str(content.get("statement") or content.get("description") or "")
@@ -63,12 +52,10 @@ def content_signature(content: dict[str, Any] | None) -> str:
 
 
 def _span(item: dict[str, Any]) -> tuple[Any, ...] | None:
-    """Normalized span key: ``(paper_id, start_char, end_char)``.
+    """规范化范围键：``(paper_id, start_char, end_char)``。
 
-    The paper identity is part of the key so two items from *different*
-    papers that coincidentally share the same ``(start_char, end_char)``
-    are NOT treated as duplicates. ``artifact_id`` is used as a fallback
-    when the item has no ``paper_id``.
+    论文身份是键的一部分，因此来自*不同*论文、但恰好共享同一 ``(start_char, end_char)``
+    的两个条目不会被当作重复项。条目没有 ``paper_id`` 时使用 ``artifact_id`` 作为回退。
     """
     sp = item.get("source_provenance") or {}
     start, end = sp.get("start_char"), sp.get("end_char")
@@ -81,17 +68,16 @@ def _span(item: dict[str, Any]) -> tuple[Any, ...] | None:
 def dedup_exact(
     items: list[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Collapse exact duplicates and same-span cross-type collisions.
+    """合并精确重复项和同范围跨类型冲突。
 
-    Returns ``(survivors, rejected)``.
+    返回 ``(survivors, rejected)``。
 
-    Rules:
-      1. same ``(type, span, content_signature)`` → keep the first, reject
-         the rest (applies to every type, including methods);
-      2. same span, ``claim`` vs ``limitation`` → keep the higher-confidence
-         item, reject the other.
+    规则：
+      1. 相同 ``(type, span, content_signature)`` → 保留第一项，拒绝其余项（适用于所有
+         type，包括 method）；
+      2. 相同 span 下出现 ``claim`` 与 ``limitation`` → 保留 confidence 更高的项，拒绝另一项。
 
-    Items without a resolvable span are always kept (no signature to key on).
+    无法解析 span 的条目始终保留（没有可用于建立键的签名）。
     """
     survivors: list[dict[str, Any]] = []
     rejected: list[dict[str, Any]] = []
@@ -104,24 +90,24 @@ def dedup_exact(
         sig = content_signature(item.get("content"))
 
         if span is None:
-            # No span → can't key on it; keep.
+# 没有范围，无法据此建立键，保留该项。
             survivors.append(item)
             continue
 
         exact_key = (item_type, span, sig)
 
-        # Rule 1: exact duplicate (same type, span, substantive content).
+# 规则 1：精确重复（类型、范围和实质内容都相同）。
         if exact_key in by_exact:
             rejected.append(item)
             continue
 
-        # Rule 2: same span, cross-type claim/limitation collision.
+# 规则 2：相同范围下跨类型的 claim/limitation 冲突。
         if item_type in _DEDUP_CROSS_TYPES and span in by_span:
             prev = by_span[span]
             if prev.get("type") in _DEDUP_CROSS_TYPES and prev.get("type") != item_type:
-                # Two alternative classifications of one fact → keep higher confidence.
+# 同一事实的两种备选分类，保留置信度更高者。
                 if item.get("confidence", 0.0) > prev.get("confidence", 0.0):
-                    # Replace prev with item: drop prev's exact-key + span entries.
+# 用当前 item 替换前一个条目：移除前一个条目的精确键和范围索引。
                     prev_sig = content_signature(prev.get("content"))
                     by_exact.pop((prev.get("type"), span, prev_sig), None)
                     survivors.remove(prev)
@@ -138,21 +124,20 @@ def dedup_exact(
     return survivors, rejected
 
 
-# ------------------------------------------------------------- P1: semantic near-dup
+# ------------------------------------------------------------- P1：语义近重复
 
 def semantic_text(content: dict[str, Any] | None) -> str:
-    """The substantive text used for semantic comparison.
+    """用于语义比较的实质文本。
 
-    Mirrors ``content_signature``: the claim statement / limitation
-    description carries the meaning; scope/conditions/severity extras are
-    ignored for similarity purposes.
+    与 ``content_signature`` 一致：claim statement / limitation description 承载语义；
+    scope/conditions/severity 等额外字段不会用于相似度计算。
     """
     content = content or {}
     return str(content.get("statement") or content.get("description") or "").strip()
 
 
 def _paper_key(item: dict[str, Any]) -> str:
-    """Paper identity for the same-paper guard (mirrors ``_span``)."""
+    """用于同论文保护的论文身份（与 ``_span`` 对应）。"""
     sp = item.get("source_provenance") or {}
     return str(sp.get("paper_id") or sp.get("artifact_id") or "")
 
@@ -174,22 +159,19 @@ def dedup_semantic(
     embed_texts: Callable[[list[str]], list[list[float]]],
     threshold: float = SEMANTIC_DUP_THRESHOLD,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """P1: collapse near-duplicate claims/limitations via embedding cosine.
+    """P1：通过 embedding cosine 合并近重复的 claim/limitation。
 
-    ``embed_texts(list[str]) -> list[vector]`` is injected so tests can stub
-    it (the real caller batches via ``EmbeddingGateway.embed_texts``). Returns
-    ``(survivors, rejected)``.
+    注入 ``embed_texts(list[str]) -> list[vector]``，便于测试替换（真实调用方通过
+    ``EmbeddingGateway.embed_texts`` 批处理）。返回 ``(survivors, rejected)``。
 
-    Hard guards:
-      * only same-``type`` items within the SAME paper are compared — a
-        limitation is never folded into a claim, and two papers that merely
-        sound alike are never merged;
-      * similarity must be ``>= threshold`` (0.90 default).
+    强制保护：
+* 只比较同一论文内相同 ``type`` 的条目——limitation 永远不会折叠进 claim，听起来相似
+  的两篇论文也永远不会合并；
+* 相似度必须达到 ``>= threshold``（默认 0.90）。
 
-    On a match the higher-confidence item survives; the other is returned as
-    rejected so the caller can record an ``ExtractionRejection`` (nothing is
-    hard-deleted). Items with no substantive text (or no type) are never
-    deduped and are always kept.
+    匹配时保留 confidence 更高的项，另一项作为 rejected 返回，以便调用方记录
+    ``ExtractionRejection``（不会硬删除任何数据）。没有实质文本（或没有 type）的条目
+    不参与去重，始终保留。
     """
     if not items:
         return [], []
@@ -203,7 +185,7 @@ def dedup_semantic(
         for j, idx in enumerate(indexable):
             vectors[idx] = embedded[j]
 
-    # Group comparable items by (paper, type).
+# 按（论文、类型）对可比较条目分组。
     groups: dict[tuple[str, str], list[tuple[int, list[float], dict[str, Any]]]] = {}
     for i, item in enumerate(items):
         item_type = item.get("type")
@@ -224,7 +206,7 @@ def dedup_semantic(
             dup = False
             for prev_idx, prev_emb, prev in kept:
                 if _cosine(emb, prev_emb) >= threshold:
-                    # Same-paper, same-type near-dup → keep higher confidence.
+# 同论文、同类型的语义近重复，保留置信度更高者。
                     if item.get("confidence", 0.0) > prev.get("confidence", 0.0):
                         kept.remove((prev_idx, prev_emb, prev))
                         kept.append((idx, emb, item))
@@ -237,7 +219,7 @@ def dedup_semantic(
                 kept.append((idx, emb, item))
         survivors.extend(item for _, _, item in kept)
 
-    # Items outside any (paper, type) group are never deduped.
+# 不属于任何（论文、类型）分组的条目永不去重。
     survivors.extend(
         item for i, item in enumerate(items) if i not in deduped_indices
     )

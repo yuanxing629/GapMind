@@ -1,4 +1,4 @@
-"""Persist non-sensitive Chat retrieval observability."""
+"""持久化非敏感的 Chat 检索可观测性数据。"""
 
 from __future__ import annotations
 

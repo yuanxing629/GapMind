@@ -1,4 +1,4 @@
-"""Tests for the Evidence consistency check (W3-3): [En] citation validation."""
+"""Evidence 一致性检查测试（W3-3）：[En] citation 校验。"""
 
 from __future__ import annotations
 

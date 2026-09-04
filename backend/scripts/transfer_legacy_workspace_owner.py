@@ -1,10 +1,9 @@
-"""Transfer historical workspaces from the legacy system owner to an admin.
+"""将历史工作区从旧系统所有者转移给管理员。
 
-This is an explicit, one-time data migration for the pre-authentication data
-set. It changes only ``workspaces.owner_id``; workspace-scoped papers,
-artifacts, knowledge, and other records are preserved in place.
+这是针对认证前数据集的一次性显式数据迁移。它只修改 ``workspaces.owner_id``；
+工作区范围的论文、Artifact、知识及其他记录原地保留。
 
-The command is read-only by default. Pass ``--apply`` to commit the transfer.
+命令默认为只读。传入 ``--apply`` 才会提交转移。
 """
 
 from __future__ import annotations

@@ -1,4 +1,4 @@
-"""Make workspaces personal and remove collaboration membership data."""
+"""将工作区设为个人空间并移除协作成员数据。"""
 
 from __future__ import annotations
 
@@ -15,22 +15,19 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    # Workspace membership is no longer an authorization source. The table
-    # contains only derived access metadata, not research content.
+# 工作区成员关系不再作为授权来源。该表只包含派生访问元数据，不包含研究内容。
     op.drop_table("workspace_members")
 
-    # Invitations now create accounts only. Existing invite history keeps its
-    # email and lifecycle timestamps, while obsolete workspace targeting data
-    # is removed from the schema.
+# 邀请现在只创建账户。现有邀请历史保留邮箱和生命周期时间戳，
+# 同时从 schema 中移除过时的工作区目标数据。
     op.drop_index("ix_user_invites_workspace_id", table_name="user_invites")
     op.drop_column("user_invites", "workspace_role")
     op.drop_column("user_invites", "workspace_id")
 
 
 def downgrade() -> None:
-    # Downgrade restores the old shape for compatibility. Membership rows
-    # cannot be reconstructed because owner-only mode intentionally removed
-    # that derived collaboration metadata.
+# downgrade 为兼容性恢复旧结构。无法重建成员行，因为 owner-only 模式有意移除了
+# 派生的协作元数据。
     op.add_column(
         "user_invites",
         sa.Column("workspace_id", sa.String(length=36), nullable=True),

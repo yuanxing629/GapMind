@@ -11,7 +11,7 @@ describe("normalizeConversationMath", () => {
   it("wraps bracket-wrapped display math in dollars", () => {
     const input = "[ \\min_{G_{sub}} \\left[ -I(G_{sub}, Y) + \\beta I(G_{sub}, G) \\right] ]";
     const out = normalizeConversationMath(input);
-    // The outer `[ ... ]` becomes inline math; the inner \left[...\right] stays legal.
+// 外层 `[ ... ]` 会变为行内数学；内层 \left[...\right] 保持合法。
     expect(out).toContain("$\\min_{G_{sub}} \\left[");
     expect(out).toContain("\\right]$");
   });

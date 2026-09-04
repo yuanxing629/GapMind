@@ -1,8 +1,8 @@
-"""Add parsed_markdown_artifact_id to papers table.
+"""向 papers 表增加 parsed_markdown_artifact_id。
 
-Revision ID: 0005_paper_markdown
-Revises: 0004_paper_parse_state
-Create Date: 2026-07-25
+Revision ID：0005_paper_markdown
+Revises：0004_paper_parse_state
+创建日期：2026-07-25
 """
 from __future__ import annotations
 

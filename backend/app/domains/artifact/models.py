@@ -1,8 +1,7 @@
-"""Artifact ORM models.
+"""Artifact ORM 模型。
 
-An Artifact is an immutable file: a PDF upload, a parsed-text dump, a
-generated report, etc. Artifacts are workspace-scoped and referenced by
-Papers (and later by Tasks, KnowledgeItems, TimelineEvents).
+Artifact 是不可变文件：PDF 上传文件、解析文本转储、生成报告等。
+Artifact 具有工作区范围，由 Paper（以及后续的 Task、KnowledgeItem、TimelineEvent）引用。
 """
 
 from __future__ import annotations
@@ -14,13 +13,15 @@ from app.db.base import Base, TimestampMixin, UUIDPKMixin
 
 
 class Artifact(Base, UUIDPKMixin, TimestampMixin):
-    """A file owned by a workspace.
+    """workspace 所有的文件。
 
-    `kind` distinguishes artifact roles:
-      - "pdf"          : original PDF upload
-      - "parsed_text"  : extracted plain text (Phase 2)
-      - "chunk_index"  : chunked text + offsets (Phase 2)
-      - "report"       : generated report (Phase 5+)
+    `kind` 用于区分 Artifact 角色：
+      - "pdf"          ：原始 PDF 上传文件
+      - "parsed_text"  ：抽取的纯文本
+      - "parsed_markdown"：感知布局的解析 Markdown
+      - "chunk_index"  ：分块文本 + 偏移量
+      - "paper_image" ：从论文 PDF 抽取的图片资源
+      - "report"       ：生成的报告
     """
 
     __tablename__ = "artifacts"

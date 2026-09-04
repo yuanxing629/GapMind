@@ -1,7 +1,6 @@
-"""Timeline service layer.
+"""Timeline service 层。
 
-Provides a single `record()` entry point used by other domain services to
-emit events. The API layer only reads.
+为其他 domain service 提供单一的 `record()` 入口用于发出事件。API 层只负责读取。
 """
 
 from __future__ import annotations
@@ -19,12 +18,12 @@ logger = get_logger(__name__)
 
 
 class TimelineService:
-    """Records and queries timeline events."""
+    """记录和查询时间线事件。"""
 
     def __init__(self, db: Session) -> None:
         self.db = db
 
-    # ------------------------------------------------------------ record
+# ------------------------------------------------------------ 记录
     def record(
         self,
         *,
@@ -36,7 +35,7 @@ class TimelineService:
         actor: str = "system",
         summary: str | None = None,
     ) -> TimelineEvent:
-        """Persist a timeline event. Called from other services."""
+        """持久化时间线事件，由其他 service 调用。"""
         event = TimelineEvent(
             id=str(uuid4()),
             workspace_id=workspace_id,
@@ -60,7 +59,7 @@ class TimelineService:
         return event
 
     def record_payload(self, data: TimelineRecordInternal) -> TimelineEvent:
-        """Record from a pre-validated TimelineRecordInternal object."""
+        """从已校验的 TimelineRecordInternal 对象记录事件。"""
         return self.record(
             workspace_id=data.workspace_id,
             event_type=data.event_type,
@@ -71,7 +70,7 @@ class TimelineService:
             summary=data.summary,
         )
 
-    # ----------------------------------------------------------------- read
+# ----------------------------------------------------------------- 读取
     def list(
         self,
         *,

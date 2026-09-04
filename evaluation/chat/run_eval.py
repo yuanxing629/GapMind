@@ -1,8 +1,7 @@
-"""Offline runner for the Workspace Chat QA Gold Set.
+"""Workspace Chat QA Gold Set 的离线运行器。
 
-It accepts a human-authored Gold Set and observations exported from persisted
-Chat messages.  It never sends prompts, calls an LLM, or changes database
-state.  This separates reproducible QA scoring from expensive live replay.
+接收人工编写的 Gold Set 和从持久化 Chat message 导出的观测结果。它不会发送 prompt、调用
+LLM 或修改数据库状态，从而将可复现的 QA 评分与昂贵的在线重放分开。
 """
 
 from __future__ import annotations
@@ -26,9 +25,8 @@ from evaluation.chat.metrics import build_report  # noqa: E402
 
 
 def _load_json(path: Path) -> object:
-    # Windows PowerShell's ``Set-Content -Encoding UTF8`` writes a BOM.
-    # Accept it for locally exported observations while still decoding all
-    # content as UTF-8.
+# Windows PowerShell 的 ``Set-Content -Encoding UTF8`` 会写入 BOM。
+# 本地导出观测时接受 BOM，同时仍按 UTF-8 解码全部内容。
     return json.loads(path.read_text(encoding="utf-8-sig"))
 
 

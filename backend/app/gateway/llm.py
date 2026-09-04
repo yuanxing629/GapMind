@@ -1,7 +1,7 @@
-"""LLM Gateway - Deepseek integration.
+"""兼容 OpenAI Chat Completions 的 LLM Gateway。
 
-Phase 0: skeleton with a minimal `chat_completion` method. Phase 2-3 will add
-structured-output extraction, retry, and token/cost tracking.
+Phase 0：提供最小 `chat_completion` 方法的骨架。Phase 2-3 将增加结构化输出抽取、重试
+以及 token/cost 跟踪。
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ logger = get_logger(__name__)
 
 @dataclass
 class LLMResponse:
-    """Normalized LLM response."""
+    """规范化的 LLM 响应。"""
 
     content: str
     model: str
@@ -30,16 +30,13 @@ class LLMResponse:
 
 
 class LLMGateway:
-    """Thin wrapper over Deepseek's OpenAI-compatible API.
+    """OpenAI Chat Completions 兼容 API 的轻量包装器。
 
-    Uses the `openai` SDK with a custom base_url. Phase 0 only implements the
-    basic chat completion; structured extraction and cost tracking come later.
+    普通文本路径使用远程 endpoint。图像请求使用单独配置的 vision endpoint，绝不回退到
+    仅支持文本的 backup endpoint。
 
-    Demo-day fuse (0820): when a backup OpenAI-compatible endpoint is fully
-    configured (key + base_url + model), any primary failure falls over to it
-    once — first with identical kwargs, then, if rejected, without the
-    Deepseek-specific ``thinking`` extra_body. If the backup also fails, the
-    original primary error is raised.
+    当备用 OpenAI-compatible endpoint 已完整配置（key + base_url + model）时，文本请求
+    失败后会回退一次。如果备用 endpoint 也失败，则抛出原始 primary error。
     """
 
     def __init__(
@@ -50,26 +47,39 @@ class LLMGateway:
         backup_api_key: str | None = None,
         backup_base_url: str | None = None,
         backup_model: str | None = None,
+        vision_api_key: str | None = None,
+        vision_base_url: str | None = None,
         vision_model: str | None = None,
     ) -> None:
-        self.api_key = api_key if api_key is not None else settings.deepseek_api_key
-        self.base_url = base_url if base_url is not None else settings.deepseek_base_url
-        self.model = model if model is not None else settings.deepseek_model
+        self.api_key = api_key if api_key is not None else settings.remote_api_key
+        self.base_url = base_url if base_url is not None else settings.remote_base_url
+        self.model = model if model is not None else settings.remote_model
         self.backup_api_key = (
-            backup_api_key if backup_api_key is not None else settings.deepseek_backup_api_key
+            backup_api_key if backup_api_key is not None else settings.backup_api_key
         )
         self.backup_base_url = (
             backup_base_url
             if backup_base_url is not None
-            else settings.deepseek_backup_base_url
+            else settings.backup_base_url
         )
         self.backup_model = (
-            backup_model if backup_model is not None else settings.deepseek_backup_model
+            backup_model if backup_model is not None else settings.backup_model
+        )
+        self.vision_api_key = (
+            vision_api_key
+            if vision_api_key is not None
+            else (settings.vision_api_key or self.api_key)
+        )
+        self.vision_base_url = (
+            vision_base_url
+            if vision_base_url is not None
+            else (settings.vision_base_url or self.base_url)
         )
         self.vision_model = (
-            vision_model if vision_model is not None else settings.deepseek_vision_model
+            vision_model if vision_model is not None else settings.vision_model
         )
         self._client: OpenAI | None = None
+        self._vision_client: OpenAI | None = None
         self._backup_client: OpenAI | None = None
 
     @property
@@ -77,10 +87,24 @@ class LLMGateway:
         if self._client is None:
             if not self.api_key:
                 raise RuntimeError(
-                    "DEEPSEEK_API_KEY is not set. Configure the repo-root .env."
+                    "REMOTE_API_KEY is not set. Configure the repo-root .env."
                 )
             self._client = OpenAI(api_key=self.api_key, base_url=self.base_url)
         return self._client
+
+    @property
+    def vision_client(self) -> OpenAI:
+        if self._vision_client is None:
+            if not self.vision_api_key:
+                raise RuntimeError(
+                    "VISION_API_KEY or REMOTE_API_KEY is not set. "
+                    "Configure the repo-root .env."
+                )
+            self._vision_client = OpenAI(
+                api_key=self.vision_api_key,
+                base_url=self.vision_base_url,
+            )
+        return self._vision_client
 
     @property
     def backup_enabled(self) -> bool:
@@ -98,25 +122,21 @@ class LLMGateway:
         self,
         kwargs: dict[str, Any],
         *,
+        client: OpenAI,
         stream: bool = False,
         allow_backup: bool = True,
     ) -> Any:
-        """Call the primary endpoint, fall over to the backup on failure.
+        """调用主端点，失败时回退到备用端点。
 
-        Streaming can only fail over before the first chunk is yielded; once
-        the stream has started, errors propagate to the caller.
+        Streaming 只能在产出第一个 chunk 之前执行 failover；流开始后，错误会直接传递给
+        调用方。
         """
         try:
-            return self.client.chat.completions.create(**kwargs, stream=stream)
+            return client.chat.completions.create(**kwargs, stream=stream)
         except Exception as primary_error:
             backup_attempts: list[dict[str, Any]] = []
             if allow_backup and self.backup_enabled:
                 backup_attempts.append({**kwargs, "model": self.backup_model})
-                if "extra_body" in kwargs:
-                    # some strict OpenAI-compatible servers reject the
-                    # Deepseek-only `thinking` field; retry once without it
-                    stripped = {k: v for k, v in kwargs.items() if k != "extra_body"}
-                    backup_attempts.append({**stripped, "model": self.backup_model})
             if not backup_attempts:
                 raise
             logger.warning(
@@ -146,18 +166,11 @@ class LLMGateway:
         disable_thinking: bool = False,
         model_override: str | None = None,
     ) -> LLMResponse:
-        """Run a chat completion against the configured Deepseek model.
+        """使用配置的远程模型执行 chat completion。
 
-        ``disable_thinking=True`` turns off the model's chain-of-thought
-        (``thinking.type = "disabled"``). Reasoning models (deepseek-v4-flash)
-        otherwise spend the whole ``max_tokens`` budget on reasoning and
-        return an empty ``content`` for long structured-extraction prompts
-        (see docs/knowledge_dedup_fix_plan.md §八). Structured JSON callers
-        (extraction / discover synthesis / judge) should pass it; free-form
-        chat may keep thinking enabled.
-
-        NOTE: do NOT combine ``thinking.type="disabled"`` with a
-        ``reasoning_effort`` param — Deepseek returns a 400 on that conflict.
+        保留接受 ``disable_thinking``，使既有结构化调用方无需修改；但 OpenAI Chat
+        Completions 没有 provider-neutral 的 thinking 开关，因此不会将其序列化为
+        厂商特定的 request field。
         """
         request_model = model_override or self.model
         kwargs: dict[str, Any] = {
@@ -169,14 +182,12 @@ class LLMGateway:
             kwargs["max_tokens"] = max_tokens
         if response_format is not None:
             kwargs["response_format"] = response_format
-        if disable_thinking:
-            kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
 
         logger.info("llm.chat.start", model=request_model, messages=len(messages))
-        # A text-only backup model must never receive image content. Vision
-        # requests therefore fail explicitly instead of silently falling over.
+        client = self.vision_client if model_override is not None else self.client
         resp = self._create_with_fallback(
             kwargs,
+            client=client,
             allow_backup=model_override is None,
         )
         choice = resp.choices[0]
@@ -200,11 +211,10 @@ class LLMGateway:
         disable_thinking: bool = False,
         model_override: str | None = None,
     ) -> Generator[str, None, None]:
-        """Yield text deltas from a streaming chat completion (P0.5-1).
+        """从流式 chat completion 产出文本增量（P0.5-1）。
 
-        Mirror of ``chat_completion`` but with ``stream=True``; each yielded
-        string is one content delta. Structured-format callers should keep
-        using the non-streaming version.
+        这是 ``chat_completion`` 的流式版本，使用 ``stream=True``；每次 yield 一个
+        content delta。结构化格式的调用方应继续使用非流式版本。
         """
         request_model = model_override or self.model
         kwargs: dict[str, Any] = {
@@ -214,10 +224,10 @@ class LLMGateway:
         }
         if max_tokens is not None:
             kwargs["max_tokens"] = max_tokens
-        if disable_thinking:
-            kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
+        client = self.vision_client if model_override is not None else self.client
         stream = self._create_with_fallback(
             kwargs,
+            client=client,
             stream=True,
             allow_backup=model_override is None,
         )
@@ -229,19 +239,18 @@ class LLMGateway:
                 yield delta
 
     def ping(self) -> bool:
-        """Lightweight connectivity check - returns True if API key is set.
+        """轻量连通性检查：已设置 API key 时返回 True。
 
-        A real network ping is deferred to Phase 2 to avoid spamming the API
-        during health checks.
+        真实网络 ping 延后到 Phase 2，以避免 health check 期间频繁请求 API。
         """
-        return bool(self.api_key)
+        return bool(self.api_key and self.base_url and self.model)
 
 
 _gateway: LLMGateway | None = None
 
 
 def get_llm_gateway() -> LLMGateway:
-    """Singleton accessor for the LLM gateway."""
+    """LLM gateway 的单例访问器。"""
     global _gateway
     if _gateway is None:
         _gateway = LLMGateway()

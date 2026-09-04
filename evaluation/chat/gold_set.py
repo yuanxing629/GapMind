@@ -1,10 +1,8 @@
-"""Schemas for the offline Workspace Chat QA benchmark.
+"""离线 Workspace Chat QA benchmark 的 schemas。
 
-The retrieval gate answers whether a paper can be recalled.  This benchmark
-starts one layer later: given a saved Chat response, did it use real paper
-markers, keep plan/report/code sources distinct, and reach the human-annotated
-answerability verdict?  It deliberately does not execute an LLM or mutate a
-workspace, so the evaluation data remains reviewable and reproducible.
+检索门禁回答的是一篇论文能否被召回。本 benchmark 再向后推进一层：给定已保存的 Chat 响应，
+它是否使用了真实论文标记、保持计划/报告/代码来源相互区分，并达到人工标注的可回答性结论？
+它刻意不执行 LLM 或修改工作区，因此评测数据仍然可复核、可复现。
 """
 
 from __future__ import annotations
@@ -29,7 +27,7 @@ RerankerAuditStatus = Literal[
 
 
 class ChatContext(BaseModel):
-    """Explicit non-paper context required before replaying one question."""
+    """重放问题前所需的显式非论文上下文。"""
 
     mode: Literal["workspace_papers", "workspace_with_confirmed_plan"] = "workspace_papers"
     research_plan_ref: str | None = Field(
@@ -45,7 +43,7 @@ class ChatContext(BaseModel):
 
 
 class ChatQAQuestion(BaseModel):
-    """One human-annotated question and its expected evidence contract."""
+    """一个人工标注问题及其预期证据契约。"""
 
     query_id: str = Field(min_length=1, max_length=128)
     question: str = Field(min_length=3, max_length=2000)
@@ -68,7 +66,7 @@ class ChatQAQuestion(BaseModel):
 
 
 class ChatQAGoldSet(BaseModel):
-    """Frozen, human-authored expectations for one workspace corpus."""
+    """一个 workspace 语料的冻结人工预期。"""
 
     schema_version: str = "1.0.0"
     case_id: str = Field(min_length=1, max_length=128)
@@ -87,14 +85,14 @@ class ChatQAGoldSet(BaseModel):
 
 
 class EvidenceSnapshot(BaseModel):
-    """The persisted paper evidence needed to validate one ``[En]`` marker."""
+    """校验一个 ``[En]`` 标记所需的持久化论文证据。"""
 
     rank: int = Field(ge=1)
     paper_ref: str = Field(min_length=1)
 
 
 class SourceSnapshot(BaseModel):
-    """A non-paper source copied from ChatMessage.source_manifest."""
+    """从 ChatMessage.source_manifest 复制的非论文来源。"""
 
     marker: str = Field(pattern=r"^[PDC][1-9][0-9]*$")
     source_type: Literal["plan", "report", "code_draft"]
@@ -102,11 +100,10 @@ class SourceSnapshot(BaseModel):
 
 
 class RetrievalAuditSnapshot(BaseModel):
-    """An anonymized, non-authoritative snapshot of one retrieval run.
+    """一次检索运行的匿名、非权威快照。
 
-    Request ids are deliberately omitted: the QA snapshot is for measuring
-    retrieval coverage and latency, not for tracing a local database row.
-    These fields never decide whether an answer is factually supported.
+    有意省略 request id：QA 快照用于衡量检索覆盖度和延迟，而不是追踪本地数据库行。
+    这些字段永远不决定回答是否有事实支持。
     """
 
     status: RetrievalAuditStatus = "unknown"
@@ -119,7 +116,7 @@ class RetrievalAuditSnapshot(BaseModel):
 
 
 class ChatQAObservation(BaseModel):
-    """One saved Chat answer exported for an offline QA evaluation."""
+    """为离线 QA 评测导出的一条已保存 Chat 回答。"""
 
     query_id: str = Field(min_length=1, max_length=128)
     message_id: str | None = None
@@ -142,7 +139,7 @@ class ChatQAObservation(BaseModel):
 
 
 class ChatQAObservationSet(BaseModel):
-    """Answers observed for exactly one Chat QA gold case."""
+    """恰好对应一个 Chat QA gold case 的观测回答。"""
 
     gold_case_id: str = Field(min_length=1, max_length=128)
     observations: list[ChatQAObservation] = Field(min_length=1, max_length=50)

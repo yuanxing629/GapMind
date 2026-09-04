@@ -1,4 +1,4 @@
-"""Chat API tests use a fake gateway and never call DeepSeek."""
+"""Chat API 测试使用 fake gateway，绝不调用外部 LLM。"""
 
 from __future__ import annotations
 
@@ -9,13 +9,17 @@ from uuid import uuid4
 
 import pytest
 
+from app.core.config import settings
+from app.domains.chat.service import ChatService
+from app.domains.knowledge.graphrag import BoundedGraphProjection
+from app.domains.knowledge.schemas import GraphRAGPathRead
 from app.domains.retrieval.schemas import RetrievalResponse, RetrievalResultItem
 
 
 @dataclass
 class FakeResponse:
     content: str
-    model: str = "fake-deepseek"
+    model: str = "fake-remote"
     prompt_tokens: int = 10
     completion_tokens: int = 5
     total_tokens: int = 15
@@ -47,6 +51,13 @@ class FakeGateway:
         self.stream_call_kwargs.append(kwargs)
         for delta in getattr(self, "stream_deltas", ["流式"]):
             yield delta
+
+
+def test_image_chat_accepts_a_vision_only_api_key() -> None:
+    ChatService._ensure_llm_credentials(
+        SimpleNamespace(api_key="", vision_api_key="vision-key"),
+        ["data:image/png;base64,abc"],
+    )
 
 
 @pytest.fixture
@@ -100,7 +111,7 @@ def test_first_send_creates_conversation_and_two_messages(client, fake_gateway):
     assert body["conversation"]["title"] == "什么是时间图神经网络？"
     assert body["user_message"]["role"] == "user"
     assert body["assistant_message"]["status"] == "completed"
-    assert body["assistant_message"]["model"] == "fake-deepseek"
+    assert body["assistant_message"]["model"] == "fake-remote"
     assert body["assistant_message"]["total_tokens"] == 15
     assert body["assistant_message"]["prompt_chars"] == len("什么是时间图神经网络？")
     assert body["assistant_message"]["response_chars"] == len("这是 AI 的回答")
@@ -315,7 +326,7 @@ def test_missing_api_key_is_mapped_to_503_and_persisted(client, fake_gateway):
     response = client.post("/api/v1/chat/conversations/send", json={"content": "测试未配置密钥"})
     assert response.status_code == 503
     detail = response.json()["detail"]
-    assert detail["error"] == "deepseek_unavailable"
+    assert detail["error"] == "llm_unavailable"
     messages = client.get(f"/api/v1/chat/conversations/{detail['conversation_id']}").json()[
         "messages"
     ]
@@ -332,7 +343,7 @@ def test_validation_and_generating_conflict(client, db_session, fake_gateway):
     )
 
     created = client.post("/api/v1/chat/conversations", json={}).json()
-    # Insert a real generating message through the public model fixture path.
+# 通过公开 model fixture 路径插入真实的 generating 消息。
     from app.db.models import ChatMessage
 
     db_session.add(
@@ -410,7 +421,7 @@ def test_workspace_chat_retrieves_persists_citations_and_opens_source(
     monkeypatch.setattr("app.domains.chat.service.semantic_search", fake_search)
     monkeypatch.setattr(
         "app.domains.chat.service.find_chunk_record",
-        lambda *_: SimpleNamespace(
+        lambda *_, **__: SimpleNamespace(
             source_artifact_id=artifact.id,
             start_char=6,
             end_char=source_text.index(".") + 1,
@@ -428,7 +439,10 @@ def test_workspace_chat_retrieves_persists_citations_and_opens_source(
     assert body["conversation"]["workspace_id"] == workspace["id"]
     assistant = body["assistant_message"]
     assert assistant["grounding_status"] == "grounded"
-    assert assistant["retrieval_audit"] == {
+    retrieval_audit = assistant["retrieval_audit"]
+    assert {
+        key: value for key, value in retrieval_audit.items() if key != "graph"
+    } == {
         "request_id": "retrieval-test-001",
         "status": "succeeded",
         "diagnostic_code": None,
@@ -438,6 +452,29 @@ def test_workspace_chat_retrieves_persists_citations_and_opens_source(
         "latency_ms": 12.5,
         "reranker_status": "applied",
     }
+    graph_audit = retrieval_audit["graph"]
+    assert {
+        key: value for key, value in graph_audit.items() if key != "latency_ms"
+    } == {
+        "mode": "shadow",
+        "projection_version": "sql_graph_v1",
+        "seed_count": 1,
+        "expanded_node_count": 1,
+        "expanded_edge_count": 0,
+        "path_count": 0,
+        "candidate_path_count": 0,
+        "emitted_path_count": 0,
+        "dropped_path_count": 0,
+        "dropped_path_reasons": {},
+        "supporting_paper_ids": [],
+        "supporting_evidence_ids": [],
+        "truncated": False,
+        "truncation_reason": None,
+        "fallback": True,
+        "fallback_reason": "insufficient_evidence",
+        "paths": [],
+    }
+    assert graph_audit["latency_ms"] >= 0
     assert len(assistant["citations"]) == 1
     citation = assistant["citations"][0]
     assert citation["paper_title"] == "Interpretable Graph Models"
@@ -453,6 +490,210 @@ def test_workspace_chat_retrieves_persists_citations_and_opens_source(
     assert context.status_code == 200
     assert context.json()["available"] is True
     assert context.json()["content"] == source_text
+
+
+def test_workspace_chat_graph_shadow_is_audit_only_and_keeps_dense_context(
+    client, db_session, fake_gateway, monkeypatch
+):
+    from app.domains.knowledge.models import (
+        CanonicalEntity,
+        EvidenceSpan,
+        KnowledgeItem,
+        PaperMention,
+    )
+
+    workspace = client.post("/api/v1/workspaces", json={"name": "Graph shadow"}).json()
+    paper_one = client.post(
+        f"/api/v1/workspaces/{workspace['id']}/papers",
+        json={"title": "Seed evidence", "authors": [], "year": 2024},
+    ).json()
+    paper_two = client.post(
+        f"/api/v1/workspaces/{workspace['id']}/papers",
+        json={"title": "Related evidence", "authors": [], "year": 2023},
+    ).json()
+    entity_id = str(uuid4())
+    item_one_id = str(uuid4())
+    item_two_id = str(uuid4())
+    evidence_id = str(uuid4())
+    db_session.add(CanonicalEntity(
+        id=entity_id,
+        workspace_id=workspace["id"],
+        type="method",
+        canonical_name="Shared Method",
+        normalization_key="shared method",
+        status="human_confirmed",
+    ))
+    db_session.add_all([
+        KnowledgeItem(
+            id=item_one_id,
+            workspace_id=workspace["id"],
+            paper_id=paper_one["id"],
+            canonical_entity_id=entity_id,
+            type="method",
+            canonical_name="Shared Method",
+            content={"description": "seed"},
+            source_provenance={},
+            status="human_confirmed",
+        ),
+        KnowledgeItem(
+            id=item_two_id,
+            workspace_id=workspace["id"],
+            paper_id=paper_two["id"],
+            canonical_entity_id=entity_id,
+            type="method",
+            canonical_name="Shared Method",
+            content={"description": "related"},
+            source_provenance={},
+            status="extracted_candidate",
+        ),
+        EvidenceSpan(
+            id=evidence_id,
+            workspace_id=workspace["id"],
+            knowledge_item_id=item_one_id,
+            paper_id=paper_one["id"],
+            text="The seed paper evaluates Shared Method.",
+            relation="supports",
+            confidence=0.9,
+            is_deleted=False,
+        ),
+        PaperMention(
+            id=str(uuid4()),
+            workspace_id=workspace["id"],
+            paper_id=paper_one["id"],
+            canonical_entity_id=entity_id,
+            knowledge_item_id=item_one_id,
+            mention_text="Shared Method",
+            status="human_confirmed",
+        ),
+        PaperMention(
+            id=str(uuid4()),
+            workspace_id=workspace["id"],
+            paper_id=paper_two["id"],
+            canonical_entity_id=entity_id,
+            knowledge_item_id=item_two_id,
+            mention_text="Shared Method",
+            status="extracted_candidate",
+        ),
+    ])
+    db_session.commit()
+
+    from app.domains.artifact.service import ArtifactService
+
+    artifact = ArtifactService(db_session).save_upload(
+        workspace_id=workspace["id"],
+        filename="seed.txt",
+        content=b"The seed paper evaluates Shared Method.",
+        mime_type="text/plain",
+        kind="parsed_text",
+    )
+    monkeypatch.setattr(
+        "app.domains.chat.service.semantic_search",
+        lambda **kwargs: RetrievalResponse(
+            workspace_id=kwargs["workspace_id"],
+            query=kwargs["query"],
+            request_id="dense-shadow-001",
+            items=[RetrievalResultItem(
+                paper_id=paper_one["id"],
+                chunk_id="seed-chunk",
+                artifact_id=artifact.id,
+                text="The seed paper evaluates Shared Method.",
+                score=0.92,
+            )],
+            total=1,
+            filters_applied={"recall_count": 1, "reranker_enabled": True},
+        ),
+    )
+    monkeypatch.setattr(
+        "app.domains.chat.service.find_chunk_record",
+        lambda *_, **__: SimpleNamespace(
+            source_artifact_id=artifact.id, start_char=0, end_char=42
+        ),
+    )
+    fake_gateway.content = "只使用 dense 论文证据回答。[E1]"
+
+    response = client.post(
+        "/api/v1/chat/conversations/send",
+        json={
+            "content": "哪些论文提到了这个方法？",
+            "workspace_id": workspace["id"],
+            "retrieval_mode": "hybrid",
+        },
+    )
+
+    assert response.status_code == 200
+    assistant = response.json()["assistant_message"]
+    graph = assistant["retrieval_audit"]["graph"]
+    assert graph["mode"] == "shadow"
+    assert graph["fallback"] is False
+    assert graph["path_count"] >= 1
+    assert graph["candidate_path_count"] == graph["emitted_path_count"]
+    assert graph["dropped_path_count"] == 0
+    assert graph["dropped_path_reasons"] == {}
+# Query-mode 路径必须有 source span；没有问题相关证据的相关论文不会作为诊断结果展示。
+    assert paper_two["id"] not in graph["supporting_paper_ids"]
+    assert all(path["evidence"] for path in graph["paths"])
+    assert evidence_id in graph["supporting_evidence_ids"]
+# Phase 1 仅为 shadow：GraphRAG 不会将相关论文证据加入 prompt 或回答 citations。
+    assert [citation["paper_id"] for citation in assistant["citations"]] == [paper_one["id"]]
+    assert "Related evidence" not in fake_gateway.calls[-1][0]["content"]
+
+
+def test_workspace_chat_graph_failure_records_dense_fallback(monkeypatch, db_session):
+    def fail_graph(*args, **kwargs):
+        raise RuntimeError("graph unavailable")
+
+    monkeypatch.setattr("app.domains.chat.service.build_bounded_projection", fail_graph)
+    audit = ChatService(db_session)._graph_shadow_audit(
+        "workspace-fallback",
+        [RetrievalResultItem(paper_id="paper-dense", chunk_id="dense-chunk")],
+        "dense-fallback-001",
+        retrieval_mode="hybrid",
+        graph_expand=None,
+        graph_max_hops=None,
+        graph_node_limit=None,
+        graph_edge_limit=None,
+    )
+
+    assert audit["mode"] == "shadow"
+    assert audit["fallback"] is True
+    assert audit["fallback_reason"] == "graph_query_failed"
+
+
+def test_workspace_chat_graph_timeout_keeps_completed_paths_for_diagnostics(monkeypatch, db_session):
+    path = GraphRAGPathRead(
+        path_id="path:timeout",
+        workspace_id="workspace-timeout",
+    )
+    projection = BoundedGraphProjection(
+        projection_version="sql_graph_v1",
+        seeds=[],
+        paths=[path],
+        nodes=[],
+        edges=[],
+        evidence=[],
+        supporting_paper_ids=[],
+        supporting_evidence_ids=[],
+    )
+    monkeypatch.setattr(
+        "app.domains.chat.service.build_bounded_projection",
+        lambda *args, **kwargs: projection,
+    )
+    monkeypatch.setattr(settings, "chat_graphrag_timeout_ms", 0)
+
+    audit = ChatService(db_session)._graph_shadow_audit(
+        "workspace-timeout",
+        [RetrievalResultItem(paper_id="paper-dense", chunk_id="dense-chunk")],
+        "dense-timeout-001",
+        retrieval_mode="hybrid",
+        graph_expand=None,
+        graph_max_hops=None,
+        graph_node_limit=None,
+        graph_edge_limit=None,
+    )
+
+    assert audit["fallback"] is True
+    assert audit["fallback_reason"] == "graph_timeout"
+    assert [item["path_id"] for item in audit["paths"]] == ["path:timeout"]
 
 
 def test_workspace_chat_without_hits_does_not_ask_llm(client, fake_gateway, monkeypatch):
@@ -528,7 +769,7 @@ def test_workspace_chat_keeps_reranker_degraded_as_a_diagnostic_state(
     )
     monkeypatch.setattr(
         "app.domains.chat.service.find_chunk_record",
-        lambda *_: SimpleNamespace(source_artifact_id=artifact.id, start_char=0, end_char=52),
+        lambda *_, **__: SimpleNamespace(source_artifact_id=artifact.id, start_char=0, end_char=52),
     )
     fake_gateway.content = "降级时仍有论文证据。[E1]"
 
@@ -662,7 +903,7 @@ def test_workspace_chat_repairs_invalid_citation_once_and_persists_audit(
     )
     monkeypatch.setattr(
         "app.domains.chat.service.find_chunk_record",
-        lambda *_: SimpleNamespace(
+        lambda *_, **__: SimpleNamespace(
             source_artifact_id=artifact.id,
             start_char=0,
             end_char=35,
@@ -736,7 +977,7 @@ def test_workspace_chat_rejects_answer_when_citation_repair_still_invalid(
     )
     monkeypatch.setattr(
         "app.domains.chat.service.find_chunk_record",
-        lambda *_: SimpleNamespace(source_artifact_id=artifact.id, start_char=0, end_char=14),
+        lambda *_, **__: SimpleNamespace(source_artifact_id=artifact.id, start_char=0, end_char=14),
     )
     fake_gateway.chat_contents = ["初始回答 [E9]", "修复仍然错误 [E8]"]
 
@@ -966,7 +1207,7 @@ def test_stream_message_emits_sse_events(client, fake_gateway):
     assert '"content": "第一"' in body
     assert '"content": "内容"' in body
     assert '"type": "done"' in body
-    # persisted assistant message is complete
+# 持久化的 assistant 消息是完整的
     detail = client.get(f"/api/v1/chat/conversations/{conversation['id']}").json()
     assistant = [m for m in detail["messages"] if m["role"] == "assistant"][-1]
     assert assistant["content"] == "第一段内容"
@@ -1019,7 +1260,7 @@ def test_stream_message_repairs_invalid_citation_before_persisting(
     )
     monkeypatch.setattr(
         "app.domains.chat.service.find_chunk_record",
-        lambda *_: SimpleNamespace(source_artifact_id=artifact.id, start_char=0, end_char=16),
+        lambda *_, **__: SimpleNamespace(source_artifact_id=artifact.id, start_char=0, end_char=16),
     )
     fake_gateway.stream_deltas = ["流式回答 [E9]"]
     fake_gateway.chat_contents = ["流式修复回答 [E1]"]
@@ -1085,7 +1326,7 @@ def test_stream_rejects_invalid_citation_after_one_failed_repair(
     )
     monkeypatch.setattr(
         "app.domains.chat.service.find_chunk_record",
-        lambda *_: SimpleNamespace(source_artifact_id=artifact.id, start_char=0, end_char=25),
+        lambda *_, **__: SimpleNamespace(source_artifact_id=artifact.id, start_char=0, end_char=25),
     )
     fake_gateway.stream_deltas = ["初始回答 [E9]"]
     fake_gateway.chat_contents = ["修复仍然错误 [E8]"]
@@ -1153,8 +1394,8 @@ def test_stream_retrieval_failure_emits_sse_error_and_marks_failed(
 
 
 def test_stream_client_disconnect_marks_failed_not_generating(db_session, fake_gateway):
-    """P0.5-1: closing the SSE generator mid-stream (client disconnect) must not
-    leave the assistant row stuck in "generating" forever."""
+    """P0.5-1：在流式响应中途关闭 SSE 生成器（客户端断开）时，
+    不能让 assistant 行永久卡在 “generating” 状态。"""
     from app.domains.chat.models import ChatMessage
     from app.domains.chat.service import ChatService
 
@@ -1173,8 +1414,8 @@ def test_stream_client_disconnect_marks_failed_not_generating(db_session, fake_g
 
 
 def test_stale_generating_row_is_healed_instead_of_bricking(db_session, fake_gateway):
-    """P0.5-1: a "generating" row untouched for > STALE_GENERATING_SECONDS is
-    marked failed on the next send instead of raising a permanent conflict."""
+    """P0.5-1：超过 STALE_GENERATING_SECONDS 未更新的 “generating” 行，
+    下一次发送时应标记为失败，而不是抛出永久冲突。"""
     from datetime import datetime, timedelta, timezone
 
     from app.domains.chat.models import ChatMessage
@@ -1193,7 +1434,7 @@ def test_stale_generating_row_is_healed_instead_of_bricking(db_session, fake_gat
         )
         db_session.add(message)
         db_session.commit()
-        # updated_at is set by onupdate; force the stale timestamp explicitly.
+# updated_at 由 onupdate 设置；显式强制设置过期时间戳。
         db_session.query(ChatMessage).filter(ChatMessage.id == message.id).update(
             {"updated_at": updated_at}
         )

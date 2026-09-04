@@ -1,4 +1,4 @@
-"""MA-12 (part 2): skip external selection and resume to synthesis + Critic."""
+"""MA-12（第 2 部分）：跳过外部选择，恢复到 synthesis + Critic。"""
 
 from __future__ import annotations
 

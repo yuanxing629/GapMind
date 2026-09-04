@@ -1,9 +1,7 @@
-"""Tests for the Discover service Protocol ports.
+"""Discover service Protocol ports 测试。
 
-These exercise that ``DiscoverService.__init__`` accepts Protocol-compatible
-fakes and that swapping them out doesn't require touching the service code.
-The actual cross-domain behaviour is tested in the retrieval / llm test
-suites; here we just verify the wiring.
+验证 ``DiscoverService.__init__`` 接受兼容 Protocol 的 fake，且替换它们不需要修改 service
+代码。实际的跨 domain 行为由 retrieval / llm 测试套件覆盖；本文件只验证 wiring。
 """
 
 from __future__ import annotations
@@ -82,9 +80,9 @@ def _stub_llm_response(content: str):
     return SimpleNamespace(content=content, usage=None)
 
 
-# ---------------------------------------------------------------- test cases
+# ---------------------------------------------------------------- 测试用例
 def test_default_adapters_satisfy_protocols() -> None:
-    """The production adapters must be valid port bindings."""
+    """生产 adapter 必须是有效的 port binding。"""
     assert isinstance(RetrievalAdapter(), RetrievalPort)
     assert isinstance(ExternalSearchAdapter(), ExternalSearchPort)
     assert isinstance(LLMGatewayAdapter(), LLMGatewayPort)
@@ -94,7 +92,7 @@ def test_assert_protocol_rejects_missing_method() -> None:
     class Incomplete:
         def semantic_search(self, *args, **kwargs):
             return None
-        # missing find_similar_work / find_counter_evidence
+# 缺少 find_similar_work / find_counter_evidence
 
     import pytest
 
@@ -103,7 +101,7 @@ def test_assert_protocol_rejects_missing_method() -> None:
 
 
 def test_discover_service_accepts_protocol_fakes(db_session) -> None:
-    """Wiring: the service should bind the fakes and never reach the real adapters."""
+    """连线检查：service 应绑定 fake，绝不能触达真实 adapter。"""
     service = DiscoverService(
         db_session,
         retrieval=FakeRetrieval(),
@@ -111,10 +109,10 @@ def test_discover_service_accepts_protocol_fakes(db_session) -> None:
         llm=FakeLLM(),
     )
 
-    # Default __init__ still completes when no overrides are passed.
+# 没有 override 时，默认 __init__ 仍应完成。
     default = DiscoverService(db_session)
     assert isinstance(default.retrieval, RetrievalPort)
     assert isinstance(default.external_search, ExternalSearchPort)
     assert isinstance(default.llm, LLMGatewayPort)
-    # Service stays usable — no exceptions raised.
+# Service 保持可用，不抛出异常。
     assert service.db is db_session

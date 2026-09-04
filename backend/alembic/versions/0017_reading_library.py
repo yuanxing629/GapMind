@@ -1,4 +1,4 @@
-"""Add reading library, progress and paper annotations."""
+"""增加阅读库、阅读进度和论文标注。"""
 
 from __future__ import annotations
 

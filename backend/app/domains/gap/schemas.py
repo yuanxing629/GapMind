@@ -1,4 +1,4 @@
-"""Schema 3.0 contracts and API payloads for gap discovery."""
+"""Gap discovery 的 Schema 3.0 契约与 API 载荷。"""
 
 from __future__ import annotations
 
@@ -108,6 +108,9 @@ class GapExtractionTask(BaseModel):
     task_id: str
     status: str
     skipped: bool = False
+    input_mode: str | None = None
+    knowledge_extraction_run_id: str | None = None
+    dependency_status: str = "not_checked"
 
 
 class GapExtractionResponse(BaseModel):
@@ -123,6 +126,13 @@ class GapAnnotationRead(BaseModel):
     artifact_id: str
     task_id: str | None = None
     input_sha256: str
+    knowledge_extraction_run_id: str | None = None
+    knowledge_context_sha256: str | None = None
+    input_mode: str = "core_markdown_legacy_v1"
+    source_knowledge_item_ids: list[str] = Field(default_factory=list)
+    source_evidence_span_ids: list[str] = Field(default_factory=list)
+    context_char_count: int = 0
+    context_fallback_reason: str | None = None
     schema_version: str
     prompt_version: str
     model_provider: str
@@ -134,6 +144,7 @@ class GapAnnotationRead(BaseModel):
     output: dict[str, Any] | None = None
     validation_errors: list[str] = Field(default_factory=list)
     fallback_reason: str | None = None
+    stale: bool = False
     created_at: datetime
     updated_at: datetime
 

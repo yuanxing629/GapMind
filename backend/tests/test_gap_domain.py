@@ -377,8 +377,7 @@ def test_gap_worker_marks_annotation_invalid_when_extractor_is_unavailable(
 
     annotation = db_session.get(PaperGapAnnotation, result["annotation_id"])
     task_after = TaskService(db_session).get(task.id)
-    # The worker payload keeps the annotation outcome; the authoritative Task
-    # row records the failed state shown in the processing center.
+# worker 载荷保留标注结果；权威 Task 行记录处理中心显示的失败状态。
     assert result["status"] == "unavailable"
     assert result["retryable"] is True
     assert annotation is not None and annotation.status == "invalid"
@@ -804,9 +803,8 @@ def test_board_collapses_taxonomy_and_suppresses_cartesian_only_cells(
 
 
 def test_spawn_gap_extraction_skips_already_annotated_paper(db_session: Session) -> None:
-    """spawn_gap_extraction must NOT enqueue a task for a paper that already has
-    a valid annotation (so "抽取已解析论文" on a large corpus only processes
-    genuinely new papers)."""
+    """已有有效结果的论文，spawn_gap_extraction 绝不能为其加入任务队列。
+    已有有效标注（因此大型语料库执行“抽取已解析论文”时只处理真正的新论文）。"""
     from app.core.config import settings
     from app.workers.tasks.extract_gap_annotation import (
         PROMPT_VERSION,
@@ -859,7 +857,7 @@ def test_spawn_gap_extraction_skips_already_annotated_paper(db_session: Session)
 def test_spawn_gap_extraction_skips_valid_remote_or_old_prompt_annotation(
     db_session: Session,
 ) -> None:
-    """Incremental extraction must reuse valid results across provider/version."""
+    """增量抽取必须跨 provider/version 复用有效结果。"""
     from app.workers.tasks.extract_gap_annotation import spawn_gap_extraction
 
     workspace = Workspace(
@@ -896,7 +894,7 @@ def test_spawn_gap_extraction_skips_valid_remote_or_old_prompt_annotation(
     db_session.flush()
 
     row = _annotation(db_session, workspace, artifact, paper, _output())
-    row.model_name = "deepseek-remote-model"
+    row.model_name = "remote-model"
     row.model_provider = "remote"
     row.prompt_version = "gap-schema3-v1"
     db_session.commit()
@@ -910,7 +908,7 @@ def test_spawn_gap_extraction_skips_valid_remote_or_old_prompt_annotation(
 def test_run_gap_extraction_skips_queued_duplicate_for_valid_annotation(
     db_session: Session, monkeypatch, tmp_path
 ) -> None:
-    """Already queued duplicate tasks must not call a model after the fix."""
+    """已排队的重复任务在修复后不能调用模型。"""
     from app.workers.tasks import extract_gap_annotation as gap_task_mod
 
     task_id, paper = _prepare_gap_task(db_session, monkeypatch, tmp_path)
@@ -939,7 +937,7 @@ def test_run_gap_extraction_skips_queued_duplicate_for_valid_annotation(
 
 
 def test_spawn_gap_extraction_does_not_skip_without_annotation(db_session: Session, monkeypatch) -> None:
-    """Without a valid annotation, spawn_gap_extraction enqueues a task."""
+    """没有有效标注时，spawn_gap_extraction 会加入任务队列。"""
     from app.workers.tasks.extract_gap_annotation import spawn_gap_extraction
 
     workspace = Workspace(

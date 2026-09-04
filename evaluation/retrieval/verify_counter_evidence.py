@@ -1,26 +1,23 @@
-"""Counter Evidence special validation (RG-7 / V4).
+"""Counter Evidence 专项校验（RG-7 / V4）。
 
-Loads a claim set (three claim types: A_fact / B_qualified / C_first_novel),
-runs ``find_counter_evidence`` against a live workspace, and checks FIVE
-behavioral invariants beyond raw Recall:
+加载 claim set（三种 claim type：A_fact / B_qualified / C_first_novel），在 live workspace
+上运行 ``find_counter_evidence``，并检查原始 Recall 之外的五项行为不变量：
 
-  1. Source exclusion  — the claim's source paper NEVER appears in results.
-  2. Paper diversity   — when results exist, they span >= 2 distinct papers.
-  3. Role priority     — contradicts/qualifies rank before supports/overlaps.
-  4. Empty semantics   — empty top-K carries a discriminating ``empty_reason``
-                         (retrieval_empty / judge_failed /
-                         genuinely_no_counter_evidence), never a fake "found
-                         nothing" that is actually a system failure.
-  5. Judge-failure signal — a zero-confidence-unknown Judge result marks the
-                         response ``degraded`` and keeps a diagnostic error.
+  1. 源论文排除 —— claim 的来源论文绝不会出现在结果中。
+  2. 论文多样性 —— 存在结果时，结果应覆盖至少 2 篇不同论文。
+  3. role 优先级 —— contradicts/qualifies 排在 supports/overlaps 之前。
+  4. 空结果语义 —— 空 top-K 携带可区分的 ``empty_reason``（retrieval_empty / judge_failed /
+     genuinely_no_counter_evidence），不能将实际系统失败伪装为“未找到”。
+  5. Judge 失败信号 —— zero-confidence-unknown Judge 结果将响应标记为 ``degraded``，并保留
+     诊断错误。
 
-Usage (from repo root):
+用法（从仓库根目录运行）：
 
     backend/.venv/Scripts/python.exe evaluation/retrieval/verify_counter_evidence.py \
         --workspace-id <uuid> \
         --gold evaluation/retrieval/gold/counter_evidence_v4.json
 
-Exit code 0 = all invariants hold; 2 = at least one failed.
+退出码 0 = 所有不变量满足；2 = 至少一项失败。
 """
 
 from __future__ import annotations
@@ -57,7 +54,7 @@ def _paper_ids(items: list[Any]) -> list[str]:
 
 
 def _role_rank(judgement: str) -> int:
-    """Lower = higher priority; mirrors COUNTER_ROLE_PRIORITY in service.py."""
+    """数值越小优先级越高；与 service.py 中的 COUNTER_ROLE_PRIORITY 对应。"""
     return {"contradicts": 0, "qualifies": 1, "supports": 2, "overlaps": 2, "unknown": 3}.get(
         judgement, 99
     )
@@ -92,17 +89,17 @@ def check_claim(db, workspace_id: str, q: CounterEvidenceQuery, top_k: int, mini
         "checks": {},
     }
 
-    # 1. Source exclusion
+# 1. 源论文排除
     src_ok = source.id not in pids
     result["checks"]["source_excluded"] = src_ok
 
-    # 2. Paper diversity: with >= 2 results, they should span >= 2 distinct
-    # papers (one paper's chunks shouldn't dominate the counter-evidence view).
+# 2. 论文多样性：结果数 >= 2 时，应覆盖 >= 2 篇不同论文
+#（一篇论文的分块不能占满 counter-evidence 视图）。
     raw_count = len(resp.items)
     div_ok = (len(set(pids)) >= 2) if raw_count >= 2 else True
     result["checks"]["paper_diversity"] = div_ok
 
-    # 3. Role priority: contradicts/qualifies before supports/overlaps/unknown
+# 3. 角色优先级：contradicts/qualifies 在 supports/overlaps/unknown 之前
     role_ok = True
     for i in range(len(roles)):
         for j in range(i + 1, len(roles)):
@@ -111,25 +108,25 @@ def check_claim(db, workspace_id: str, q: CounterEvidenceQuery, top_k: int, mini
                 break
     result["checks"]["role_priority"] = role_ok
 
-    # 4. Empty semantics
+# 4. 空结果语义
     empty_ok = True
     if not resp.items:
-        # Empty top-K must be discriminated, not a fake "no counter-evidence".
+# 必须区分空 Top-K，不能伪造为“没有 counter-evidence”。
         if resp.empty_reason is None:
             empty_ok = False
         elif resp.status == "failed":
             empty_ok = False  # system failure is not a clean "found nothing"
     else:
-        # Non-empty: empty_reason may be None (found counter) OR set (found
-        # only supports/overlaps → genuinely_no_counter_evidence).
+# 非空结果：empty_reason 可以为 None（找到反证），也可以有值（只找到
+# supports/overlaps → genuinely_no_counter_evidence）。
         if resp.empty_reason == "judge_failed" and resp.status != "degraded":
             empty_ok = False
     result["checks"]["empty_semantics"] = empty_ok
 
-    # 5. Judge-failure signal
+# 5. Judge 失败信号
     judge_ok = True
     if resp.status == "degraded":
-        # degraded implies a zero-conf unknown (Judge failed) — keep error signal.
+# degraded 表示存在零置信度 unknown（Judge 失败），保留错误信号。
         judge_ok = any(r == "unknown" for r in roles)
     result["checks"]["judge_failure_signal"] = judge_ok
 

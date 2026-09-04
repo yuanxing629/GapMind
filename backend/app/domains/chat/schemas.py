@@ -1,4 +1,4 @@
-"""HTTP contracts for the Chat domain."""
+"""Chat domain 的 HTTP 契约。"""
 
 from __future__ import annotations
 
@@ -6,6 +6,8 @@ from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from app.domains.knowledge.schemas import GraphRAGPathRead
 
 
 class ChatConversationCreate(BaseModel):
@@ -36,7 +38,7 @@ class ChatConversationUpdate(BaseModel):
 
 
 class ChatImageInput(BaseModel):
-    """A browser image encoded as a data URL for the current request."""
+    """当前请求中编码为 data URL 的浏览器图片。"""
 
     filename: str = Field(default="image", min_length=1, max_length=512)
     mime_type: str = Field(..., min_length=1, max_length=128)
@@ -49,6 +51,13 @@ class ChatMessageCreate(BaseModel):
     research_plan_id: str | None = None
     source_artifact_ids: list[str] = Field(default_factory=list, max_length=4)
     images: list[ChatImageInput] = Field(default_factory=list, max_length=3)
+    # 本阶段这些字段仅用于 PostgreSQL GraphRAG shadow 诊断，
+    # 不会替代 dense answer evidence。
+    retrieval_mode: Literal["dense", "hybrid", "graph"] = "dense"
+    graph_expand: bool | None = None
+    graph_max_hops: int = Field(default=2, ge=1, le=2)
+    graph_node_limit: int = Field(default=32, ge=1, le=200)
+    graph_edge_limit: int = Field(default=64, ge=1, le=400)
 
     @field_validator("content")
     @classmethod
@@ -109,7 +118,7 @@ class ChatMessageImageRead(BaseModel):
 
 
 class CitationCheckRead(BaseModel):
-    """Result of validating [En] markers in an assistant message against its citations."""
+    """校验 assistant 消息中的 [En] 标记与其 citation 后的结果。"""
     referenced: list[int] = Field(default_factory=list)
     broken: list[int] = Field(default_factory=list)
     ok: bool = True
@@ -117,7 +126,7 @@ class CitationCheckRead(BaseModel):
 
 
 class SourceCheckRead(BaseModel):
-    """Validation of [P1]/[D1]/[C1] markers against the source passport."""
+    """校验 [P1]/[D1]/[C1] 标记与来源 passport 后的结果。"""
 
     referenced: list[str] = Field(default_factory=list)
     broken: list[str] = Field(default_factory=list)
@@ -125,7 +134,7 @@ class SourceCheckRead(BaseModel):
 
 
 class CitationQualityRead(BaseModel):
-    """Persisted audit of the bounded citation/source quality gate."""
+    """有界 citation/source 质量门的持久化审计记录。"""
 
     status: Literal["not_needed", "passed", "repaired", "rejected"] = "not_needed"
     attempts: int = Field(default=0, ge=0, le=1)
@@ -138,8 +147,33 @@ class CitationQualityRead(BaseModel):
     fallback: bool = False
 
 
+class GraphRetrievalAuditRead(BaseModel):
+    """有界 GraphRAG 诊断信息；其本身不是回答证据。"""
+
+    mode: Literal["disabled", "shadow"] = "disabled"
+    projection_version: str = "sql_graph_v1"
+    seed_count: int = Field(default=0, ge=0)
+    expanded_node_count: int = Field(default=0, ge=0)
+    expanded_edge_count: int = Field(default=0, ge=0)
+    path_count: int = Field(default=0, ge=0)
+    # 路径预算诊断：``path_count`` 仍表示实际输出的路径数；
+    # 以下字段说明有多少符合条件的候选被纳入，或因节点/边有界预算被丢弃。
+    candidate_path_count: int = Field(default=0, ge=0)
+    emitted_path_count: int = Field(default=0, ge=0)
+    dropped_path_count: int = Field(default=0, ge=0)
+    dropped_path_reasons: dict[str, int] = Field(default_factory=dict)
+    latency_ms: float = Field(default=0.0, ge=0)
+    supporting_paper_ids: list[str] = Field(default_factory=list)
+    supporting_evidence_ids: list[str] = Field(default_factory=list)
+    truncated: bool = False
+    truncation_reason: str | None = None
+    fallback: bool = False
+    fallback_reason: str | None = None
+    paths: list[GraphRAGPathRead] = Field(default_factory=list)
+
+
 class RetrievalAuditRead(BaseModel):
-    """Persisted, non-sensitive retrieval observability for one answer."""
+    """一条回答的持久化、非敏感检索观测信息。"""
 
     request_id: str = ""
     status: str = "unknown"
@@ -151,10 +185,11 @@ class RetrievalAuditRead(BaseModel):
     reranker_status: Literal[
         "applied", "enabled_no_rerank", "degraded", "disabled", "unknown"
     ] = "unknown"
+    graph: GraphRetrievalAuditRead = Field(default_factory=GraphRetrievalAuditRead)
 
 
 class ChatMessageSourceRead(BaseModel):
-    """One explicitly labelled context source used for an answer."""
+    """回答使用的一条明确标注的上下文来源。"""
 
     marker: str
     source_type: Literal["plan", "paper", "report", "code_draft"]

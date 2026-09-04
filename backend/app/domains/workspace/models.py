@@ -1,7 +1,7 @@
-"""Workspace ORM models.
+"""Workspace ORM 模型。
 
-The Workspace is the core scope object: every Paper, KnowledgeItem,
-Opportunity, Task, and TimelineEvent belongs to exactly one Workspace.
+Workspace 是核心作用域对象：每个 Paper、KnowledgeItem、Opportunity、Task 和
+TimelineEvent 都恰好属于一个 Workspace。
 """
 
 from __future__ import annotations
@@ -13,11 +13,10 @@ from app.db.base import Base, TimestampMixin, UUIDPKMixin
 
 
 class Workspace(Base, UUIDPKMixin, TimestampMixin):
-    """A research workspace - the scope for one research thread.
+    """研究 workspace：一条研究线程的作用域。
 
-    Carries the Research Profile inline (topic, keywords, goals, constraints,
-    active_questions) to keep Phase 1 simple. If the profile grows complex
-    we can split it into a separate `research_profiles` table later.
+    内嵌 Research Profile（topic、keywords、goals、constraints、active_questions）以保持
+    Phase 1 简单。如果 profile 变得复杂，后续可以拆分为独立的 `research_profiles` 表。
     """
 
     __tablename__ = "workspaces"
@@ -28,14 +27,14 @@ class Workspace(Base, UUIDPKMixin, TimestampMixin):
     )
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    # Research Profile (inline for MVP)
+# Research Profile（MVP 内嵌）
     topic: Mapped[str | None] = mapped_column(Text, nullable=True)
     keywords: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
     goals: Mapped[str | None] = mapped_column(Text, nullable=True)
     constraints: Mapped[str | None] = mapped_column(Text, nullable=True)
     active_questions: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
 
-    # Lifecycle
+# 生命周期
     is_archived: Mapped[bool] = mapped_column(
         Boolean, default=False, nullable=False, index=True
     )

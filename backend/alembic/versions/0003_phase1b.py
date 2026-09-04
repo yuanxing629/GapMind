@@ -1,17 +1,17 @@
-"""Create phase 1b tables: artifacts, papers, tasks, timeline_events, knowledge_items, knowledge_relations, evidence_spans.
+"""创建 Phase 1b 表：artifacts、papers、tasks、timeline_events、knowledge_items、knowledge_relations、evidence_spans。
 
-Revision ID: 0003_phase1b
-Revises: 0002_workspaces
-Create Date: 2026-07-19
+Revision ID：0003_phase1b
+Revises：0002_workspaces
+创建日期：2026-07-19
 
-Tables created (in FK dependency order):
-  artifacts            - file storage records (pdf, parsed_text, ...)
-  papers               - paper metadata + primary_artifact_id FK
-  tasks                - async task runtime state machine
-  timeline_events      - auto-recorded research activity
-  knowledge_items      - the 17-typed research objects (Phase 1b core 7)
-  knowledge_relations  - explicit typed edges (the logical KG)
-  evidence_spans       - text spans in papers backing knowledge items
+创建的表（按 FK 依赖顺序）：
+  artifacts            - 文件存储记录（pdf、parsed_text 等）
+  papers               - 论文元数据 + primary_artifact_id FK
+  tasks                - 异步任务运行状态机
+  timeline_events      - 自动记录的研究活动
+  knowledge_items      - 17 种有类型的研究对象（Phase 1b 核心 7 种）
+  knowledge_relations  - 显式类型化边（逻辑 KG）
+  evidence_spans       - 支撑知识项的论文文本范围
 """
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ import sqlalchemy as sa
 from alembic import op
 from app.db.base import UUIDString
 
-# revision identifiers, used by Alembic.
+# revision 标识，供 Alembic 使用。
 revision: str = "0003_phase1b"
 down_revision: Union[str, None] = "0002_workspaces"
 branch_labels: Union[str, Sequence[str], None] = None
@@ -30,7 +30,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # ---- artifacts ----------------------------------------------------------
+# ---- artifacts：文件存储 ------------------------------------------------
     op.create_table(
         "artifacts",
         sa.Column("id", UUIDString(), primary_key=True, nullable=False),
@@ -63,7 +63,7 @@ def upgrade() -> None:
     op.create_index("ix_artifacts_kind", "artifacts", ["kind"])
     op.create_index("ix_artifacts_is_deleted", "artifacts", ["is_deleted"])
 
-    # ---- papers -------------------------------------------------------------
+# ---- papers：论文 -------------------------------------------------------
     op.create_table(
         "papers",
         sa.Column("id", UUIDString(), primary_key=True, nullable=False),
@@ -105,7 +105,7 @@ def upgrade() -> None:
     op.create_index("ix_papers_primary_artifact_id", "papers", ["primary_artifact_id"])
     op.create_index("ix_papers_is_deleted", "papers", ["is_deleted"])
 
-    # ---- tasks --------------------------------------------------------------
+# ---- tasks：任务 --------------------------------------------------------
     op.create_table(
         "tasks",
         sa.Column("id", UUIDString(), primary_key=True, nullable=False),
@@ -142,7 +142,7 @@ def upgrade() -> None:
     op.create_index("ix_tasks_celery_task_id", "tasks", ["celery_task_id"])
     op.create_index("ix_tasks_is_deleted", "tasks", ["is_deleted"])
 
-    # ---- timeline_events ----------------------------------------------------
+# ---- timeline_events：时间线事件 ---------------------------------------
     op.create_table(
         "timeline_events",
         sa.Column("id", UUIDString(), primary_key=True, nullable=False),
@@ -176,7 +176,7 @@ def upgrade() -> None:
     op.create_index("ix_timeline_events_subject_type", "timeline_events", ["subject_type"])
     op.create_index("ix_timeline_events_subject_id", "timeline_events", ["subject_id"])
 
-    # ---- knowledge_items ----------------------------------------------------
+# ---- knowledge_items：知识项 -------------------------------------------
     op.create_table(
         "knowledge_items",
         sa.Column("id", UUIDString(), primary_key=True, nullable=False),
@@ -218,7 +218,7 @@ def upgrade() -> None:
     op.create_index("ix_knowledge_items_status", "knowledge_items", ["status"])
     op.create_index("ix_knowledge_items_is_deleted", "knowledge_items", ["is_deleted"])
 
-    # ---- knowledge_relations ------------------------------------------------
+# ---- knowledge_relations：知识关系 -------------------------------------
     op.create_table(
         "knowledge_relations",
         sa.Column("id", UUIDString(), primary_key=True, nullable=False),
@@ -263,7 +263,7 @@ def upgrade() -> None:
     op.create_index("ix_knowledge_relations_relation_type", "knowledge_relations", ["relation_type"])
     op.create_index("ix_knowledge_relations_is_deleted", "knowledge_relations", ["is_deleted"])
 
-    # ---- evidence_spans -----------------------------------------------------
+# ---- evidence_spans：证据范围 ------------------------------------------
     op.create_table(
         "evidence_spans",
         sa.Column("id", UUIDString(), primary_key=True, nullable=False),

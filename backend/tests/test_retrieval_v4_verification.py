@@ -1,9 +1,8 @@
-"""Counter Evidence V4 verification logic tests (RG-7).
+"""Counter Evidence V4 校验逻辑测试（RG-7）。
 
-The V4 runner (`evaluation/retrieval/verify_counter_evidence.py`) checks five
-behavioral invariants on top of raw Recall. These tests validate that logic
-with a mocked ``find_counter_evidence`` so the invariant-checking code can be
-regression-tested without a live Milvus corpus.
+V4 runner（`evaluation/retrieval/verify_counter_evidence.py`）在原始 Recall 之上检查五项
+行为不变量。这些测试 mock ``find_counter_evidence``，使不变量检查代码无需 live Milvus
+语料即可进行回归测试。
 """
 
 from __future__ import annotations
@@ -28,7 +27,7 @@ from evaluation.retrieval.verify_counter_evidence import (  # noqa: E402
 from app.domains.retrieval.schemas import RetrievalResponse, RetrievalResultItem  # noqa: E402
 
 
-# ------------------------------------------------------------- role_rank
+# ------------------------------------------------------------- role_rank：角色排序
 def test_role_rank_orders_user_facing_signal() -> None:
     assert _role_rank("contradicts") < _role_rank("qualifies")
     assert _role_rank("qualifies") < _role_rank("supports")
@@ -40,7 +39,7 @@ def test_role_rank_unknown_fallback() -> None:
     assert _role_rank("not-a-real-role") == 99  # default guard
 
 
-# ------------------------------------------------------------- check_claim
+# ------------------------------------------------------------- check_claim：主张检查
 def _resp(items: list[RetrievalResultItem], **overrides) -> RetrievalResponse:
     base = dict(
         workspace_id="ws-1",
@@ -67,7 +66,7 @@ def _item(paper_id: str, judgement: str = "contradicts", confidence: float = 0.9
 
 @pytest.fixture
 def _patch(monkeypatch):
-    """Patch find_counter_evidence + paper-ref resolution in the module."""
+    """替换模块中的反证检索与论文引用解析。"""
     def _install(resp: RetrievalResponse, *, source_paper_id: str = "p-src"):
         from types import SimpleNamespace
         fake = MagicMock(return_value=resp)
@@ -84,7 +83,7 @@ def _patch(monkeypatch):
 
 
 def test_check_claim_source_exclusion_fails_when_source_leaks(_patch) -> None:
-    # Source paper leaked into results — the strongest failure.
+# 源论文泄漏到结果中，这是最严重的失败。
     resp = _resp([_item("p-src"), _item("p-other")])
     _patch(resp, source_paper_id="p-src")
     result = check_claim(None, "ws-1", _q(), top_k=10, minimal=False)
@@ -101,7 +100,7 @@ def test_check_claim_paper_diversity_fails_when_single_paper_dominates(_patch) -
 
 
 def test_check_claim_role_priority_fails_when_supports_before_contradicts(_patch) -> None:
-    # supports before contradicts violates the user-facing ordering.
+# supports 排在 contradicts 之前，违反面向用户的排序。
     resp = _resp([_item("p-a", "supports"), _item("p-b", "contradicts")])
     _patch(resp, source_paper_id="p-src")
     result = check_claim(None, "ws-1", _q(), top_k=10, minimal=False)
@@ -110,7 +109,7 @@ def test_check_claim_role_priority_fails_when_supports_before_contradicts(_patch
 
 
 def test_check_claim_empty_semantics_requires_reason(_patch) -> None:
-    # Empty top-K with no empty_reason = fake "found nothing".
+# 空 Top-K 却没有 empty_reason，等于伪造“没有找到任何内容”。
     resp = _resp([], empty_reason=None)
     _patch(resp, source_paper_id="p-src")
     result = check_claim(None, "ws-1", _q(), top_k=10, minimal=False)
@@ -122,12 +121,12 @@ def test_check_claim_empty_semantics_ok_when_reason_set(_patch) -> None:
     _patch(resp, source_paper_id="p-src")
     result = check_claim(None, "ws-1", _q(), top_k=10, minimal=False)
     assert result["checks"]["empty_semantics"] is True
-    # A clean "found nothing" is not a failure — passes the invariant.
+# 干净的“没有找到任何内容”不是失败，应通过不变量检查。
     assert result["passed"] is True
 
 
 def test_check_claim_judge_failure_signal(_patch) -> None:
-    # degraded status must coincide with a zero-confidence unknown role.
+# degraded 状态必须与零置信度 unknown 角色同时出现。
     resp = _resp(
         [_item("p-a", "unknown", confidence=0.0)],
         status="degraded",
@@ -140,7 +139,7 @@ def test_check_claim_judge_failure_signal(_patch) -> None:
 
 
 def test_check_claim_degraded_without_unknown_role_is_inconsistent(_patch) -> None:
-    # degraded but no unknown role → the signal is inconsistent.
+# degraded 但没有 unknown 角色，说明信号不一致。
     resp = _resp([_item("p-a", "contradicts", confidence=0.9)], status="degraded")
     _patch(resp, source_paper_id="p-src")
     result = check_claim(None, "ws-1", _q(), top_k=10, minimal=False)
@@ -158,7 +157,7 @@ def _q() -> Any:
     )
 
 
-# ------------------------------------------------------------- gold set shape
+# ------------------------------------------------------------- gold set 结构
 def test_v4_gold_set_has_three_types_each_five() -> None:
     path = _REPO_ROOT / "evaluation" / "retrieval" / "gold" / "counter_evidence_v4.json"
     gold = GoldSet.model_validate(

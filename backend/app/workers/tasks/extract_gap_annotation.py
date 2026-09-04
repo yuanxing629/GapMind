@@ -1,4 +1,4 @@
-"""Celery task for fine-tuned Schema 3.0 paper extraction."""
+"""微调 Schema 3.0 论文抽取的 Celery 任务。"""
 
 from __future__ import annotations
 
@@ -13,7 +13,13 @@ from app.core.logging import configure_logging, get_logger
 from app.db.session import SessionLocal
 from app.domains.artifact.models import Artifact
 from app.domains.artifact.service import ArtifactService
-from app.domains.gap.markdown import compact_markdown
+from app.domains.gap.context import (
+    KNOWLEDGE_CONTEXT_MODE,
+    GapContextIdentity,
+    GapKnowledgeExtractionPendingError,
+    build_gap_context,
+    get_gap_context_identity,
+)
 from app.domains.gap.models import PaperGapAnnotation
 from app.domains.gap.prompt import PROMPT_VERSION
 from app.domains.gap.service import GapService
@@ -68,8 +74,61 @@ def _run_gap_extraction(
     paper = db.get(Paper, paper_id)
     if paper is None or paper.is_deleted or paper.workspace_id != task.workspace_id:
         return _fail(tasks, task_id, f"paper not found in workspace: {paper_id}")
+    if not paper.parsed_markdown_artifact_id:
+        return _fail(tasks, task_id, "paper has no parsed_markdown_artifact")
+    artifact = db.get(Artifact, paper.parsed_markdown_artifact_id)
+    if artifact is None or artifact.is_deleted:
+        return _fail(tasks, task_id, "parsed markdown artifact not found")
+    path = ArtifactService(db).resolve_abs_path(artifact)
+    if not path.exists():
+        return _fail(tasks, task_id, f"parsed markdown file missing: {path}")
+    context = build_gap_context(db, paper, path.read_text(encoding="utf-8"))
+    logger.info(
+        "gap_extraction.context_selected",
+        task_id=task_id,
+        paper_id=paper.id,
+        input_mode=context.input_mode,
+        knowledge_extraction_run_id=context.knowledge_extraction_run_id,
+        knowledge_item_count=len(context.knowledge_item_ids),
+        evidence_span_count=len(context.evidence_span_ids),
+        context_char_count=context.context_char_count,
+        fallback_reason=context.fallback_reason,
+    )
+    if settings.gap_extraction_require_knowledge and context.input_mode != KNOWLEDGE_CONTEXT_MODE:
+        return _fail(
+            tasks,
+            task_id,
+            "knowledge extraction is required before gap extraction",
+            result={
+                "dependency_status": "knowledge_extraction_required",
+                "input_mode": context.input_mode,
+                "knowledge_extraction_run_id": context.knowledge_extraction_run_id,
+                "fallback_reason": context.fallback_reason,
+            },
+        )
+    markdown = context.text
+    if not markdown:
+        return _fail(
+            tasks,
+            task_id,
+            "knowledge context is unavailable and legacy Markdown fallback is disabled",
+            result={
+                "dependency_status": "knowledge_extraction_required",
+                "input_mode": context.input_mode,
+                "knowledge_extraction_run_id": context.knowledge_extraction_run_id,
+                "fallback_reason": context.fallback_reason,
+            },
+        )
+    input_sha256 = hashlib.sha256(markdown.encode("utf-8")).hexdigest()
+    context_identity = GapContextIdentity(
+        input_mode=context.input_mode,
+        knowledge_extraction_run_id=context.knowledge_extraction_run_id,
+        knowledge_context_sha256=context.knowledge_context_sha256,
+        fallback_reason=context.fallback_reason,
+    )
+
     if not force:
-        existing = _get_valid_annotation(db, paper_id)
+        existing = _get_valid_annotation(db, paper_id, context_identity)
         if existing is not None:
             result = {
                 "annotation_id": existing.id,
@@ -79,18 +138,6 @@ def _run_gap_extraction(
             }
             tasks.transition(task_id, "succeeded", progress=1.0, result=result)
             return result
-    if not paper.parsed_markdown_artifact_id:
-        return _fail(tasks, task_id, "paper has no parsed_markdown_artifact")
-    artifact = db.get(Artifact, paper.parsed_markdown_artifact_id)
-    if artifact is None or artifact.is_deleted:
-        return _fail(tasks, task_id, "parsed markdown artifact not found")
-    path = ArtifactService(db).resolve_abs_path(artifact)
-    if not path.exists():
-        return _fail(tasks, task_id, f"parsed markdown file missing: {path}")
-    markdown = compact_markdown(path.read_text(encoding="utf-8"))
-    if not markdown:
-        return _fail(tasks, task_id, "core markdown is empty")
-    input_sha256 = hashlib.sha256(markdown.encode("utf-8")).hexdigest()
 
     row = db.execute(
         select(PaperGapAnnotation).where(
@@ -98,6 +145,9 @@ def _run_gap_extraction(
             PaperGapAnnotation.input_sha256 == input_sha256,
             PaperGapAnnotation.model_name == settings.gap_extractor_model,
             PaperGapAnnotation.prompt_version == PROMPT_VERSION,
+            PaperGapAnnotation.input_mode == context.input_mode,
+            PaperGapAnnotation.knowledge_extraction_run_id
+            == context.knowledge_extraction_run_id,
             PaperGapAnnotation.is_deleted.is_(False),
         )
     ).scalar_one_or_none()
@@ -113,6 +163,13 @@ def _run_gap_extraction(
             artifact_id=artifact.id,
             task_id=task_id,
             input_sha256=input_sha256,
+            knowledge_extraction_run_id=context.knowledge_extraction_run_id,
+            knowledge_context_sha256=context.knowledge_context_sha256,
+            input_mode=context.input_mode,
+            source_knowledge_item_ids=context.knowledge_item_ids,
+            source_evidence_span_ids=context.evidence_span_ids,
+            context_char_count=context.context_char_count,
+            context_fallback_reason=context.fallback_reason,
             schema_version="3.0",
             prompt_version=PROMPT_VERSION,
             model_provider="ollama",
@@ -130,6 +187,13 @@ def _run_gap_extraction(
         db.add(row)
     else:
         row.task_id = task_id
+        row.knowledge_extraction_run_id = context.knowledge_extraction_run_id
+        row.knowledge_context_sha256 = context.knowledge_context_sha256
+        row.input_mode = context.input_mode
+        row.source_knowledge_item_ids = context.knowledge_item_ids
+        row.source_evidence_span_ids = context.evidence_span_ids
+        row.context_char_count = context.context_char_count
+        row.context_fallback_reason = context.fallback_reason
         row.status = "running"
         row.attempts = 0
         row.raw_responses = []
@@ -231,6 +295,9 @@ def _run_gap_extraction(
         "status": "valid",
         "attempts": row.attempts,
         "provider": row.model_provider,
+        "input_mode": row.input_mode,
+        "knowledge_extraction_run_id": row.knowledge_extraction_run_id,
+        "context_fallback_reason": row.context_fallback_reason,
     }
     tasks.transition(task_id, "succeeded", progress=1.0, result=succeeded)
     return succeeded
@@ -349,9 +416,8 @@ def _try_remote_fallback(
     remote_row.model_parameters = remote.model_parameters
     remote_row.fallback_reason = "local_model_unavailable" if local_status == "unavailable" else "local_validation_failed"
     try:
-        # JSON Output only guarantees syntactically valid JSON. The adapter
-        # re-runs the same semantic validator and feeds its errors back to
-        # the model before the result can become a board annotation.
+# JSON Output 只能保证 JSON 语法有效。adapter 会重新运行同一个语义校验器，
+# 并在结果成为棋盘标注前将错误反馈给模型。
         remote_result = remote.extract(markdown)
     except GapExtractorUnavailableError as exc:
         message = str(exc)
@@ -440,6 +506,7 @@ def _get_or_create_remote_row(
             PaperGapAnnotation.input_sha256 == local_row.input_sha256,
             PaperGapAnnotation.model_name == model,
             PaperGapAnnotation.prompt_version == local_row.prompt_version,
+            PaperGapAnnotation.input_mode == local_row.input_mode,
             PaperGapAnnotation.is_deleted.is_(False),
         )
     ).scalar_one_or_none()
@@ -451,6 +518,13 @@ def _get_or_create_remote_row(
             artifact_id=local_row.artifact_id,
             task_id=local_row.task_id,
             input_sha256=local_row.input_sha256,
+            knowledge_extraction_run_id=local_row.knowledge_extraction_run_id,
+            knowledge_context_sha256=local_row.knowledge_context_sha256,
+            input_mode=local_row.input_mode,
+            source_knowledge_item_ids=local_row.source_knowledge_item_ids,
+            source_evidence_span_ids=local_row.source_evidence_span_ids,
+            context_char_count=local_row.context_char_count,
+            context_fallback_reason=local_row.context_fallback_reason,
             schema_version=local_row.schema_version,
             prompt_version=local_row.prompt_version,
             model_provider="remote",
@@ -473,6 +547,13 @@ def _get_or_create_remote_row(
         row.raw_responses = []
         row.output = None
         row.validation_errors = []
+    row.knowledge_extraction_run_id = local_row.knowledge_extraction_run_id
+    row.knowledge_context_sha256 = local_row.knowledge_context_sha256
+    row.input_mode = local_row.input_mode
+    row.source_knowledge_item_ids = local_row.source_knowledge_item_ids
+    row.source_evidence_span_ids = local_row.source_evidence_span_ids
+    row.context_char_count = local_row.context_char_count
+    row.context_fallback_reason = local_row.context_fallback_reason
     db.flush()
     return row
 
@@ -484,26 +565,43 @@ def _fail(
     return {"status": "failed", "error": error, **(result or {})}
 
 
-def _has_valid_annotation(db: Session, paper_id: str) -> bool:
-    """True if the paper already has any valid annotation.
+def _has_valid_annotation(
+    db: Session, paper_id: str, context: GapContextIdentity | None = None
+) -> bool:
+    """判断论文是否已有有效标注。
 
-    A valid result from the local model or the configured remote fallback is
-    already usable by the board. Prompt/model versions are provenance for
-    re-extraction and auditing, not a reason for the incremental "extract all
-    parsed papers" action to rerun an entire corpus. Explicit ``force=True``
-    remains the opt-in path for re-extraction.
+    本地模型或配置的远程 fallback 产生的有效结果已经可以供棋盘使用。Prompt/model 版本
+    用于记录重新抽取和审计所需的 provenance，不是让增量“抽取已解析论文”操作重新运行
+    整个语料库的理由。显式 ``force=True`` 仍是重新抽取的选择路径。
     """
-    return _get_valid_annotation(db, paper_id) is not None
+    return _get_valid_annotation(db, paper_id, context) is not None
 
 
-def _get_valid_annotation(db: Session, paper_id: str) -> PaperGapAnnotation | None:
-    return db.execute(
-        select(PaperGapAnnotation).where(
-            PaperGapAnnotation.paper_id == paper_id,
-            PaperGapAnnotation.status == "valid",
-            PaperGapAnnotation.is_deleted.is_(False),
-        ).limit(1)
-    ).scalars().first()
+def _get_valid_annotation(
+    db: Session,
+    paper_id: str,
+    context: GapContextIdentity | None = None,
+) -> PaperGapAnnotation | None:
+    query = select(PaperGapAnnotation).where(
+        PaperGapAnnotation.paper_id == paper_id,
+        PaperGapAnnotation.status == "valid",
+        PaperGapAnnotation.is_deleted.is_(False),
+    )
+    if context is not None:
+        query = query.where(PaperGapAnnotation.input_mode == context.input_mode)
+        if context.input_mode == KNOWLEDGE_CONTEXT_MODE:
+            query = query.where(
+                PaperGapAnnotation.knowledge_extraction_run_id
+                == context.knowledge_extraction_run_id
+            )
+        elif context.knowledge_extraction_run_id is not None:
+            query = query.where(
+                PaperGapAnnotation.knowledge_extraction_run_id
+                == context.knowledge_extraction_run_id
+            )
+        else:
+            query = query.where(PaperGapAnnotation.knowledge_extraction_run_id.is_(None))
+    return db.execute(query.order_by(PaperGapAnnotation.updated_at.desc()).limit(1)).scalars().first()
 
 
 def spawn_gap_extraction(
@@ -513,21 +611,24 @@ def spawn_gap_extraction(
     *,
     force: bool = False,
 ) -> tuple[str | None, bool]:
-    """Create (or reuse) a gap-extraction task for a paper.
+    """为论文创建或复用 gap 抽取任务。
 
-    Returns ``(task_id, skipped)``. ``skipped=True`` means the paper already has
-    a valid annotation from any provider/version and no task was created (so
-    "抽取已解析论文" on a large corpus only actually enqueues new papers).
-    Use ``force=True`` when a prompt/model migration intentionally requires a
-    re-extraction.
+    返回 ``(task_id, skipped)``。``skipped=True`` 表示论文已经有来自任意 provider/version
+    的有效标注，且没有创建 task（因此大型语料库执行“抽取已解析论文”时只会为新论文入队）。
+    当 prompt/model 迁移确实需要重新抽取时，使用 ``force=True``。
     """
     paper = db.get(Paper, paper_id)
     if paper is None or paper.is_deleted or paper.workspace_id != workspace_id:
         raise ValueError(f"paper not found in workspace: {paper_id}")
     if not paper.parsed_markdown_artifact_id:
         raise ValueError(f"paper has no parsed markdown: {paper_id}")
+    if paper.extract_status in {"pending", "extracting"}:
+        raise GapKnowledgeExtractionPendingError(
+            "knowledge extraction is still running; gap extraction must wait"
+        )
 
-    if not force and _has_valid_annotation(db, paper_id):
+    context_identity = get_gap_context_identity(db, paper)
+    if not force and _has_valid_annotation(db, paper_id, context_identity):
         return None, True
 
     active = db.execute(

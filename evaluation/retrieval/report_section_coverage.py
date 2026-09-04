@@ -1,10 +1,8 @@
-"""Report current parsed-paper section coverage for a workspace.
+"""报告 workspace 当前解析论文的章节覆盖情况。
 
-This is a read-only corpus audit for the experimental section-facet work.  It
-follows each active Paper's current ``chunk_index_artifact_id`` and excludes
-soft-deleted papers/artifacts.  It reports counts only: no chunk text,
-titles, paper ids, or artifact ids are exported.  Section hints therefore
-remain diagnostic evidence and are not used as a hard retrieval filter.
+这是针对实验性 section-facet 工作的只读语料审计。它跟踪每个 active Paper 当前的
+``chunk_index_artifact_id``，并排除已软删除的 paper/artifact。它只报告数量，不导出 chunk
+文本、标题、paper ID 或 artifact ID。因此 section hint 仅作为诊断证据，不用于硬检索过滤。
 """
 
 from __future__ import annotations
@@ -49,8 +47,7 @@ def _read_chunk_sections(path: Path, workspace_id: str, paper_id: str) -> tuple[
                 continue
             total_lines += 1
             try:
-                # PyMuPDF-derived text can contain NUL.  It is not exported;
-                # removing it before JSON validation keeps this audit safe.
+# PyMuPDF 生成的文本可能包含 NUL。它不会导出；在 JSON 校验前移除可保证审计安全。
                 record = ChunkRecord.model_validate_json(line.replace("\x00", ""))
             except (ValueError, TypeError):
                 invalid_lines += 1

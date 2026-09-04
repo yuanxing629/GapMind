@@ -1,14 +1,13 @@
-"""Diagnose WHERE similar_work / counter_evidence gold papers get lost.
+"""诊断 similar_work / counter_evidence Gold 论文在哪一步丢失。
 
-Read-only. For a source paper + a gold paper set, runs the recall stage of
-``find_similar_work`` (and the counter pipeline) step by step and reports
-whether each gold paper survives:
-  1. vector recall (top_k*4 / top_k*3)
-  2. low-value section filter
-  3. per-paper chunk cap (similar only)
-  4. rerank → top_k
+只读。给定源论文和 Gold 论文集合，逐步运行 ``find_similar_work`` 的召回阶段
+（以及反证流水线），报告每篇 Gold 论文是否通过：
+  1. 向量召回（top_k*4 / top_k*3）
+  2. 低价值章节过滤
+  3. 单论文分块上限（仅 similar）
+  4. 重排 -> top_k
 
-Usage (from backend/):
+用法（从 backend/ 目录运行）：
     .venv/Scripts/python.exe scripts/diag_retrieval_loss.py --source <paper_id> --golds g1,g2 --purpose similar
 """
 
@@ -44,7 +43,7 @@ def paper_title(db, pid: str | None) -> str:
 
 def diagnose_similar(db, workspace_id: str, source_id: str, golds: list[str]) -> None:
     gateway = get_embedding_gateway()
-    chunks = _load_chunks_jsonl(workspace_id, source_id)
+    chunks = _load_chunks_jsonl(db, workspace_id, source_id)
     idx = _spread_sample_indices(len(chunks), max_samples=5)
     query_texts = [chunks[i].text for i in idx]
     vecs = gateway.embed_texts(query_texts).embeddings
@@ -74,7 +73,7 @@ def diagnose_similar(db, workspace_id: str, source_id: str, golds: list[str]) ->
             print(f"    per-paper cap({SIMILAR_WORK_MAX_CHUNKS_PER_PAPER}): {len(capped)} chunks kept")
             print(f"    top candidate chunk preview: {capped[0].get('text','')[:90]!r}")
 
-    # rerank: does any gold survive into top10 when reranked against query_texts[0]?
+# 重排：以 query_texts[0] 为依据重排后，是否有 Gold 论文进入 Top-10？
     filtered = [h for h in all_hits if not _is_low_value_section(h.get("section"))] or all_hits
     by_paper: dict[str, list] = {}
     for h in filtered:
@@ -85,7 +84,7 @@ def diagnose_similar(db, workspace_id: str, source_id: str, golds: list[str]) ->
         cands.extend(hs[:SIMILAR_WORK_MAX_CHUNKS_PER_PAPER])
     from app.domains.retrieval.service import _rerank_hits
 
-    # (a) raw Milvus-score top10 (no rerank)
+# (a) 原始 Milvus 分数 Top-10（不重排）
     raw = sorted(cands, key=lambda h: h.get("score", 0), reverse=True)[:10]
     raw_pids = [h.get("paper_id") for h in raw]
     print("\n  raw-score top10:")
@@ -94,7 +93,7 @@ def diagnose_similar(db, workspace_id: str, source_id: str, golds: list[str]) ->
     for g in golds:
         print(f"    GOLD {paper_title(db, g)[:30]} -> {'SURVIVES' if g in raw_pids else 'LOST at raw'}")
 
-    # (b) rerank with sample-chunk#0 only (current behavior)
+# (b) 仅使用 sample-chunk#0 重排（当前行为）
     items = _rerank_hits(query_texts[0][:500], cands, 10)
     top_pids = [getattr(i, "paper_id", None) for i in items]
     print("\n  rerank(chunk#0) top10:")
@@ -103,7 +102,7 @@ def diagnose_similar(db, workspace_id: str, source_id: str, golds: list[str]) ->
     for g in golds:
         print(f"    GOLD {paper_title(db, g)[:30]} -> {'SURVIVES' if g in top_pids else 'LOST at rerank'}")
 
-    # (c) rerank with all sample chunks concatenated (representative query)
+# (c) 拼接所有示例分块后重排（代表性查询）
     multi_query = ("\n".join(query_texts))[:1000]
     items2 = _rerank_hits(multi_query, cands, 10)
     top2 = [getattr(i, "paper_id", None) for i in items2]
@@ -113,7 +112,7 @@ def diagnose_similar(db, workspace_id: str, source_id: str, golds: list[str]) ->
     for g in golds:
         print(f"    GOLD {paper_title(db, g)[:30]} -> {'SURVIVES' if g in top2 else 'LOST at rerank'}")
 
-    # (d) rerank(chunk#0) + paper-dedup: one result per paper so 10 slots = 10 distinct papers
+# (d) rerank(chunk#0) + 论文去重：每篇论文一个结果，因此 10 个槽位对应 10 篇不同论文
     seen_papers: set[str] = set()
     dedup_items: list = []
     for i in items:  # items is sorted by rerank score desc
@@ -130,7 +129,7 @@ def diagnose_similar(db, workspace_id: str, source_id: str, golds: list[str]) ->
     for g in golds:
         print(f"    GOLD {paper_title(db, g)[:30]} -> {'SURVIVES' if g in topd else 'LOST'}")
 
-    # (e) rerank ALL candidates -> per-paper max score -> top10 papers
+# (e) 重排所有候选 -> 按论文取最高分 -> Top-10 论文
     all_items = _rerank_hits(query_texts[0][:500], cands, len(cands))
     by_pid: dict[str, Any] = {}
     for i in all_items:
@@ -147,8 +146,8 @@ def diagnose_similar(db, workspace_id: str, source_id: str, golds: list[str]) ->
     for g in golds:
         print(f"    GOLD {paper_title(db, g)[:30]} -> {'SURVIVES' if g in tope else 'LOST'}")
 
-    # (f) HYBRID: 0.5*normalized raw + 0.5*rerank, then per-paper max -> top10
-    # raw score -> item score map, per chunk id
+# (f) HYBRID：0.5*归一化原始分数 + 0.5*重排分数，然后按论文取最高分 -> Top-10
+# 原始分数 -> 项分数映射，按分块 ID 索引
     raw_by_chunk = {h.get("chunk_id"): h.get("score", 0) for h in cands}
     if raw_by_chunk:
         rmin, rmax = min(raw_by_chunk.values()), max(raw_by_chunk.values())

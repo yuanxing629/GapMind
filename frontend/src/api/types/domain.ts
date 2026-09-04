@@ -1,13 +1,11 @@
-// Hand-rolled type aliases for Paper, Task, Timeline, Artifact — re-exported
-// from the auto-generated OpenAPI schemas.
+// Paper、Task、Timeline、Artifact 的手写类型别名——从自动生成的 OpenAPI schemas 重新导出。
 //
-// Run `npm run gen:api` after touching the corresponding Pydantic models to
-// keep these in sync. Do NOT add hand-written fields here; if a field is
-// missing, add it to the backend schema and regenerate.
+// 修改对应 Pydantic models 后运行 `npm run gen:api` 保持同步。不要在这里添加手写字段；
+// 如果缺少字段，应添加到后端 schema 并重新生成。
 //
-// The Omit+Pick overrides relax Pydantic `dict[str, Any]` (rendered as
-// `Record<string, never>` by openapi-typescript) to a friendlier
-// `Record<string, unknown>` so component code can iterate without casts.
+// Omit+Pick 覆盖将 Pydantic `dict[str, Any]`（openapi-typescript 生成的
+// `Record<string, never>`）放宽为更易用的 `Record<string, unknown>`，使组件代码
+// 无需类型转换即可遍历。
 
 import type { components } from "./api.gen";
 

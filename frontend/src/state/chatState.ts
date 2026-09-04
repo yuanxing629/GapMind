@@ -94,8 +94,8 @@ export function retrievalDiagnosticCopy(code?: string | null): { title: string; 
 }
 
 /**
- * Failed messages are persisted so a reload must keep their remediation copy,
- * without leaking raw upstream errors into the research workspace UI.
+* 失败消息会持久化，因此重新加载时必须保留修复文案，
+* 同时不将原始上游错误泄露到研究 workspace UI。
  */
 export function chatFailureMessage(
   message: Pick<ChatMessage, "grounding_status" | "error_message" | "retrieval_diagnostic_code">,

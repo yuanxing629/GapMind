@@ -1,12 +1,11 @@
-"""Create workspaces table.
+"""创建 workspaces 表。
 
-Revision ID: 0002_workspaces
-Revises: 0001_initial
-Create Date: 2026-07-18
+Revision ID：0002_workspaces
+Revises：0001_initial
+创建日期：2026-07-18
 
-Phase 1a: First domain table. The Workspace is the core scope object; every
-future domain table (artifacts, papers, knowledge_items, tasks, timeline_events)
-will carry a workspace_id FK back to this table.
+Phase 1a：第一张领域表。Workspace 是核心范围对象；未来每张领域表
+（artifacts、papers、knowledge_items、tasks、timeline_events）都将携带指回此表的 workspace_id FK。
 """
 from __future__ import annotations
 
@@ -17,7 +16,7 @@ import sqlalchemy as sa
 from alembic import op
 from app.db.base import UUIDString
 
-# revision identifiers, used by Alembic.
+# revision 标识，供 Alembic 使用。
 revision: str = "0002_workspaces"
 down_revision: Union[str, None] = "0001_initial"
 branch_labels: Union[str, Sequence[str], None] = None

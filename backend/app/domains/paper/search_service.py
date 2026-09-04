@@ -1,4 +1,4 @@
-"""Database operations for paper search history and favorites."""
+"""论文搜索历史与收藏的数据库操作。"""
 
 from __future__ import annotations
 

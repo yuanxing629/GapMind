@@ -1,4 +1,4 @@
-"""Knowledge service layer (Phase 3: read + write)."""
+"""Knowledge service 层（Phase 3：读取 + 写入）。"""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import hashlib
 import json
 import re
 import unicodedata
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
@@ -39,6 +40,7 @@ GRAPH_MODE_TYPES = {
     "claims": {"claim", "limitation"},
     "evidence": {"method", "task", "dataset", "claim", "limitation", "evidence"},
 }
+WORKSPACE_ENTITY_TYPES = {"method", "task", "dataset"}
 
 DISPLAY_TYPES = {
     "paper": "论文",
@@ -71,6 +73,8 @@ class GraphProjection:
     node_counts: dict[str, int]
     relation_counts: dict[str, int]
     workspace_counts: dict[str, int]
+    truncated: bool = False
+    truncation_reason: str | None = None
 
 
 class KnowledgeItemNotFoundError(Exception):
@@ -86,24 +90,29 @@ class ExtractionRunNotFoundError(Exception):
 
 
 class KnowledgeItemReviewError(ValueError):
-    """Raised when a human review payload is rejected by the service.
+    """人工审核载荷被 service 拒绝时抛出的异常。
 
-    Subclasses ``ValueError`` so existing callers that catch generic value
-    errors continue to work, but the new central exception handler maps it
-    to a 422 with error code ``invalid_review``.
+    继承 ``ValueError``，使捕获通用值错误的既有调用方继续工作；新的集中式异常处理器
+    会将其映射为 422，并使用错误码 ``invalid_review``。
     """
 
 
 class KnowledgeService:
-    """Knowledge queries + writes for Phase 3."""
+    """Phase 3 的 Knowledge 查询与写入。"""
 
     def __init__(self, db: Session) -> None:
         self.db = db
 
-    # -------------------------------------------------------- knowledge items
-    def get_item(self, item_id: str) -> KnowledgeItem:
+# -------------------------------------------------------- 知识条目
+    def get_item(self, item_id: str, *, workspace_id: str) -> KnowledgeItem:
         self._validate_uuid(item_id)
-        item = self.db.get(KnowledgeItem, item_id)
+        item = self.db.scalar(
+            select(KnowledgeItem).where(
+                KnowledgeItem.id == item_id,
+                KnowledgeItem.workspace_id == workspace_id,
+                KnowledgeItem.is_deleted.is_(False),
+            )
+        )
         if item is None or item.is_deleted:
             raise KnowledgeItemNotFoundError(item_id)
         return item
@@ -144,7 +153,7 @@ class KnowledgeService:
         total = int(self.db.execute(total_q).scalar() or 0)
         return items, total
 
-    # -------------------------------------------------------- relations
+# -------------------------------------------------------- 关系
     def list_relations(
         self,
         *,
@@ -184,10 +193,9 @@ class KnowledgeService:
         relation_type: str | None = None,
         limit: int = 250,
     ) -> tuple[list[KnowledgeItem], list[KnowledgeRelation], int, int]:
-        """Return a bounded graph projection for a workspace.
+        """返回 workspace 的有界 graph 投影。
 
-        Relations are restricted to the selected node set so the frontend
-        receives a self-contained graph and does not need to join IDs itself.
+        关系会限制在选中的节点集合内，使前端收到自包含图谱，无需自行连接 ID。
         """
         limit = max(1, min(limit, 500))
         item_query = select(KnowledgeItem).where(
@@ -248,11 +256,30 @@ class KnowledgeService:
         projection_mode: str = "all",
         limit: int = 100,
         offset: int = 0,
+        edge_limit: int = 160,
+        include_related_papers: bool = False,
+        focus_node_id: str | None = None,
     ):
-        """Build an appendable graph batch with exact aggregate metadata."""
+        """构建带精确聚合元数据、可追加的 graph 批次。"""
 
         limit = max(1, min(limit, 200))
         offset = max(0, offset)
+        if projection_mode == "workspace":
+            return self.workspace_graph_projection(
+                workspace_id=workspace_id,
+                type_filter=type_filter,
+                paper_id=paper_id,
+                query_text=query_text,
+                min_confidence=min_confidence,
+                relation_type=relation_type,
+                status_filter=status_filter,
+                node_limit=limit,
+                edge_limit=edge_limit,
+                offset=offset,
+                include_related_papers=include_related_papers,
+                focus_node_id=focus_node_id,
+            )
+
         item_query = self._filtered_item_query(
             workspace_id=workspace_id,
             type_filter=type_filter,
@@ -279,6 +306,7 @@ class KnowledgeService:
             node_limit=limit,
             include_mentions=projection_mode in {"all", "evidence"},
             include_entities=projection_mode != "claims",
+            strict_paper_ids={paper_id} if paper_id and not include_related_papers else None,
         )
         node_counts, relation_counts, total_nodes, total_edges = self._graph_aggregate_counts(
             workspace_id=workspace_id,
@@ -286,10 +314,10 @@ class KnowledgeService:
             relation_type=relation_type,
             include_mentions=projection_mode in {"all", "evidence"},
             include_entities=projection_mode != "claims",
+            strict_paper_ids={paper_id} if paper_id and not include_related_papers else None,
         )
-        # Pagination advances the primary KnowledgeItem cursor. Structural
-        # nodes are attached to each batch, so has_more must never promise a
-        # page that the client cannot actually request.
+# 分页推进主 KnowledgeItem 游标。结构节点会附加到每个批次，因此 has_more
+# 不能承诺客户端实际上无法请求的下一页。
         has_more = offset + len(items) < total_knowledge
         return GraphProjection(
             nodes=nodes,
@@ -300,6 +328,8 @@ class KnowledgeService:
             node_counts=node_counts,
             relation_counts=relation_counts,
             workspace_counts=self._workspace_graph_counts(workspace_id),
+            truncated=has_more,
+            truncation_reason="node_limit" if has_more else None,
         )
 
     def graph_neighbors(
@@ -311,11 +341,10 @@ class KnowledgeService:
         limit: int = 100,
         relation_type: str | None = None,
     ):
-        """Return a bounded neighborhood for a graph node.
+        """返回 graph 节点的有界邻域。
 
-        Node IDs use ``paper:``, ``entity:``, ``mention:`` prefixes for the
-        structural layers; knowledge item IDs remain unprefixed for backward
-        compatibility with the original graph API.
+        结构层节点 ID 使用 ``paper:``、``entity:``、``mention:`` 前缀；
+        knowledge item ID 保持无前缀，以兼容原始 graph API。
         """
         from app.domains.knowledge.schemas import (
             KnowledgeGraphEdgeRead,
@@ -329,9 +358,7 @@ class KnowledgeService:
         extra_paper_ids: set[str] = set()
         extra_entity_ids: set[str] = set()
         if kind == "knowledge":
-            seed = self.get_item(raw_id)
-            if seed.workspace_id != workspace_id:
-                raise KnowledgeItemNotFoundError(raw_id)
+            seed = self.get_item(raw_id, workspace_id=workspace_id)
             visited = {seed.id}
             frontier = {seed.id}
             for _ in range(depth):
@@ -383,14 +410,26 @@ class KnowledgeService:
                 ).scalars().all()
             )
         elif kind == "mention":
-            mention = self.db.get(PaperMention, raw_id)
-            if mention is None or mention.is_deleted or mention.workspace_id != workspace_id:
+            mention = self.db.scalar(
+                select(PaperMention).where(
+                    PaperMention.id == raw_id,
+                    PaperMention.workspace_id == workspace_id,
+                    PaperMention.is_deleted.is_(False),
+                )
+            )
+            if mention is None:
                 raise KnowledgeItemNotFoundError(raw_id)
             extra_paper_ids.add(mention.paper_id)
             extra_entity_ids.add(mention.canonical_entity_id)
             if mention.knowledge_item_id:
-                item = self.db.get(KnowledgeItem, mention.knowledge_item_id)
-                if item and not item.is_deleted and item.workspace_id == workspace_id:
+                item = self.db.scalar(
+                    select(KnowledgeItem).where(
+                        KnowledgeItem.id == mention.knowledge_item_id,
+                        KnowledgeItem.workspace_id == workspace_id,
+                        KnowledgeItem.is_deleted.is_(False),
+                    )
+                )
+                if item:
                     items = [item]
         else:
             raise KnowledgeItemNotFoundError(node_id)
@@ -406,6 +445,525 @@ class KnowledgeService:
             include_mentions=True,
         )
         return nodes, edges
+
+    def workspace_graph_projection(
+        self,
+        *,
+        workspace_id: str,
+        type_filter: str | None = None,
+        paper_id: str | None = None,
+        query_text: str | None = None,
+        min_confidence: float | None = None,
+        relation_type: str | None = None,
+        status_filter: str | None = None,
+        node_limit: int = 80,
+        edge_limit: int = 160,
+        offset: int = 0,
+        include_related_papers: bool = False,
+        focus_node_id: str | None = None,
+        focus_depth: int = 1,
+    ) -> GraphProjection:
+        """围绕论文和共享 canonical entity 投影 workspace map。
+
+        这是基于现有 paper、knowledge-item、mention、relation 和 evidence 表的只读投影。
+        即使异常或旧数据行带有 canonical entity id，claim 和 limitation 也会排除在跨论文实体投影之外。
+        """
+        from app.domains.knowledge.schemas import (
+            KnowledgeGraphEdgeRead,
+            KnowledgeGraphNodeRead,
+        )
+
+        node_limit = max(1, min(node_limit, 200))
+        edge_limit = max(1, min(edge_limit, 400))
+        offset = max(0, offset)
+
+        papers = list(self.db.execute(
+            select(Paper).where(
+                Paper.workspace_id == workspace_id,
+                Paper.is_deleted.is_(False),
+            ).order_by(Paper.created_at.desc())
+        ).scalars().all())
+        paper_map = {paper.id: paper for paper in papers}
+
+        entities = list(self.db.execute(
+            select(CanonicalEntity).where(
+                CanonicalEntity.workspace_id == workspace_id,
+                CanonicalEntity.is_deleted.is_(False),
+                CanonicalEntity.type.in_(WORKSPACE_ENTITY_TYPES),
+            )
+        ).scalars().all())
+        entity_map = {entity.id: entity for entity in entities}
+
+        all_items = list(self.db.execute(
+            select(KnowledgeItem).where(
+                KnowledgeItem.workspace_id == workspace_id,
+                KnowledgeItem.is_deleted.is_(False),
+            )
+        ).scalars().all())
+        all_mentions = list(self.db.execute(
+            select(PaperMention).where(
+                PaperMention.workspace_id == workspace_id,
+                PaperMention.is_deleted.is_(False),
+            )
+        ).scalars().all())
+
+        def item_matches(item: KnowledgeItem) -> bool:
+            if item.paper_id not in paper_map or item.type not in WORKSPACE_ENTITY_TYPES:
+                return False
+            if type_filter and item.type != type_filter:
+                return False
+            if status_filter and item.status != status_filter:
+                return False
+            if min_confidence is not None and item.confidence < min_confidence:
+                return False
+            return True
+
+        matched_items = [item for item in all_items if item_matches(item)]
+        matched_item_ids = {item.id for item in matched_items}
+
+        def mention_matches(mention: PaperMention) -> bool:
+            if mention.paper_id not in paper_map or mention.canonical_entity_id not in entity_map:
+                return False
+            if type_filter and entity_map[mention.canonical_entity_id].type != type_filter:
+                return False
+            if min_confidence is not None and mention.confidence < min_confidence:
+                return False
+# status 过滤器描述知识条目的审核状态。Mention 是证据位置，不会自行获得该状态。
+            if status_filter and mention.knowledge_item_id not in matched_item_ids:
+                return False
+            return True
+
+        matched_mentions = [mention for mention in all_mentions if mention_matches(mention)]
+
+        if paper_id:
+            scope_paper_ids = {paper_id} if paper_id in paper_map else set()
+        elif type_filter or status_filter or min_confidence is not None:
+            scope_paper_ids = {
+                item.paper_id for item in matched_items if item.paper_id
+            }
+            scope_paper_ids.update(mention.paper_id for mention in matched_mentions)
+        else:
+            scope_paper_ids = set(paper_map)
+
+        if paper_id and include_related_papers and scope_paper_ids:
+            seed_entity_ids = {
+                item.canonical_entity_id
+                for item in matched_items
+                if item.paper_id in scope_paper_ids and item.canonical_entity_id in entity_map
+            }
+            seed_entity_ids.update(
+                mention.canonical_entity_id
+                for mention in matched_mentions
+                if mention.paper_id in scope_paper_ids
+            )
+            scope_paper_ids.update(
+                mention.paper_id
+                for mention in all_mentions
+                if (
+                    not mention.is_deleted
+                    and mention.workspace_id == workspace_id
+                    and mention.canonical_entity_id in seed_entity_ids
+                    and mention.paper_id in paper_map
+                )
+            )
+            scope_paper_ids.update(
+                item.paper_id
+                for item in all_items
+                if (
+                    not item.is_deleted
+                    and item.workspace_id == workspace_id
+                    and item.canonical_entity_id in seed_entity_ids
+                    and item.paper_id in paper_map
+                    and item.type in WORKSPACE_ENTITY_TYPES
+                )
+            )
+
+        term = query_text.strip().lower() if query_text else ""
+        matching_entity_ids: set[str] = set()
+        matching_paper_ids: set[str] = set()
+        matching_item_paper_ids: set[str] = set()
+        if term:
+            matching_entity_ids = {
+                entity.id
+                for entity in entities
+                if term in entity.canonical_name.lower()
+                or any(term in alias.lower() for alias in (entity.aliases or []))
+            }
+            matching_paper_ids = {
+                paper.id for paper in papers if term in paper.title.lower()
+            }
+            matching_item_paper_ids = {
+                item.paper_id
+                for item in all_items
+                if item.paper_id in paper_map
+                and item.type in WORKSPACE_ENTITY_TYPES
+                and term in item.canonical_name.lower()
+            }
+            matching_entity_ids.update(
+                item.canonical_entity_id
+                for item in all_items
+                if item.paper_id in paper_map
+                and item.type in WORKSPACE_ENTITY_TYPES
+                and term in item.canonical_name.lower()
+                and item.canonical_entity_id in entity_map
+            )
+            matching_paper_ids.update(matching_item_paper_ids)
+            matching_paper_ids.update(
+                item.paper_id
+                for item in all_items
+                if item.paper_id in paper_map
+                and item.canonical_entity_id in matching_entity_ids
+            )
+            matching_paper_ids.update(
+                mention.paper_id
+                for mention in all_mentions
+                if mention.paper_id in paper_map
+                and mention.canonical_entity_id in matching_entity_ids
+            )
+            matching_entity_ids.update(
+                item.canonical_entity_id
+                for item in all_items
+                if item.paper_id in matching_paper_ids
+                and item.type in WORKSPACE_ENTITY_TYPES
+                and item.canonical_entity_id in entity_map
+            )
+            matching_entity_ids.update(
+                mention.canonical_entity_id
+                for mention in all_mentions
+                if mention.paper_id in matching_paper_ids
+                and mention.canonical_entity_id in entity_map
+            )
+            scope_paper_ids &= matching_paper_ids
+
+        visible_items = [
+            item for item in matched_items
+            if item.paper_id in scope_paper_ids
+            and (not term or item.canonical_entity_id in matching_entity_ids)
+        ]
+        visible_mentions = [
+            mention for mention in matched_mentions
+            if mention.paper_id in scope_paper_ids
+            and (not term or mention.canonical_entity_id in matching_entity_ids)
+        ]
+        def item_has_valid_entity(item: KnowledgeItem) -> bool:
+            return (
+                item.canonical_entity_id in entity_map
+                and entity_map[item.canonical_entity_id].type == item.type
+            )
+
+        visible_entity_ids = {
+            item.canonical_entity_id
+            for item in visible_items
+            if item_has_valid_entity(item)
+        }
+        visible_entity_ids.update(
+            mention.canonical_entity_id
+            for mention in visible_mentions
+            if mention.canonical_entity_id in entity_map
+        )
+        visible_paper_ids = {
+            paper_id_value for paper_id_value in scope_paper_ids if paper_id_value in paper_map
+        }
+
+        visible_item_ids = {item.id for item in visible_items}
+        evidence_by_item: dict[str, set[str]] = defaultdict(set)
+        evidence_rows = list(self.db.execute(
+            select(EvidenceSpan).where(
+                EvidenceSpan.workspace_id == workspace_id,
+                EvidenceSpan.is_deleted.is_(False),
+                EvidenceSpan.knowledge_item_id.in_(list(visible_item_ids))
+                if visible_item_ids else False,
+            )
+        ).scalars().all())
+        for evidence in evidence_rows:
+            evidence_by_item[evidence.knowledge_item_id].add(evidence.id)
+
+        item_ids_by_entity: dict[str, set[str]] = defaultdict(set)
+        paper_ids_by_entity: dict[str, set[str]] = defaultdict(set)
+        item_confidence_by_entity: dict[str, list[float]] = defaultdict(list)
+        for item in visible_items:
+            if not item_has_valid_entity(item) or item.canonical_entity_id not in visible_entity_ids:
+                continue
+            item_ids_by_entity[item.canonical_entity_id].add(item.id)
+            if item.paper_id:
+                paper_ids_by_entity[item.canonical_entity_id].add(item.paper_id)
+            item_confidence_by_entity[item.canonical_entity_id].append(item.confidence)
+
+        mention_ids_by_entity: dict[str, set[str]] = defaultdict(set)
+        mention_count_by_paper_entity: dict[tuple[str, str], int] = defaultdict(int)
+        mention_confidence_by_entity: dict[str, list[float]] = defaultdict(list)
+        for mention in visible_mentions:
+            if mention.canonical_entity_id not in visible_entity_ids:
+                continue
+            mention_ids_by_entity[mention.canonical_entity_id].add(mention.id)
+            paper_ids_by_entity[mention.canonical_entity_id].add(mention.paper_id)
+            mention_count_by_paper_entity[(mention.paper_id, mention.canonical_entity_id)] += 1
+            mention_confidence_by_entity[mention.canonical_entity_id].append(mention.confidence)
+
+        entity_stats: dict[str, dict] = {}
+        for entity_id in visible_entity_ids:
+            entity = entity_map[entity_id]
+            item_ids = item_ids_by_entity[entity_id]
+            supporting_paper_ids = sorted(paper_ids_by_entity[entity_id])
+            entity_stats[entity_id] = {
+                "paper_ids": supporting_paper_ids,
+                "item_ids": item_ids,
+                "mention_count": len(mention_ids_by_entity[entity_id]),
+                "knowledge_item_count": len(item_ids),
+                "evidence_count": len({
+                    evidence_id
+                    for item_id in item_ids
+                    for evidence_id in evidence_by_item.get(item_id, set())
+                }),
+                "confirmed_item_count": sum(
+                    1 for item in visible_items
+                    if item.id in item_ids and item.status == "human_confirmed"
+                ),
+                "confidence": max(
+                    item_confidence_by_entity[entity_id]
+                    + mention_confidence_by_entity[entity_id]
+                    + [0.0]
+                ),
+                "entity": entity,
+            }
+
+        paper_stats: dict[str, dict] = defaultdict(
+            lambda: {
+                "item_ids": set(),
+                "mention_count": 0,
+                "evidence_ids": set(),
+                "confirmed_item_count": 0,
+            }
+        )
+        for item in visible_items:
+            if item.paper_id in visible_paper_ids:
+                paper_stats[item.paper_id]["item_ids"].add(item.id)
+                paper_stats[item.paper_id]["evidence_ids"].update(evidence_by_item.get(item.id, set()))
+                if item.status == "human_confirmed":
+                    paper_stats[item.paper_id]["confirmed_item_count"] += 1
+        for mention in visible_mentions:
+            if mention.paper_id in visible_paper_ids:
+                paper_stats[mention.paper_id]["mention_count"] += 1
+
+        nodes: list[KnowledgeGraphNodeRead] = []
+        for paper_id_value in visible_paper_ids:
+            paper = paper_map[paper_id_value]
+            stats = paper_stats[paper_id_value]
+            nodes.append(KnowledgeGraphNodeRead(
+                id=f"paper:{paper.id}", label=paper.title, type="paper",
+                workspace_id=workspace_id, paper_id=paper.id, confidence=1.0, status=paper.parse_status,
+                content={
+                    "year": paper.year,
+                    "source": paper.source,
+                    "parse_status": paper.parse_status,
+                    "extract_status": paper.extract_status,
+                    "has_pdf": paper.primary_artifact_id is not None,
+                },
+                node_kind="paper", paper_title=paper.title,
+                display_label=paper.title, display_type=DISPLAY_TYPES["paper"],
+                paper_count=1, mention_count=stats["mention_count"],
+                knowledge_item_count=len(stats["item_ids"]),
+                evidence_count=len(stats["evidence_ids"]),
+                confirmed_item_count=stats["confirmed_item_count"],
+                supporting_paper_ids=[paper.id], supporting_paper_ids_truncated=False,
+                review_status=paper.parse_status,
+            ))
+        for _entity_id, stats in entity_stats.items():
+            entity = stats["entity"]
+            nodes.append(KnowledgeGraphNodeRead(
+                id=f"entity:{entity.id}", label=entity.canonical_name,
+                type="canonical_entity", workspace_id=workspace_id, confidence=stats["confidence"],
+                status=entity.status, content={"aliases": entity.aliases or [], "projection": "workspace"},
+                node_kind="canonical_entity", canonical_entity_id=entity.id,
+                entity_type=entity.type, display_label=entity.canonical_name,
+                display_type=DISPLAY_TYPES.get(entity.type, entity.type),
+                importance_score=round(min(
+                    1.0,
+                    len(stats["paper_ids"]) / 5 if stats["paper_ids"] else 0.0,
+                ), 4),
+                evidence_count=stats["evidence_count"],
+                paper_count=len(stats["paper_ids"]),
+                mention_count=stats["mention_count"],
+                knowledge_item_count=stats["knowledge_item_count"],
+                confirmed_item_count=stats["confirmed_item_count"],
+                aliases=sorted(set(entity.aliases or [])),
+                supporting_paper_ids=stats["paper_ids"],
+                supporting_paper_ids_truncated=False,
+                review_status=entity.status,
+            ))
+
+        item_to_entity = {
+            item.id: item.canonical_entity_id
+            for item in visible_items
+            if item_has_valid_entity(item) and item.canonical_entity_id in visible_entity_ids
+        }
+        visible_item_map = {item.id: item for item in visible_items}
+        pair_stats: dict[tuple[str, str], dict] = defaultdict(
+            lambda: {"item_ids": set(), "mention_count": 0, "evidence_ids": set(), "confidence": 0.0}
+        )
+        for item in visible_items:
+            if item.paper_id and item.id in item_to_entity:
+                stats = pair_stats[(item.paper_id, item_to_entity[item.id])]
+                stats["item_ids"].add(item.id)
+                stats["evidence_ids"].update(evidence_by_item.get(item.id, set()))
+                stats["confidence"] = max(stats["confidence"], item.confidence)
+        for mention in visible_mentions:
+            stats = pair_stats[(mention.paper_id, mention.canonical_entity_id)]
+            stats["mention_count"] += 1
+            stats["confidence"] = max(stats["confidence"], mention.confidence)
+
+        edges: list[KnowledgeGraphEdgeRead] = []
+        for (paper_id_value, entity_id), stats in pair_stats.items():
+            occurrence_count = max(stats["mention_count"], len(stats["item_ids"]))
+            if occurrence_count == 0:
+                continue
+            edges.append(KnowledgeGraphEdgeRead(
+                id=f"paper_entity:{paper_id_value}:{entity_id}",
+                source=f"paper:{paper_id_value}", target=f"entity:{entity_id}",
+                relation_type="paper_entity", confidence=stats["confidence"],
+                payload={"projection": "workspace"}, display_label="涉及实体",
+                relation_group="structural", occurrence_count=occurrence_count,
+                paper_count=1, evidence_count=len(stats["evidence_ids"]),
+                supporting_paper_ids=[paper_id_value],
+                supporting_item_ids=sorted(stats["item_ids"]),
+            ))
+
+        relations = list(self.db.execute(
+            select(KnowledgeRelation).where(
+                KnowledgeRelation.workspace_id == workspace_id,
+                KnowledgeRelation.is_deleted.is_(False),
+                KnowledgeRelation.source_id.in_(list(visible_item_ids))
+                if visible_item_ids else False,
+                KnowledgeRelation.target_id.in_(list(visible_item_ids))
+                if visible_item_ids else False,
+            )
+        ).scalars().all())
+        if relation_type:
+            relations = [relation for relation in relations if relation.relation_type == relation_type]
+        relation_stats: dict[tuple[str, str, str], dict] = defaultdict(
+            lambda: {
+                "relation_ids": [], "paper_ids": set(), "item_ids": set(),
+                "evidence_ids": set(), "confidence": 0.0,
+            }
+        )
+        for relation in relations:
+            source_entity_id = item_to_entity.get(relation.source_id)
+            target_entity_id = item_to_entity.get(relation.target_id)
+            if not source_entity_id or not target_entity_id or source_entity_id == target_entity_id:
+                continue
+            key = (source_entity_id, target_entity_id, relation.relation_type)
+            stats = relation_stats[key]
+            stats["relation_ids"].append(relation.id)
+            stats["item_ids"].update({relation.source_id, relation.target_id})
+            for item_id in (relation.source_id, relation.target_id):
+                item = visible_item_map.get(item_id)
+                if item and item.paper_id:
+                    stats["paper_ids"].add(item.paper_id)
+                stats["evidence_ids"].update(evidence_by_item.get(item_id, set()))
+            stats["confidence"] = max(stats["confidence"], relation.confidence)
+
+        for (source_entity_id, target_entity_id, rel_type), stats in relation_stats.items():
+            edges.append(KnowledgeGraphEdgeRead(
+                id=f"entity_relation:{source_entity_id}:{target_entity_id}:{rel_type}",
+                source=f"entity:{source_entity_id}", target=f"entity:{target_entity_id}",
+                relation_type=rel_type, confidence=stats["confidence"],
+                payload={
+                    "projection": "workspace",
+                    "source_relation_ids": sorted(stats["relation_ids"]),
+                },
+                display_label=RELATION_LABELS.get(rel_type, rel_type),
+                relation_group="semantic", occurrence_count=len(stats["relation_ids"]),
+                paper_count=len(stats["paper_ids"]),
+                evidence_count=len(stats["evidence_ids"]),
+                supporting_paper_ids=sorted(stats["paper_ids"]),
+                supporting_item_ids=sorted(stats["item_ids"]),
+            ))
+
+        node_by_id = {node.id: node for node in nodes}
+        if focus_node_id:
+            if focus_node_id not in node_by_id:
+                raise KnowledgeItemNotFoundError(focus_node_id)
+            focused_ids = {focus_node_id}
+            for _ in range(max(1, min(focus_depth, 2))):
+                focused_ids.update(
+                    edge.target if edge.source in focused_ids else edge.source
+                    for edge in edges
+                    if edge.source in focused_ids or edge.target in focused_ids
+                )
+            nodes = [node for node in nodes if node.id in focused_ids]
+            edges = [
+                edge for edge in edges
+                if edge.source in focused_ids and edge.target in focused_ids
+            ]
+
+# 交替选择实体和论文行，使较小的第一页也能同时包含工作区地图预期的两类节点。
+        entity_nodes = sorted(
+            [node for node in nodes if node.node_kind == "canonical_entity"],
+            key=lambda node: (
+                -node.paper_count, -node.confirmed_item_count,
+                -node.evidence_count, -node.mention_count, -node.confidence, node.label.lower(),
+            ),
+        )
+        paper_nodes = sorted(
+            [node for node in nodes if node.node_kind == "paper"],
+            key=lambda node: (-node.knowledge_item_count, -node.evidence_count, node.label.lower()),
+        )
+        ordered_nodes: list[KnowledgeGraphNodeRead] = []
+        for index in range(max(len(entity_nodes), len(paper_nodes))):
+            if index < len(entity_nodes):
+                ordered_nodes.append(entity_nodes[index])
+            if index < len(paper_nodes):
+                ordered_nodes.append(paper_nodes[index])
+        nodes = ordered_nodes
+
+        node_degree: dict[str, int] = defaultdict(int)
+        for edge in edges:
+            node_degree[edge.source] += 1
+            node_degree[edge.target] += 1
+        nodes = [node.model_copy(update={
+            "relation_count": node_degree.get(node.id, 0),
+            "importance_score": round(min(
+                1.0,
+                node.confidence * 0.35
+                + min(1.0, node.paper_count / 5) * 0.35
+                + min(1.0, node.evidence_count / 10) * 0.2
+                + min(1.0, node.confirmed_item_count / 5) * 0.1,
+            ), 4),
+        }) for node in nodes]
+
+        node_counts = {
+            "paper": len(paper_nodes),
+            "canonical_entity": len(entity_nodes),
+        }
+        relation_counts: dict[str, int] = defaultdict(int)
+        for edge in edges:
+            relation_counts[edge.relation_type] += 1
+        page_nodes = nodes[offset:offset + node_limit]
+        page_node_ids = {node.id for node in page_nodes}
+        page_edges = [
+            edge for edge in edges
+            if edge.source in page_node_ids and edge.target in page_node_ids
+        ]
+        edge_has_more = len(page_edges) > edge_limit
+        page_edges = page_edges[:edge_limit]
+        node_has_more = offset + len(page_nodes) < len(nodes)
+        truncation_reasons = []
+        if node_has_more:
+            truncation_reasons.append("node_limit")
+        if edge_has_more:
+            truncation_reasons.append("edge_limit")
+        return GraphProjection(
+            nodes=page_nodes,
+            edges=page_edges,
+            total_nodes=len(nodes),
+            total_edges=len(edges),
+            has_more=node_has_more,
+            node_counts=node_counts,
+            relation_counts=dict(relation_counts),
+            workspace_counts=self._workspace_graph_counts(workspace_id),
+            truncated=bool(truncation_reasons),
+            truncation_reason="+".join(truncation_reasons) or None,
+        )
 
     def _filtered_item_query(
         self,
@@ -449,6 +1007,7 @@ class KnowledgeService:
         forced_mention_id: str | None = None,
         include_mentions: bool = True,
         include_entities: bool = True,
+        strict_paper_ids: set[str] | None = None,
     ):
         from app.domains.knowledge.schemas import (
             KnowledgeGraphEdgeRead,
@@ -481,8 +1040,20 @@ class KnowledgeService:
         mention_query = select(PaperMention).where(
             PaperMention.workspace_id == workspace_id,
             PaperMention.is_deleted.is_(False),
+            PaperMention.paper_id.in_(select(Paper.id).where(
+                Paper.workspace_id == workspace_id,
+                Paper.is_deleted.is_(False),
+            )),
+            PaperMention.canonical_entity_id.in_(select(CanonicalEntity.id).where(
+                CanonicalEntity.workspace_id == workspace_id,
+                CanonicalEntity.is_deleted.is_(False),
+            )),
         )
-        if paper_ids or entity_ids:
+        if strict_paper_ids is not None:
+            mention_query = mention_query.where(
+                PaperMention.paper_id.in_(list(strict_paper_ids))
+            )
+        elif paper_ids or entity_ids:
             mention_query = mention_query.where(
                 or_(
                     PaperMention.paper_id.in_(list(paper_ids)) if paper_ids else False,
@@ -500,9 +1071,8 @@ class KnowledgeService:
             ).scalars().all()
         ) if include_mentions and (paper_ids or entity_ids or forced_mention_id) else []
 
-        # A paper or forced mention can introduce structural endpoints that
-        # were not present on the primary KnowledgeItems. Load those endpoints
-        # before creating edges so every projection remains self-contained.
+# 论文或强制包含的 mention 可能引入主 KnowledgeItem 中不存在的结构端点。
+# 创建边之前先加载这些端点，确保每个投影都是自包含的。
         loaded_paper_ids = {paper.id for paper in papers}
         missing_paper_ids = {mention.paper_id for mention in mentions} - loaded_paper_ids
         if missing_paper_ids:
@@ -529,7 +1099,11 @@ class KnowledgeService:
                 item_id: int(count)
                 for item_id, count in self.db.execute(
                     select(EvidenceSpan.knowledge_item_id, func.count(EvidenceSpan.id))
-                    .where(EvidenceSpan.knowledge_item_id.in_(item_ids))
+                    .where(
+                        EvidenceSpan.workspace_id == workspace_id,
+                        EvidenceSpan.is_deleted.is_(False),
+                        EvidenceSpan.knowledge_item_id.in_(item_ids),
+                    )
                     .group_by(EvidenceSpan.knowledge_item_id)
                 ).all()
             }
@@ -558,7 +1132,7 @@ class KnowledgeService:
         for paper in papers:
             nodes.append(KnowledgeGraphNodeRead(
                 id=f"paper:{paper.id}", label=paper.title, type="paper",
-                workspace_id=workspace_id, confidence=1.0, status=paper.parse_status,
+                workspace_id=workspace_id, paper_id=paper.id, confidence=1.0, status=paper.parse_status,
                 content={
                     "year": paper.year,
                     "source": paper.source,
@@ -673,6 +1247,7 @@ class KnowledgeService:
         relation_type: str | None,
         include_mentions: bool,
         include_entities: bool,
+        strict_paper_ids: set[str] | None = None,
     ) -> tuple[dict[str, int], dict[str, int], int, int]:
         item_subquery = item_query.subquery()
         item_ids = select(item_subquery.c.id)
@@ -696,14 +1271,24 @@ class KnowledgeService:
                 Paper.id.in_(paper_ids),
             )
         ).scalar() or 0)
-        mention_filter = or_(
-            PaperMention.paper_id.in_(paper_ids),
-            PaperMention.canonical_entity_id.in_(entity_ids),
+        mention_filter = (
+            PaperMention.paper_id.in_(list(strict_paper_ids))
+            if strict_paper_ids is not None
+            else or_(
+                PaperMention.paper_id.in_(paper_ids),
+                PaperMention.canonical_entity_id.in_(entity_ids),
+            )
         )
         mention_count = int(self.db.execute(
             select(func.count()).select_from(PaperMention).where(
                 PaperMention.workspace_id == workspace_id,
                 PaperMention.is_deleted.is_(False),
+                PaperMention.paper_id.in_(select(Paper.id).where(
+                    Paper.workspace_id == workspace_id, Paper.is_deleted.is_(False),
+                )),
+                PaperMention.canonical_entity_id.in_(select(CanonicalEntity.id).where(
+                    CanonicalEntity.workspace_id == workspace_id, CanonicalEntity.is_deleted.is_(False),
+                )),
                 mention_filter,
             )
         ).scalar() or 0) if include_mentions else 0
@@ -712,6 +1297,12 @@ class KnowledgeService:
             mention_entity_ids = select(PaperMention.canonical_entity_id).where(
                 PaperMention.workspace_id == workspace_id,
                 PaperMention.is_deleted.is_(False),
+                PaperMention.paper_id.in_(select(Paper.id).where(
+                    Paper.workspace_id == workspace_id, Paper.is_deleted.is_(False),
+                )),
+                PaperMention.canonical_entity_id.in_(select(CanonicalEntity.id).where(
+                    CanonicalEntity.workspace_id == workspace_id, CanonicalEntity.is_deleted.is_(False),
+                )),
                 mention_filter,
             ).distinct()
             all_entity_ids = entity_ids.union(mention_entity_ids)
@@ -758,6 +1349,12 @@ class KnowledgeService:
                 select(func.count()).select_from(PaperMention).where(
                     PaperMention.workspace_id == workspace_id,
                     PaperMention.is_deleted.is_(False),
+                    PaperMention.paper_id.in_(select(Paper.id).where(
+                        Paper.workspace_id == workspace_id, Paper.is_deleted.is_(False),
+                    )),
+                    PaperMention.canonical_entity_id.in_(select(CanonicalEntity.id).where(
+                        CanonicalEntity.workspace_id == workspace_id, CanonicalEntity.is_deleted.is_(False),
+                    )),
                     mention_filter,
                     PaperMention.knowledge_item_id.in_(item_ids),
                 )
@@ -792,12 +1389,33 @@ class KnowledgeService:
             KnowledgeRelation.workspace_id == workspace_id,
             KnowledgeRelation.is_deleted.is_(False),
         )).scalar() or 0)
+        canonical_entities = int(self.db.execute(select(func.count()).select_from(CanonicalEntity).where(
+            CanonicalEntity.workspace_id == workspace_id,
+            CanonicalEntity.is_deleted.is_(False),
+            CanonicalEntity.type.in_(WORKSPACE_ENTITY_TYPES),
+        )).scalar() or 0)
+        mentions = int(self.db.execute(select(func.count()).select_from(PaperMention).where(
+            PaperMention.workspace_id == workspace_id,
+            PaperMention.is_deleted.is_(False),
+        )).scalar() or 0)
+        active_item_ids = select(KnowledgeItem.id).where(
+            KnowledgeItem.workspace_id == workspace_id,
+            KnowledgeItem.is_deleted.is_(False),
+        )
+        evidence = int(self.db.execute(select(func.count()).select_from(EvidenceSpan).where(
+            EvidenceSpan.workspace_id == workspace_id,
+            EvidenceSpan.is_deleted.is_(False),
+            EvidenceSpan.knowledge_item_id.in_(active_item_ids),
+        )).scalar() or 0)
         return {
             "papers": papers,
             "parsed_papers": parsed_papers,
             "knowledge_items": items,
             "confirmed_items": confirmed,
             "relations": relations,
+            "canonical_entities": canonical_entities,
+            "mentions": mentions,
+            "evidence_spans": evidence,
         }
 
     def search_graph_nodes(
@@ -814,6 +1432,12 @@ class KnowledgeService:
         if not term:
             return []
         limit = max(1, min(limit, 50))
+        if projection_mode == "workspace":
+            return self._search_workspace_graph_nodes(
+                workspace_id=workspace_id,
+                query_text=term,
+                limit=limit,
+            )
         results: list[KnowledgeGraphSearchResult] = []
         item_query = select(KnowledgeItem).where(
             KnowledgeItem.workspace_id == workspace_id,
@@ -829,7 +1453,11 @@ class KnowledgeService:
         paper_ids = {item.paper_id for item in items if item.paper_id}
         paper_titles = {
             paper.id: paper.title for paper in self.db.execute(
-                select(Paper).where(Paper.id.in_(paper_ids))
+                select(Paper).where(
+                    Paper.id.in_(paper_ids),
+                    Paper.workspace_id == workspace_id,
+                    Paper.is_deleted.is_(False),
+                )
             ).scalars().all()
         } if paper_ids else {}
         results.extend(KnowledgeGraphSearchResult(
@@ -865,6 +1493,102 @@ class KnowledgeService:
         results.sort(key=lambda item: (-item.confidence, item.label.lower()))
         return results[:limit]
 
+    def _search_workspace_graph_nodes(
+        self,
+        *,
+        workspace_id: str,
+        query_text: str,
+        limit: int,
+    ):
+        from app.domains.knowledge.schemas import KnowledgeGraphSearchResult
+
+        term = query_text.lower()
+        papers = list(self.db.execute(select(Paper).where(
+            Paper.workspace_id == workspace_id,
+            Paper.is_deleted.is_(False),
+        )).scalars().all())
+        paper_map = {paper.id: paper for paper in papers}
+        entities = list(self.db.execute(select(CanonicalEntity).where(
+            CanonicalEntity.workspace_id == workspace_id,
+            CanonicalEntity.is_deleted.is_(False),
+            CanonicalEntity.type.in_(WORKSPACE_ENTITY_TYPES),
+        )).scalars().all())
+        entity_map = {entity.id: entity for entity in entities}
+        items = list(self.db.execute(select(KnowledgeItem).where(
+            KnowledgeItem.workspace_id == workspace_id,
+            KnowledgeItem.is_deleted.is_(False),
+            KnowledgeItem.type.in_(WORKSPACE_ENTITY_TYPES),
+        )).scalars().all())
+        mentions = list(self.db.execute(select(PaperMention).where(
+            PaperMention.workspace_id == workspace_id,
+            PaperMention.is_deleted.is_(False),
+        )).scalars().all())
+        item_ids_by_entity: dict[str, set[str]] = defaultdict(set)
+        paper_ids_by_entity: dict[str, set[str]] = defaultdict(set)
+        mention_count_by_entity: dict[str, int] = defaultdict(int)
+        confidence_by_entity: dict[str, list[float]] = defaultdict(list)
+        for item in items:
+            if item.paper_id not in paper_map or item.canonical_entity_id not in entity_map:
+                continue
+            item_ids_by_entity[item.canonical_entity_id].add(item.id)
+            paper_ids_by_entity[item.canonical_entity_id].add(item.paper_id)
+            confidence_by_entity[item.canonical_entity_id].append(item.confidence)
+        for mention in mentions:
+            if mention.paper_id not in paper_map or mention.canonical_entity_id not in entity_map:
+                continue
+            mention_count_by_entity[mention.canonical_entity_id] += 1
+            paper_ids_by_entity[mention.canonical_entity_id].add(mention.paper_id)
+            confidence_by_entity[mention.canonical_entity_id].append(mention.confidence)
+
+        evidence_counts: dict[str, int] = defaultdict(int)
+        item_ids = set().union(*item_ids_by_entity.values()) if item_ids_by_entity else set()
+        if item_ids:
+            evidence_counts.update({
+                item_id: int(count)
+                for item_id, count in self.db.execute(
+                    select(EvidenceSpan.knowledge_item_id, func.count(EvidenceSpan.id))
+                    .where(
+                        EvidenceSpan.workspace_id == workspace_id,
+                        EvidenceSpan.is_deleted.is_(False),
+                        EvidenceSpan.knowledge_item_id.in_(list(item_ids)),
+                    )
+                    .group_by(EvidenceSpan.knowledge_item_id)
+                ).all()
+            })
+
+        results: list[KnowledgeGraphSearchResult] = []
+        for entity in entities:
+            if not (
+                term in entity.canonical_name.lower()
+                or any(term in alias.lower() for alias in (entity.aliases or []))
+            ):
+                continue
+            if not paper_ids_by_entity[entity.id]:
+                continue
+            entity_item_ids = item_ids_by_entity[entity.id]
+            results.append(KnowledgeGraphSearchResult(
+                node_id=f"entity:{entity.id}", label=entity.canonical_name,
+                node_kind="canonical_entity", type=entity.type,
+                paper_title=(
+                    paper_map[sorted(paper_ids_by_entity[entity.id])[0]].title
+                    if paper_ids_by_entity[entity.id] else None
+                ),
+                confidence=max(confidence_by_entity[entity.id] or [0.0]),
+                paper_count=len(paper_ids_by_entity[entity.id]),
+                mention_count=mention_count_by_entity[entity.id],
+                knowledge_item_count=len(entity_item_ids),
+                evidence_count=sum(evidence_counts.get(item_id, 0) for item_id in entity_item_ids),
+            ))
+        for paper in papers:
+            if term in paper.title.lower():
+                results.append(KnowledgeGraphSearchResult(
+                    node_id=f"paper:{paper.id}", label=paper.title,
+                    node_kind="paper", type="paper", paper_title=paper.title,
+                    confidence=1.0,
+                ))
+        results.sort(key=lambda item: (-item.confidence, item.label.lower()))
+        return results[:limit]
+
     @staticmethod
     def _split_graph_node_id(node_id: str) -> tuple[str, str]:
         if ":" in node_id:
@@ -872,18 +1596,22 @@ class KnowledgeService:
             return kind, raw_id
         return "knowledge", node_id
 
-    # -------------------------------------------------------- evidence
-    def list_evidence_for_item(self, item_id: str) -> list[EvidenceSpan]:
+# -------------------------------------------------------- 证据
+    def list_evidence_for_item(
+        self, item_id: str, *, workspace_id: str
+    ) -> list[EvidenceSpan]:
         self._validate_uuid(item_id)
-        q = select(EvidenceSpan).where(EvidenceSpan.knowledge_item_id == item_id)
+        q = select(EvidenceSpan).where(
+            EvidenceSpan.knowledge_item_id == item_id,
+            EvidenceSpan.workspace_id == workspace_id,
+            EvidenceSpan.is_deleted.is_(False),
+        )
         return list(self.db.execute(q).scalars().all())
 
     def review_item(
         self, *, workspace_id: str, item_id: str, payload: KnowledgeItemReview
     ) -> KnowledgeItem:
-        item = self.get_item(item_id)
-        if item.workspace_id != workspace_id:
-            raise KnowledgeItemNotFoundError(item_id)
+        item = self.get_item(item_id, workspace_id=workspace_id)
         if payload.action == "edit":
             if payload.canonical_name is None and payload.content is None and payload.confidence is None:
                 raise KnowledgeItemReviewError("edit requires canonical_name, content, or confidence")
@@ -920,10 +1648,12 @@ class KnowledgeService:
         confidence: float,
     ) -> PaperMention:
         query = select(PaperMention).where(
+            PaperMention.workspace_id == workspace_id,
             PaperMention.paper_id == paper_id,
             PaperMention.canonical_entity_id == canonical_entity_id,
             PaperMention.start_char == start_char,
             PaperMention.end_char == end_char,
+            PaperMention.is_deleted.is_(False),
         )
         existing = self.db.execute(query).scalar_one_or_none()
         if existing:
@@ -939,7 +1669,7 @@ class KnowledgeService:
         self.db.flush()
         return mention
 
-    # -------------------------------------------------------- writes (Phase 3)
+# -------------------------------------------------------- 写入（Phase 3）
     def get_or_create_canonical_entity(
         self,
         *,
@@ -983,7 +1713,7 @@ class KnowledgeService:
         return entity
 
     def upsert_item(self, payload: KnowledgeItemCreate) -> KnowledgeItem:
-        """Create one paper-scoped item, idempotent within an extraction run."""
+        """创建一个论文级条目，并在一次抽取 run 内保持幂等。"""
         if payload.extraction_run_id and payload.item_key:
             existing = self.db.execute(
                 select(KnowledgeItem).where(
@@ -1020,11 +1750,13 @@ class KnowledgeService:
     def create_evidence_span(self, payload: EvidenceSpanCreate) -> EvidenceSpan:
         existing = self.db.execute(
             select(EvidenceSpan).where(
+                EvidenceSpan.workspace_id == payload.workspace_id,
                 EvidenceSpan.knowledge_item_id == payload.knowledge_item_id,
                 EvidenceSpan.artifact_id == payload.artifact_id,
                 EvidenceSpan.start_char == payload.start_char,
                 EvidenceSpan.end_char == payload.end_char,
                 EvidenceSpan.relation == payload.relation,
+                EvidenceSpan.is_deleted.is_(False),
             )
         ).scalar_one_or_none()
         if existing:
@@ -1044,6 +1776,7 @@ class KnowledgeService:
             text=payload.text,
             relation=payload.relation,
             confidence=payload.confidence,
+            is_deleted=False,
         )
         self.db.add(span)
         self.db.flush()

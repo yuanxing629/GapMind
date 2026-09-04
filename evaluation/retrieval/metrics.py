@@ -1,16 +1,15 @@
-"""Retrieval Gate metrics — pure functions, no I/O.
+"""Retrieval Gate 指标——纯函数，无 I/O。
 
-Each function takes plain data (sets/lists/floats) so the Gate math is
-unit-testable without a DB, Milvus, or LLM.
+每个函数都接收普通数据（sets/lists/floats），因此 Gate 数学无需 DB、Milvus 或 LLM 即可
+进行单元测试。
 
-Metric definitions (docs/phase3_smoke_validation_and_next_plan.md §6 V2):
+指标定义（docs/phase3_smoke_validation_and_next_plan.md §6 V2）：
 
-  * Recall@K      — fraction of gold items present in the top-K results
-  * MRR@K         — mean reciprocal rank of the first gold hit (0 if absent)
-  * nDCG@K        — binary-relevance discounted cumulative gain
-  * paper_diversity — distinct papers in top-K ÷ min(K, returned count)
-  * workspace_leakage — fraction of returned items whose workspace_id does
-                NOT match the queried workspace (must be 0)
+* Recall@K——Top-K 结果中包含 gold 条目的比例
+* MRR@K——第一个 gold 命中的平均倒数排名（不存在时为 0）
+* nDCG@K——二元相关性的折损累计增益
+* paper_diversity——Top-K 中不同论文数 ÷ min(K, 返回数量)
+* workspace_leakage——返回条目中 workspace_id 不匹配查询工作区的比例（必须为 0）
 """
 
 from __future__ import annotations
@@ -19,7 +18,7 @@ import math
 
 
 def recall_at_k(gold: set[str], retrieved: list[str], k: int) -> float:
-    """Fraction of gold items appearing in the first ``k`` retrieved IDs."""
+    """前 ``k`` 个检索 ID 中出现 gold 条目的比例。"""
     if not gold:
         return 0.0
     top_k = set(retrieved[:k])
@@ -27,7 +26,7 @@ def recall_at_k(gold: set[str], retrieved: list[str], k: int) -> float:
 
 
 def mrr_at_k(gold: set[str], retrieved: list[str], k: int) -> float:
-    """Reciprocal rank of the first gold hit within top-k (0 if none)."""
+    """Top-K 内第一个 gold 命中的倒数排名（没有时为 0）。"""
     for rank, item in enumerate(retrieved[:k], start=1):
         if item in gold:
             return 1.0 / rank
@@ -35,7 +34,7 @@ def mrr_at_k(gold: set[str], retrieved: list[str], k: int) -> float:
 
 
 def ndcg_at_k(gold: set[str], retrieved: list[str], k: int) -> float:
-    """nDCG@K with binary relevance."""
+    """采用二元相关性的 nDCG@K。"""
     if not gold:
         return 0.0
     dcg = 0.0
@@ -48,11 +47,10 @@ def ndcg_at_k(gold: set[str], retrieved: list[str], k: int) -> float:
 
 
 def paper_diversity(retrieved: list[str], k: int) -> float:
-    """Fraction of distinct papers in top-k vs. the ideal max.
+    """Top-K 中不同论文数与理想最大值的比例。
 
-    ``1.0`` means every slot is a different paper; ``0.25`` means four
-    hits all come from the same paper. Low diversity is what happens when
-    a single paper's chunks dominate the top-k.
+    ``1.0`` 表示每个槽位来自不同论文；``0.25`` 表示四个命中都来自同一篇论文。
+    当单篇论文的分块主导 Top-K 时，就会出现较低的多样性。
     """
     if not retrieved:
         return 0.0
@@ -62,10 +60,9 @@ def paper_diversity(retrieved: list[str], k: int) -> float:
 
 
 def workspace_leakage(workspace_ids: list[str], target_workspace_id: str) -> float:
-    """Fraction of returned items belonging to a different workspace.
+    """属于其他 workspace 的返回条目比例。
 
-    For workspace-scoped retrieval this must be exactly 0.0; any positive
-    value is a security/isolation defect, not a tuning knob.
+    对工作区范围检索而言，该值必须严格为 0.0；任何正值都是安全/隔离缺陷，不能作为调参项。
     """
     if not workspace_ids:
         return 0.0
@@ -83,7 +80,7 @@ def gate_report(
     diversity: float | None = None,
     leakage: float | None = None,
 ) -> dict[str, object]:
-    """Build the per-benchmark Gate verdict block for the report JSON."""
+    """构建报告 JSON 中每个 benchmark 的 Gate 判定块。"""
     recall_passed = recall >= threshold - 1e-9
     return {
         f"recall@{k}": round(recall, 4),

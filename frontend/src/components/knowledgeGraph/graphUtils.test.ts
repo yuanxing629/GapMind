@@ -7,11 +7,17 @@ function node(id: string, type: string, nodeKind = "knowledge"): KnowledgeGraphN
     id, label: id, type, node_kind: nodeKind, workspace_id: "ws",
     confidence: 0.9, status: "extracted_candidate", content: {},
     importance_score: 0.8, relation_count: 0, evidence_count: 0, paper_count: 0,
+    mention_count: 0, knowledge_item_count: 0, confirmed_item_count: 0,
+    aliases: [], supporting_paper_ids: [], supporting_paper_ids_truncated: false,
   };
 }
 
 function edge(id: string, source: string, target: string): KnowledgeGraphEdge {
-  return { id, source, target, relation_type: "related_to", confidence: 0.8, payload: {} };
+  return {
+    id, source, target, relation_type: "related_to", confidence: 0.8, payload: {},
+    occurrence_count: 0, paper_count: 0, evidence_count: 0,
+    supporting_paper_ids: [], supporting_item_ids: [],
+  };
 }
 
 describe("knowledge graph utilities", () => {
@@ -24,6 +30,15 @@ describe("knowledge graph utilities", () => {
     ],
     edges: [edge("pm", "paper", "method"), edge("pc", "paper", "claim"), edge("cm", "claim", "mention")],
   };
+
+  it("projects workspace mode to papers and canonical entities only", () => {
+    const projected = projectGraph({
+      nodes: [node("paper", "paper", "paper"), node("entity", "method", "canonical_entity")],
+      edges: [edge("pe", "paper", "entity")],
+    }, "workspace");
+    expect(projected.nodes.map((item) => item.id)).toEqual(["paper", "entity"]);
+    expect(projected.edges.map((item) => item.id)).toEqual(["pe"]);
+  });
 
   it("projects the three views without dangling edges", () => {
     expect(projectGraph(graph, "landscape").nodes.map((item) => item.id)).toEqual(["paper", "method"]);
@@ -43,6 +58,17 @@ describe("knowledge graph utilities", () => {
     );
     expect(merged.nodes.map((item) => item.id)).toEqual(["a", "b"]);
     expect(merged.edges.map((item) => item.id)).toEqual(["ab"]);
+  });
+
+  it("keeps same-label nodes distinct and drops edges with unloaded endpoints", () => {
+    const first = { ...node("item-1", "method"), label: "Same method" };
+    const second = { ...node("item-2", "method"), label: "Same method" };
+    const merged = mergeGraph(
+      { nodes: [first], edges: [] },
+      { nodes: [second], edges: [edge("valid", "item-1", "item-2"), edge("dangling", "item-2", "missing")] },
+    );
+    expect(merged.nodes.map((item) => item.id)).toEqual(["item-1", "item-2"]);
+    expect(merged.edges.map((item) => item.id)).toEqual(["valid"]);
   });
 
   it("limits a branch to the selected node and its one-hop neighbors", () => {

@@ -1,7 +1,7 @@
-"""Celery application instance.
+"""Celery 应用实例。
 
-Phase 0: just the app + a ping task for health checks. Domain tasks
-(parse_pdf, embed_chunks, extract_knowledge) will be registered in Phase 2-3.
+Phase 0：仅包含 app 和用于 health check 的 ping task。Domain task（parse_pdf、embed_chunks、
+extract_knowledge）将在 Phase 2-3 注册。
 """
 
 from __future__ import annotations
@@ -11,10 +11,9 @@ import sys
 from celery import Celery
 from celery.signals import worker_ready
 
-# Import the model registry so all ORM models are loaded on Base.metadata
-# before any task runs. Without this, a worker that imports only Task + Paper
-# (but not Workspace) will fail on commit with NoReferencedTableError because
-# SQLAlchemy can't sort FK dependencies across the partial model set.
+# 导入模型注册表，使所有 ORM 模型在任务运行前加载到 Base.metadata。
+# 否则只导入 Task + Paper 而未导入 Workspace 的 worker 会在提交时因
+# NoReferencedTableError 失败，因为 SQLAlchemy 无法在不完整的模型集合中排序 FK 依赖。
 import app.db.models  # noqa: F401  (import side-effect: registers all models)
 from app.core.config import settings
 from app.core.logging import configure_logging, get_logger
@@ -50,12 +49,11 @@ celery_app.conf.update(
     ],
 )
 
-# Windows: the default prefork pool uses billiard SemLock which requires
-# CreateGlobalSemaphore permission that's often blocked by Windows security
-# policy, causing every child process to crash with WinError 5. Solo pool
-# runs everything in the main process and avoids this entirely. For I/O-bound
-# LLM/embedding work we can switch to `--pool=gevent` (after `pip install
-# gevent`) once we need concurrency in Phase 2+.
+# Windows：默认 prefork 池使用 billiard SemLock，需要 CreateGlobalSemaphore 权限；
+# 该权限经常被 Windows 安全策略阻止，导致每个子进程都因 WinError 5 崩溃。
+# Solo 池在主进程中运行全部任务，可以完全规避该问题。对于 I/O 密集型的
+# LLM/embedding 工作，进入 Phase 2+ 并需要并发后，可改用 `--pool=gevent`
+#（先 `pip install gevent`）。
 if sys.platform == "win32":
     celery_app.conf.update(worker_pool="solo")
 
@@ -68,5 +66,5 @@ def on_worker_ready(**_: object) -> None:
 
 @celery_app.task(name="gapmind.ping")
 def ping() -> dict[str, str]:
-    """Health check task - returns pong."""
+    """健康检查任务，返回 pong。"""
     return {"status": "pong", "worker": "gapmind"}

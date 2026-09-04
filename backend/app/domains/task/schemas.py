@@ -1,4 +1,4 @@
-"""Task Pydantic schemas."""
+"""Task 的 Pydantic schemas。"""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ TaskStatus = Literal[
 
 
 def summarize_task_error(value: str | None) -> str | None:
-    """Return an actionable message safe for API and UI display."""
+    """返回可安全展示在 API 和 UI 中的可操作消息。"""
     if not value:
         return None
     lowered = value.lower()
@@ -38,7 +38,7 @@ def summarize_task_error(value: str | None) -> str | None:
 
 
 class TaskCreate(BaseModel):
-    """Internal create schema (not directly exposed via HTTP in Phase 1b)."""
+    """内部创建 schema（Phase 1b 不直接通过 HTTP 暴露）。"""
 
     workspace_id: str | None = None
     task_type: str = Field(..., min_length=1, max_length=64)
@@ -46,10 +46,9 @@ class TaskCreate(BaseModel):
 
 
 class TaskUpdate(BaseModel):
-    """Internal update schema for state transitions (not directly exposed).
+    """用于状态转换的内部更新 schema（不直接暴露）。
 
-    The public PATCH endpoint only allows cancel + resume; status transitions
-    from workers go through the service layer directly.
+    public PATCH endpoint 只允许 cancel + resume；worker 的状态转换直接经过 service 层。
     """
 
     status: TaskStatus | None = None
@@ -61,7 +60,7 @@ class TaskUpdate(BaseModel):
 
 
 class TaskRead(BaseModel):
-    """Full task as returned from the API."""
+    """API 返回的完整任务。"""
 
     model_config = ConfigDict(from_attributes=True)
 

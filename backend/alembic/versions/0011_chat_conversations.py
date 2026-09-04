@@ -1,4 +1,4 @@
-"""Add persistent global AI chat conversations and messages."""
+"""增加持久化的全局 AI Chat 会话和消息。"""
 
 from __future__ import annotations
 

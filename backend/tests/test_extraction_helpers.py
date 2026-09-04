@@ -1,4 +1,4 @@
-"""Unit tests for the extraction helpers extracted from the Celery worker."""
+"""从 Celery worker 拆出的抽取辅助函数单元测试。"""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from app.workers.tasks.extraction.llm_caller import (
 )
 
 
-# ---------------------------------------------------------------- batching
+# ---------------------------------------------------------------- batching：批处理
 def test_split_short_text_returns_single_batch() -> None:
     assert split_extraction_batches("short") == [(0, "short")]
 
@@ -24,11 +24,11 @@ def test_split_short_text_returns_single_batch() -> None:
 def test_split_long_text_preserves_heading_boundaries() -> None:
     body = "intro paragraph\n\n" + ("x" * (DEFAULT_MAX_CHARS - 50)) + "\n## Methods\n" + ("y" * 1000)
     batches = split_extraction_batches(body)
-    # At least two batches and the heading ends up on its own batch boundary.
+# 至少两个批次，且标题落在独立的批次边界上。
     assert len(batches) >= 2
     starts = [start for start, _ in batches]
     assert starts == sorted(starts)
-    # Last batch ends exactly at the document length (no tail dropped).
+# 最后一个批次恰好结束于文档长度（不丢弃尾部）。
     last_start, last_text = batches[-1]
     assert last_start + len(last_text) == len(body)
 
@@ -37,12 +37,12 @@ def test_split_never_drops_tail() -> None:
     body = "a" * (DEFAULT_MAX_CHARS * 2 + 250)
     batches = split_extraction_batches(body)
     joined = "".join(text for _, text in batches)
-    # Even with overlap, the union must cover the whole document.
+# 即使存在 overlap，并集也必须覆盖整个文档。
     assert joined.startswith(body[:100])
     assert joined.rstrip().endswith(body[-100:].rstrip())
 
 
-# ---------------------------------------------------------------- LLM JSON
+# ---------------------------------------------------------------- LLM JSON：LLM JSON 解析
 @pytest.mark.parametrize(
     "raw,expected",
     [
@@ -58,7 +58,7 @@ def test_parse_llm_json_handles_common_shapes(raw: str, expected) -> None:
 
 
 def test_call_llm_with_retry_returns_parsed_on_success() -> None:
-    """Successful first try → parsed dict + raw."""
+    """第一次尝试成功 -> parsed dict + raw。"""
     fake_response = MagicMock(content='```json\n{"items": []}\n```')
     fake_gateway = MagicMock(chat_completion=MagicMock(return_value=fake_response))
 
@@ -75,7 +75,7 @@ def test_call_llm_with_retry_returns_parsed_on_success() -> None:
 
 
 def test_call_llm_with_retry_recovers_on_second_attempt() -> None:
-    """First response is malformed, second is good → returns the good one."""
+    """第一次响应格式错误、第二次正确 -> 返回正确响应。"""
     fake_response_good = MagicMock(content='{"items": ["a"]}')
     fake_gateway = MagicMock(chat_completion=MagicMock(side_effect=[
         MagicMock(content="not json at all"),
@@ -95,7 +95,7 @@ def test_call_llm_with_retry_recovers_on_second_attempt() -> None:
 
 
 def test_call_llm_with_retry_returns_none_after_exhaustion() -> None:
-    """Every attempt bad → raw preserved, parsed is None."""
+    """每次尝试都失败 -> 保留 raw，parsed 为 None。"""
     fake_gateway = MagicMock(chat_completion=MagicMock(return_value=MagicMock(content="garbage")))
 
     with pytest.MonkeyPatch.context() as mp:

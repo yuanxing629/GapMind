@@ -1,4 +1,4 @@
-"""Persisted outputs of the Discover Agent."""
+"""Discover Agent 的持久化输出。"""
 
 from __future__ import annotations
 
@@ -11,17 +11,17 @@ from app.db.base import Base, TimestampMixin, UUIDPKMixin
 
 
 def _now_utc() -> datetime:
-    """Python-side default so SQLite tests get a real timestamp.
+    """Python 侧默认值，使 SQLite 测试获得真实时间戳。
 
-    The created_at columns below keep ``server_default="now()"`` for
-    PostgreSQL; SQLite treats "now()" as a literal string and would fail to
-    parse it back, so this ORM-side default fills a real value on INSERT.
+    下面的 created_at 列在 PostgreSQL 中仍使用 ``server_default="now()"``；SQLite
+    会把 "now()" 当作字面量字符串，无法正确解析，因此在 ORM 侧提供默认值，确保
+    INSERT 时写入真实时间戳。
     """
     return datetime.now(timezone.utc)
 
 
 class ResearchOpportunity(Base, UUIDPKMixin, TimestampMixin):
-    """A candidate research direction synthesized from a claim and evidence."""
+    """根据 claim 和 evidence 合成的研究方向候选。"""
 
     __tablename__ = "research_opportunities"
 
@@ -48,7 +48,7 @@ class ResearchOpportunity(Base, UUIDPKMixin, TimestampMixin):
 
 
 class DiscoverRun(Base, UUIDPKMixin, TimestampMixin):
-    """Auditable, resumable execution of the Discover Agent."""
+    """可审计、可恢复的 Discover Agent 执行记录。"""
 
     __tablename__ = "discover_runs"
 
@@ -95,7 +95,7 @@ class DiscoverRun(Base, UUIDPKMixin, TimestampMixin):
 
 
 class DiscoverExternalCandidate(Base, UUIDPKMixin, TimestampMixin):
-    """Immutable-ish Semantic Scholar snapshot captured by one run."""
+    """某次 run 捕获的近似不可变 Semantic Scholar 快照。"""
 
     __tablename__ = "discover_external_candidates"
 
@@ -123,7 +123,7 @@ class DiscoverExternalCandidate(Base, UUIDPKMixin, TimestampMixin):
 
 
 class OpportunityVersion(Base, UUIDPKMixin):
-    """Immutable content version of an opportunity."""
+    """opportunity 的不可变内容版本。"""
 
     __tablename__ = "opportunity_versions"
     __table_args__ = (
@@ -156,7 +156,7 @@ class OpportunityVersion(Base, UUIDPKMixin):
 
 
 class OpportunityEvidence(Base, UUIDPKMixin, TimestampMixin):
-    """Evidence attached to a specific immutable opportunity version."""
+    """附加到特定不可变 opportunity 版本的证据。"""
 
     __tablename__ = "opportunity_evidence"
 

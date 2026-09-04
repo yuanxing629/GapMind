@@ -1,4 +1,4 @@
-"""Tests for workspace-scoped paper recommendations."""
+"""工作区范围论文推荐测试。"""
 
 from __future__ import annotations
 

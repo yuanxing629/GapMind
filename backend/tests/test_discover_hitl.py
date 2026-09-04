@@ -1,8 +1,7 @@
-"""W5 HITL decision tests: confirm / edit-confirm / reject / defer.
+"""W5 HITL 决策测试：confirm / edit-confirm / reject / defer。
 
-Each decision is exercised through the HTTP API, then verified on both the
-persisted HumanDecision row and the Timeline event (decision history must be
-traceable - W5-1 + W5-3).
+每个决策都通过 HTTP API 执行，然后同时在持久化的 HumanDecision 行和 Timeline event 上
+验证（决策历史必须可追溯 - W5-1 + W5-3）。
 """
 
 from __future__ import annotations
@@ -190,7 +189,7 @@ def test_decision_history_is_traceable(client, db_session: Session):
     wid = workspace["id"]
 
     client.post(f"/api/v1/workspaces/{wid}/discover/opportunities/{opportunity.id}/defer", json={"defer_condition": "等数据"})
-    # Deferred opportunities can still be confirmed later (not a closed state).
+# Deferred opportunity 之后仍可确认（不是终态）。
     resp = client.post(f"/api/v1/workspaces/{wid}/discover/opportunities/{opportunity.id}/confirm", json={})
     assert resp.status_code == 200, resp.text
     assert resp.json()["status"] == "confirmed"

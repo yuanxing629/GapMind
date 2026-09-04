@@ -1,15 +1,14 @@
-"""Verify P1 semantic dedup on real extracted items (read-only).
+"""在真实抽取项上验证 P1 语义去重（只读）。
 
-Loads claim/limitation KnowledgeItems for a workspace, runs ``dedup_semantic``
-with the real BGE-m3 gateway over the union of papers (cross-paper guard is
-active by construction), and reports what would be merged at threshold 0.90
-plus near-miss pairs (>= 0.80) for tuning. Nothing is written.
+加载工作区中的 claim/limitation KnowledgeItem，使用真实 BGE-m3 网关在论文并集上运行
+``dedup_semantic``（跨论文保护天然生效），报告阈值 0.90 下将要合并的内容，
+并报告近似命中对（>= 0.80）供调参。不会写入任何内容。
 
-Usage (from backend/):
+用法（从 backend/ 目录运行）：
 
     .venv/Scripts/python.exe scripts/verify_dedup_semantic.py --workspace-id 533c89cd-...
 
-Requires a configured SILICONFLOW_API_KEY (one embedding batch per paper).
+需要配置 SILICONFLOW_API_KEY（每篇论文执行一个 embedding 批次）。
 """
 
 from __future__ import annotations
@@ -78,8 +77,8 @@ def main(workspace_id: str) -> None:
                 f"paper={str(sp.get('paper_id'))[:8]} :: {semantic_text(r['content'])[:70]}"
             )
 
-        # Near-miss diagnostics: per (paper, type), report pairs >= 0.80
-        # so the threshold can be tuned. Reuses the gateway (extra calls).
+# 近似命中诊断：按（paper、type）报告 >= 0.80 的成对结果，供阈值调节。
+# 复用网关（会产生额外调用）。
         print("\nnear-miss pairs (0.80 <= sim < threshold), for tuning:")
         found = False
         for paper in sorted(papers, key=lambda x: str(x)):

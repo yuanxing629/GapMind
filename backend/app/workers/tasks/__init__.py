@@ -1,7 +1,7 @@
-"""Celery tasks package.
+"""Celery 任务包。
 
-Phase 0: empty. Tasks will be added in Phase 2:
-- parse_pdf: PDF -> text + chunks
-- embed_chunks: chunks -> Milvus vectors
-- extract_knowledge: chunks -> KnowledgeItem + EvidenceSpan
+Phase 0：空包。Phase 2 将加入以下任务：
+- parse_pdf：PDF -> 文本 + 分块
+- embed_chunks：分块 -> Milvus 向量
+- extract_knowledge：分块 -> KnowledgeItem + EvidenceSpan
 """

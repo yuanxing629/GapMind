@@ -1,10 +1,9 @@
-"""Judgement Gateway - LLM-based NLI for counter-evidence detection.
+"""Judgement Gateway：基于 LLM NLI 的 counter-evidence 检测。
 
-Uses Deepseek to classify the relationship between a claim and retrieved
-passages: supports / overlaps / qualifies / contradicts / unknown.
+使用配置的 OpenAI Chat Completions-compatible provider 判断 claim 与检索段落之间的关系：
+supports / overlaps / qualifies / contradicts / unknown。
 
-Required by Contract D: counter_evidence results must pass through
-rerank or LLM/NLI judgement before being returned.
+Contract D 要求：counter_evidence 结果返回前必须经过 rerank 或 LLM/NLI judgement。
 """
 
 from __future__ import annotations
@@ -19,7 +18,7 @@ from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
-# Valid judgement values per Contract D
+# 契约 D 中合法的判断值
 VALID_JUDGEMENTS = {"supports", "overlaps", "qualifies", "contradicts", "unknown"}
 
 SYSTEM_PROMPT = """\
@@ -46,7 +45,7 @@ Output ONLY the JSON array, no explanation."""
 
 @dataclass
 class JudgementHit:
-    """Judgement result for a single passage."""
+    """单个段落的判断结果。"""
 
     index: int
     judgement: str = "unknown"
@@ -55,7 +54,7 @@ class JudgementHit:
 
 @dataclass
 class JudgementResult:
-    """Batch judgement response."""
+    """批量判断响应。"""
 
     hits: list[JudgementHit] = field(default_factory=list)
     model: str = ""
@@ -64,9 +63,9 @@ class JudgementResult:
 
 
 class JudgementGateway:
-    """LLM-based NLI judgement using Deepseek.
+    """使用配置的远程 provider 执行基于 LLM NLI 的判断。
 
-    Classifies claim-passage relationships for counter-evidence detection.
+    判断 claim 与段落之间的关系，用于检测 counter-evidence。
     """
 
     def __init__(
@@ -74,21 +73,47 @@ class JudgementGateway:
         api_key: str | None = None,
         base_url: str | None = None,
         model: str | None = None,
+        backup_api_key: str | None = None,
+        backup_base_url: str | None = None,
+        backup_model: str | None = None,
     ) -> None:
-        self.api_key = api_key if api_key is not None else settings.deepseek_api_key
-        self.base_url = base_url if base_url is not None else settings.deepseek_base_url
-        self.model = model if model is not None else settings.deepseek_model
+        self.api_key = api_key if api_key is not None else settings.remote_api_key
+        self.base_url = base_url if base_url is not None else settings.remote_base_url
+        self.model = model if model is not None else settings.remote_model
+        self.backup_api_key = (
+            backup_api_key if backup_api_key is not None else settings.backup_api_key
+        )
+        self.backup_base_url = (
+            backup_base_url if backup_base_url is not None else settings.backup_base_url
+        )
+        self.backup_model = (
+            backup_model if backup_model is not None else settings.backup_model
+        )
         self._client: OpenAI | None = None
+        self._backup_client: OpenAI | None = None
 
     @property
     def client(self) -> OpenAI:
         if self._client is None:
             if not self.api_key:
                 raise RuntimeError(
-                    "DEEPSEEK_API_KEY is not set. Configure the repo-root .env."
+                    "REMOTE_API_KEY is not set. Configure the repo-root .env."
                 )
             self._client = OpenAI(api_key=self.api_key, base_url=self.base_url)
         return self._client
+
+    @property
+    def backup_enabled(self) -> bool:
+        return bool(self.backup_api_key and self.backup_base_url and self.backup_model)
+
+    @property
+    def backup_client(self) -> OpenAI:
+        if self._backup_client is None:
+            self._backup_client = OpenAI(
+                api_key=self.backup_api_key,
+                base_url=self.backup_base_url,
+            )
+        return self._backup_client
 
     def judge_batch(
         self,
@@ -97,27 +122,27 @@ class JudgementGateway:
         *,
         max_passages: int = 8,
     ) -> JudgementResult:
-        """Judge the relationship between a claim and multiple passages.
+        """判断一个 claim 与多个段落之间的关系。
 
-        Args:
-            claim: The claim text to evaluate.
-            passages: List of passage texts (truncated to max_passages).
-            max_passages: Maximum passages per LLM call (controls token cost).
+        参数：
+            claim：待评估的 claim 文本。
+            passages：段落文本列表（会截断为 max_passages 条）。
+            max_passages：每次 LLM 调用的最大段落数（控制 token 成本）。
 
-        Returns:
-            JudgementResult with one JudgementHit per passage.
+        返回：
+            返回每个段落对应一个 JudgementHit 的 JudgementResult。
         """
         import time
 
         if not passages:
             return JudgementResult(model=self.model)
 
-        # Truncate to control cost
+# 截断文本以控制成本
         passages = passages[:max_passages]
 
         start = time.perf_counter()
 
-        # Build user prompt with numbered passages (truncate each to ~500 chars)
+# 构建带编号段落的用户提示词（每段截断到约 500 字符）
         passage_lines = []
         for i, p in enumerate(passages):
             truncated = p[:500] + ("..." if len(p) > 500 else "")
@@ -137,19 +162,29 @@ class JudgementGateway:
 
         try:
             max_tokens = max(1024, len(passages) * 256)
-            resp = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
+            request = {
+                "model": self.model,
+                "messages": [
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {"role": "user", "content": user_prompt},
                 ],
-                temperature=0.0,
-                max_tokens=max_tokens,
-                # Structured JSON classification: disable CoT so the reasoning
-                # model doesn't burn max_tokens on reasoning (see plan §八).
-                extra_body={"thinking": {"type": "disabled"}},
-            )
+                "temperature": 0.0,
+                "max_tokens": max_tokens,
+            }
+            try:
+                resp = self.client.chat.completions.create(**request)
+            except Exception:
+                if not self.backup_enabled:
+                    raise
+                logger.warning(
+                    "judge.fallback",
+                    primary_model=self.model,
+                    backup_model=self.backup_model,
+                )
+                request["model"] = self.backup_model
+                resp = self.backup_client.chat.completions.create(**request)
 
+            response_model = getattr(resp, "model", None) or request["model"]
             choice = resp.choices[0]
             content = choice.message.content or ""
             if not content.strip():
@@ -164,18 +199,18 @@ class JudgementGateway:
 
             logger.info(
                 "judge.response",
-                model=self.model,
+                model=response_model,
                 hit_count=len(hits),
                 finish_reason=choice.finish_reason,
                 latency_ms=round(latency, 1),
             )
 
-            return JudgementResult(hits=hits, model=self.model, latency_ms=latency)
+            return JudgementResult(hits=hits, model=response_model, latency_ms=latency)
 
         except Exception as e:
             latency = (time.perf_counter() - start) * 1000
             logger.error("judge.failed", error=str(e))
-            # Graceful degradation: return unknown for all
+# 优雅降级：全部返回 unknown
             hits = [
                 JudgementHit(index=i, judgement="unknown", confidence=0.0)
                 for i in range(len(passages))
@@ -185,8 +220,8 @@ class JudgementGateway:
             )
 
     def _parse_response(self, content: str, expected_count: int) -> list[JudgementHit]:
-        """Parse LLM JSON response into JudgementHit list."""
-        # Strip markdown code fences if present
+        """将 LLM JSON 响应解析为 JudgementHit 列表。"""
+# 如果存在 Markdown 代码围栏则移除
         content = content.strip()
         if content.startswith("```"):
             lines = content.split("\n")
@@ -213,7 +248,7 @@ class JudgementGateway:
             confidence = max(0.0, min(1.0, confidence))
             hits.append(JudgementHit(index=idx, judgement=judgement, confidence=confidence))
 
-        # Fill missing indices with unknown
+# 对缺失的索引填充 unknown
         if len(hits) < expected_count:
             existing_indices = {h.index for h in hits}
             for i in range(expected_count):
@@ -224,15 +259,15 @@ class JudgementGateway:
         return hits[:expected_count]
 
     def ping(self) -> bool:
-        """Check if API key is configured."""
-        return bool(self.api_key)
+        """检查是否配置了 API key。"""
+        return bool(self.api_key and self.base_url and self.model)
 
 
 _gateway: JudgementGateway | None = None
 
 
 def get_judgement_gateway() -> JudgementGateway:
-    """Singleton accessor for the Judgement gateway."""
+    """Judgement gateway 的单例访问器。"""
     global _gateway
     if _gateway is None:
         _gateway = JudgementGateway()
