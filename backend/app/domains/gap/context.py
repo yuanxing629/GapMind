@@ -98,6 +98,7 @@ def _knowledge_items(db: Session, paper: Paper, run: ExtractionRun) -> list[Know
                 EvidenceSpan.workspace_id == paper.workspace_id,
                 EvidenceSpan.paper_id == paper.id,
                 EvidenceSpan.knowledge_item_id.in_(item_ids),
+                EvidenceSpan.is_deleted.is_(False),
                 or_(
                     EvidenceSpan.text.is_not(None),
                     EvidenceSpan.start_char.is_not(None),
@@ -226,6 +227,7 @@ def build_gap_context(db: Session, paper: Paper, raw_markdown: str) -> GapExtrac
                     EvidenceSpan.workspace_id == paper.workspace_id,
                     EvidenceSpan.paper_id == paper.id,
                     EvidenceSpan.knowledge_item_id.in_(item_ids),
+                    EvidenceSpan.is_deleted.is_(False),
                 )
             ).scalars()
         )

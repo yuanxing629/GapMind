@@ -199,7 +199,10 @@ def validate_paper(
         + (f" (invalid: {invalid_chunks[:10]})" if invalid_chunks else ""),
     )
     try:
-        indexed_ids = milvus_client.get_existing_chunk_ids(paper_id)
+        indexed_ids = milvus_client.get_existing_chunk_ids(
+            paper_id,
+            workspace_id=workspace_id,
+        )
         current_chunk_ids = {
             str(chunk.get("chunk_id"))
             for chunk in chunks

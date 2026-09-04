@@ -212,7 +212,10 @@ def test_index_force_reindex_calls_delete_by_paper_first(
 
     retrieval_service.index_paper_chunks(ws.id, paper.id, db=db_session, force_reindex=True)
 
-    fake_milvus.delete_by_paper.assert_called_once_with(paper.id)
+    fake_milvus.delete_by_paper.assert_called_once_with(
+        paper.id,
+        workspace_id=ws.id,
+    )
     # delete happens before insert; verify call ordering.
     call_order = [c[0] for c in fake_milvus.mock_calls]
     assert "delete_by_paper" in call_order
@@ -244,7 +247,10 @@ def test_paper_soft_delete_propagates_to_milvus(
 
     PaperService(db_session).soft_delete(paper.id)
 
-    fake_milvus.delete_by_paper.assert_called_once_with(paper.id)
+    fake_milvus.delete_by_paper.assert_called_once_with(
+        paper.id,
+        workspace_id=ws.id,
+    )
 
 
 def test_soft_deleted_paper_excluded_from_retrieval_via_milvus_deletion(

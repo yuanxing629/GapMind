@@ -1109,7 +1109,7 @@ class DiscoverService(OpportunityWorkflow):
         for item in response.items:
             if not item.paper_id or item.paper_id in excluded or item.paper_id in seen_papers:
                 continue
-            span = self._find_evidence_span(item)
+            span = self._find_evidence_span(item, run.workspace_id)
             if (
                 item.evidence_level != "full_text"
                 or span is None
@@ -1188,7 +1188,7 @@ class DiscoverService(OpportunityWorkflow):
         for item in candidate_items:
             if item.paper_id in seen_papers or item.evidence_level != "full_text":
                 continue
-            span = self._find_evidence_span(item)
+            span = self._find_evidence_span(item, run.workspace_id)
             if (
                 span is None
                 or span.relation != "supports"
@@ -1548,10 +1548,10 @@ class DiscoverService(OpportunityWorkflow):
         external_rows: list[DiscoverExternalCandidate],
     ) -> None:
         for rank, item in enumerate(supporting.items, start=1):
-            span = self._find_evidence_span(item)
+            span = self._find_evidence_span(item, supporting.workspace_id)
             self.db.add(OpportunityEvidence(id=str(uuid4()), opportunity_version_id=version_id, relation="supports", source_scope=item.source_scope, evidence_level=item.evidence_level, paper_id=item.paper_id, evidence_span_id=span.id if span else None, artifact_id=span.artifact_id if span else item.artifact_id, chunk_id=item.chunk_id, rank=rank, score=item.score, judgement="supports", judgement_confidence=item.judgement_confidence, display_excerpt=(item.text or "").replace("\x00", "")[:2000], snapshot_payload=item.model_dump(mode="json")))
         for rank, item in enumerate(similar.items, start=1):
-            span = self._find_evidence_span(item)
+            span = self._find_evidence_span(item, similar.workspace_id)
             self.db.add(OpportunityEvidence(id=str(uuid4()), opportunity_version_id=version_id, relation="similar", source_scope="workspace", evidence_level=item.evidence_level, paper_id=item.paper_id, evidence_span_id=span.id if span else None, artifact_id=span.artifact_id if span else item.artifact_id, chunk_id=item.chunk_id, rank=rank, score=item.score, display_excerpt=(item.text or "").replace("\x00", "")[:2000], snapshot_payload=item.model_dump(mode="json")))
         for rank, item in enumerate(counter.items, start=1):
             relation = (
@@ -1559,7 +1559,7 @@ class DiscoverService(OpportunityWorkflow):
                 if item.judgement in {"contradicts", "qualifies", "supports", "overlaps"}
                 else "unknown"
             )
-            span = self._find_evidence_span(item)
+            span = self._find_evidence_span(item, counter.workspace_id)
             self.db.add(OpportunityEvidence(id=str(uuid4()), opportunity_version_id=version_id, relation=relation, source_scope="workspace", evidence_level=item.evidence_level, paper_id=item.paper_id, evidence_span_id=span.id if span else None, artifact_id=span.artifact_id if span else item.artifact_id, chunk_id=item.chunk_id, rank=rank, score=item.score, judgement=item.judgement, judgement_confidence=item.judgement_confidence, display_excerpt=(item.text or "").replace("\x00", "")[:2000], snapshot_payload=item.model_dump(mode="json")))
         for row in external_rows[:12]:
             self.db.add(
@@ -1578,7 +1578,9 @@ class DiscoverService(OpportunityWorkflow):
                 )
             )
 
-    def _find_evidence_span(self, item: RetrievalResultItem) -> EvidenceSpan | None:
+    def _find_evidence_span(
+        self, item: RetrievalResultItem, workspace_id: str
+    ) -> EvidenceSpan | None:
         if not item.paper_id or not item.text:
             return None
         # The retrieved chunk may still carry NUL bytes from an older parse
@@ -1588,8 +1590,10 @@ class DiscoverService(OpportunityWorkflow):
         exact = self.db.execute(
             select(EvidenceSpan)
             .where(
+                EvidenceSpan.workspace_id == workspace_id,
                 EvidenceSpan.paper_id == item.paper_id,
                 EvidenceSpan.relation == "supports",
+                EvidenceSpan.is_deleted.is_(False),
                 EvidenceSpan.text.contains(fragment),
             )
         ).scalars().first()
@@ -1598,7 +1602,12 @@ class DiscoverService(OpportunityWorkflow):
         spans = list(
             self.db.execute(
                 select(EvidenceSpan)
-                .where(EvidenceSpan.paper_id == item.paper_id, EvidenceSpan.relation == "supports")
+                .where(
+                    EvidenceSpan.workspace_id == workspace_id,
+                    EvidenceSpan.paper_id == item.paper_id,
+                    EvidenceSpan.relation == "supports",
+                    EvidenceSpan.is_deleted.is_(False),
+                )
                 .order_by(EvidenceSpan.confidence.desc())
             ).scalars()
         )
@@ -1617,8 +1626,8 @@ class DiscoverService(OpportunityWorkflow):
             None,
         )
 
-    def _find_span(self, item: RetrievalResultItem) -> str | None:
-        span = self._find_evidence_span(item)
+    def _find_span(self, item: RetrievalResultItem, workspace_id: str) -> str | None:
+        span = self._find_evidence_span(item, workspace_id)
         return span.id if span else None
 
     # -------------------------------------------------------------- helpers

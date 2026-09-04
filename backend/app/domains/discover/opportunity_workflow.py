@@ -385,11 +385,23 @@ class OpportunityWorkflow:
         }
         if not evidence.evidence_span_id:
             return result
-        span = self.db.get(EvidenceSpan, evidence.evidence_span_id)
+        span = self.db.scalar(
+            select(EvidenceSpan).where(
+                EvidenceSpan.id == evidence.evidence_span_id,
+                EvidenceSpan.workspace_id == workspace_id,
+                EvidenceSpan.is_deleted.is_(False),
+            )
+        )
         if span is None or not span.artifact_id:
             return result
-        artifact = self.db.get(Artifact, span.artifact_id)
-        if artifact is None or artifact.is_deleted:
+        artifact = self.db.scalar(
+            select(Artifact).where(
+                Artifact.id == span.artifact_id,
+                Artifact.workspace_id == workspace_id,
+                Artifact.is_deleted.is_(False),
+            )
+        )
+        if artifact is None:
             result["message"] = "The source artifact is no longer available."
             return result
         path = ArtifactService(self.db).resolve_abs_path(artifact)

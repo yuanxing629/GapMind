@@ -220,7 +220,11 @@ class ExternalRetrievalService:
             return {"ready": False, "failed": True, "error": "Knowledge extraction failed."}
         span_count = int(
             self.db.execute(
-                select(func.count()).select_from(EvidenceSpan).where(EvidenceSpan.paper_id == paper.id)
+                select(func.count()).select_from(EvidenceSpan).where(
+                    EvidenceSpan.workspace_id == paper.workspace_id,
+                    EvidenceSpan.paper_id == paper.id,
+                    EvidenceSpan.is_deleted.is_(False),
+                )
             ).scalar()
             or 0
         )

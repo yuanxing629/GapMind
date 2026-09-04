@@ -370,7 +370,10 @@ class PaperService:
         # is unreachable we raise, leaving the DB and index in a known
         # inconsistent state that a reconcile job can detect.
         try:
-            milvus_client.delete_by_paper(paper.id)
+            milvus_client.delete_by_paper(
+                paper.id,
+                workspace_id=paper.workspace_id,
+            )
         except Exception as exc:
             logger.error(
                 "paper.soft_delete_milvus_failed",

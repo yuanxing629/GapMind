@@ -502,6 +502,6 @@ def test_find_evidence_span_strips_nul_from_query(db_session) -> None:
         judgement="supports",
         source_scope="workspace",
     )
-    span = service._find_evidence_span(item)  # must not raise
+    span = service._find_evidence_span(item, workspace_id)  # must not raise
     assert span is not None
     assert span.text == span_text
