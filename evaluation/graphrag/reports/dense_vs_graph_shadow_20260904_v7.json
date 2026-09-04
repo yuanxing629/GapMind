@@ -1,0 +1,237 @@
+{
+  "schema_version": "1.0.0",
+  "evaluation": "dense_only_vs_sql_graph_shadow",
+  "workspace_id": "123100ea-e75b-4110-9048-1f5b92668c32",
+  "gold_source": "evaluation\\retrieval\\gold\\demo_sig_ood_v1.json",
+  "top_k": 6,
+  "run_at": "2026-09-04T15:56:54Z",
+  "scope": {
+    "answer_context": "dense_only",
+    "graph_database": "none",
+    "graph_projection": "postgresql_bounded_sql",
+    "llm_called": false,
+    "database_mutated": false,
+    "evidence_hit_rate_definition": "dense: traceable returned chunks / returned chunks, with exact text or the canonical prefix stored under Milvus's 8,000-character limit; graph: paths with re-retrieved EvidenceSpan / paths"
+  },
+  "summary": {
+    "query_count": 6,
+    "dense_only": {
+      "query_hit_rate": 1.0,
+      "evidence_hit_rate": 1.0,
+      "latency_ms": {
+        "mean": 833.5183333333333,
+        "max": 1125.69
+      }
+    },
+    "graph_shadow": {
+      "query_evidence_hit_rate": 1.0,
+      "path_count": 41,
+      "paths_with_evidence": 41,
+      "path_evidence_hit_rate": 1.0,
+      "path_evidence_hit_rate_micro": 1.0,
+      "fallback_count": 0,
+      "truncated_count": 4,
+      "latency_ms": {
+        "mean": 92.43666666666667,
+        "max": 187.86
+      }
+    },
+    "dense_plus_shadow": {
+      "estimated_mean_latency_ms": 925.9566666666667
+    }
+  },
+  "queries": [
+    {
+      "query_id": "ss-001",
+      "category": "semantic_search",
+      "query": "self-interpretable graph neural network prototype-based explanation",
+      "dense": {
+        "status": "succeeded",
+        "diagnostic_code": null,
+        "latency_ms": 1125.69,
+        "reported_retrieval_latency_ms": 1125.66,
+        "returned_chunk_count": 6,
+        "traceable_chunk_count": 6,
+        "evidence_hit_rate": 1.0,
+        "query_hit": true,
+        "traceability_failure_reasons": {}
+      },
+      "graph_shadow": {
+        "status": "succeeded",
+        "latency_ms": 187.86,
+        "path_count": 9,
+        "paths_with_evidence": 9,
+        "supporting_evidence_count": 7,
+        "evidence_hit_rate": 1.0,
+        "query_evidence_hit": true,
+        "fallback": false,
+        "fallback_reason": null,
+        "truncated": true,
+        "truncation_reason": "node_limit",
+        "invalid_path_edges": 0,
+        "workspace_violations": 0
+      },
+      "dense_plus_shadow_latency_ms": 1313.56
+    },
+    {
+      "query_id": "ss-002",
+      "category": "semantic_search",
+      "query": "systematic evaluation of explainability methods for graph neural networks",
+      "dense": {
+        "status": "succeeded",
+        "diagnostic_code": null,
+        "latency_ms": 881.74,
+        "reported_retrieval_latency_ms": 881.7,
+        "returned_chunk_count": 6,
+        "traceable_chunk_count": 6,
+        "evidence_hit_rate": 1.0,
+        "query_hit": true,
+        "traceability_failure_reasons": {}
+      },
+      "graph_shadow": {
+        "status": "succeeded",
+        "latency_ms": 78.74,
+        "path_count": 6,
+        "paths_with_evidence": 6,
+        "supporting_evidence_count": 7,
+        "evidence_hit_rate": 1.0,
+        "query_evidence_hit": true,
+        "fallback": false,
+        "fallback_reason": null,
+        "truncated": false,
+        "truncation_reason": null,
+        "invalid_path_edges": 0,
+        "workspace_violations": 0
+      },
+      "dense_plus_shadow_latency_ms": 960.47
+    },
+    {
+      "query_id": "ss-003",
+      "category": "semantic_search",
+      "query": "graph out-of-distribution generalization benchmark covariate concept shift",
+      "dense": {
+        "status": "succeeded",
+        "diagnostic_code": null,
+        "latency_ms": 784.93,
+        "reported_retrieval_latency_ms": 784.89,
+        "returned_chunk_count": 2,
+        "traceable_chunk_count": 2,
+        "evidence_hit_rate": 1.0,
+        "query_hit": true,
+        "traceability_failure_reasons": {}
+      },
+      "graph_shadow": {
+        "status": "succeeded",
+        "latency_ms": 42.37,
+        "path_count": 6,
+        "paths_with_evidence": 6,
+        "supporting_evidence_count": 5,
+        "evidence_hit_rate": 1.0,
+        "query_evidence_hit": true,
+        "fallback": false,
+        "fallback_reason": null,
+        "truncated": false,
+        "truncation_reason": null,
+        "invalid_path_edges": 0,
+        "workspace_violations": 0
+      },
+      "dense_plus_shadow_latency_ms": 827.3
+    },
+    {
+      "query_id": "ce-001",
+      "category": "counter_evidence",
+      "query": "Intrinsic explanation methods always produce more faithful explanations than post-hoc explanation methods.",
+      "dense": {
+        "status": "succeeded",
+        "diagnostic_code": null,
+        "latency_ms": 701.39,
+        "reported_retrieval_latency_ms": 701.35,
+        "returned_chunk_count": 6,
+        "traceable_chunk_count": 6,
+        "evidence_hit_rate": 1.0,
+        "query_hit": true,
+        "traceability_failure_reasons": {}
+      },
+      "graph_shadow": {
+        "status": "succeeded",
+        "latency_ms": 93.31,
+        "path_count": 7,
+        "paths_with_evidence": 7,
+        "supporting_evidence_count": 7,
+        "evidence_hit_rate": 1.0,
+        "query_evidence_hit": true,
+        "fallback": false,
+        "fallback_reason": null,
+        "truncated": true,
+        "truncation_reason": "node_limit",
+        "invalid_path_edges": 0,
+        "workspace_violations": 0
+      },
+      "dense_plus_shadow_latency_ms": 794.7
+    },
+    {
+      "query_id": "ce-002",
+      "category": "counter_evidence",
+      "query": "Explanations learned on synthetic motifs transfer reliably to real-world graph datasets.",
+      "dense": {
+        "status": "succeeded",
+        "diagnostic_code": null,
+        "latency_ms": 713.9,
+        "reported_retrieval_latency_ms": 713.86,
+        "returned_chunk_count": 6,
+        "traceable_chunk_count": 6,
+        "evidence_hit_rate": 1.0,
+        "query_hit": true,
+        "traceability_failure_reasons": {}
+      },
+      "graph_shadow": {
+        "status": "succeeded",
+        "latency_ms": 73.42,
+        "path_count": 7,
+        "paths_with_evidence": 7,
+        "supporting_evidence_count": 9,
+        "evidence_hit_rate": 1.0,
+        "query_evidence_hit": true,
+        "fallback": false,
+        "fallback_reason": null,
+        "truncated": true,
+        "truncation_reason": "node_limit",
+        "invalid_path_edges": 0,
+        "workspace_violations": 0
+      },
+      "dense_plus_shadow_latency_ms": 787.32
+    },
+    {
+      "query_id": "ce-003",
+      "category": "counter_evidence",
+      "query": "Self-interpretable GNN explanations remain stable under distribution shift without special out-of-distribution training.",
+      "dense": {
+        "status": "succeeded",
+        "diagnostic_code": null,
+        "latency_ms": 793.46,
+        "reported_retrieval_latency_ms": 793.4,
+        "returned_chunk_count": 6,
+        "traceable_chunk_count": 6,
+        "evidence_hit_rate": 1.0,
+        "query_hit": true,
+        "traceability_failure_reasons": {}
+      },
+      "graph_shadow": {
+        "status": "succeeded",
+        "latency_ms": 78.92,
+        "path_count": 6,
+        "paths_with_evidence": 6,
+        "supporting_evidence_count": 7,
+        "evidence_hit_rate": 1.0,
+        "query_evidence_hit": true,
+        "fallback": false,
+        "fallback_reason": null,
+        "truncated": true,
+        "truncation_reason": "node_limit",
+        "invalid_path_edges": 0,
+        "workspace_violations": 0
+      },
+      "dense_plus_shadow_latency_ms": 872.39
+    }
+  ]
+}
