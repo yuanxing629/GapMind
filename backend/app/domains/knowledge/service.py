@@ -105,9 +105,15 @@ class KnowledgeService:
         self.db = db
 
     # -------------------------------------------------------- knowledge items
-    def get_item(self, item_id: str) -> KnowledgeItem:
+    def get_item(self, item_id: str, *, workspace_id: str) -> KnowledgeItem:
         self._validate_uuid(item_id)
-        item = self.db.get(KnowledgeItem, item_id)
+        item = self.db.scalar(
+            select(KnowledgeItem).where(
+                KnowledgeItem.id == item_id,
+                KnowledgeItem.workspace_id == workspace_id,
+                KnowledgeItem.is_deleted.is_(False),
+            )
+        )
         if item is None or item.is_deleted:
             raise KnowledgeItemNotFoundError(item_id)
         return item
@@ -356,9 +362,7 @@ class KnowledgeService:
         extra_paper_ids: set[str] = set()
         extra_entity_ids: set[str] = set()
         if kind == "knowledge":
-            seed = self.get_item(raw_id)
-            if seed.workspace_id != workspace_id:
-                raise KnowledgeItemNotFoundError(raw_id)
+            seed = self.get_item(raw_id, workspace_id=workspace_id)
             visited = {seed.id}
             frontier = {seed.id}
             for _ in range(depth):
@@ -410,14 +414,26 @@ class KnowledgeService:
                 ).scalars().all()
             )
         elif kind == "mention":
-            mention = self.db.get(PaperMention, raw_id)
-            if mention is None or mention.is_deleted or mention.workspace_id != workspace_id:
+            mention = self.db.scalar(
+                select(PaperMention).where(
+                    PaperMention.id == raw_id,
+                    PaperMention.workspace_id == workspace_id,
+                    PaperMention.is_deleted.is_(False),
+                )
+            )
+            if mention is None:
                 raise KnowledgeItemNotFoundError(raw_id)
             extra_paper_ids.add(mention.paper_id)
             extra_entity_ids.add(mention.canonical_entity_id)
             if mention.knowledge_item_id:
-                item = self.db.get(KnowledgeItem, mention.knowledge_item_id)
-                if item and not item.is_deleted and item.workspace_id == workspace_id:
+                item = self.db.scalar(
+                    select(KnowledgeItem).where(
+                        KnowledgeItem.id == mention.knowledge_item_id,
+                        KnowledgeItem.workspace_id == workspace_id,
+                        KnowledgeItem.is_deleted.is_(False),
+                    )
+                )
+                if item:
                     items = [item]
         else:
             raise KnowledgeItemNotFoundError(node_id)
@@ -661,6 +677,7 @@ class KnowledgeService:
         evidence_rows = list(self.db.execute(
             select(EvidenceSpan).where(
                 EvidenceSpan.workspace_id == workspace_id,
+                EvidenceSpan.is_deleted.is_(False),
                 EvidenceSpan.knowledge_item_id.in_(list(visible_item_ids))
                 if visible_item_ids else False,
             )
@@ -1091,7 +1108,11 @@ class KnowledgeService:
                 item_id: int(count)
                 for item_id, count in self.db.execute(
                     select(EvidenceSpan.knowledge_item_id, func.count(EvidenceSpan.id))
-                    .where(EvidenceSpan.knowledge_item_id.in_(item_ids))
+                    .where(
+                        EvidenceSpan.workspace_id == workspace_id,
+                        EvidenceSpan.is_deleted.is_(False),
+                        EvidenceSpan.knowledge_item_id.in_(item_ids),
+                    )
                     .group_by(EvidenceSpan.knowledge_item_id)
                 ).all()
             }
@@ -1392,6 +1413,7 @@ class KnowledgeService:
         )
         evidence = int(self.db.execute(select(func.count()).select_from(EvidenceSpan).where(
             EvidenceSpan.workspace_id == workspace_id,
+            EvidenceSpan.is_deleted.is_(False),
             EvidenceSpan.knowledge_item_id.in_(active_item_ids),
         )).scalar() or 0)
         return {
@@ -1536,6 +1558,7 @@ class KnowledgeService:
                     select(EvidenceSpan.knowledge_item_id, func.count(EvidenceSpan.id))
                     .where(
                         EvidenceSpan.workspace_id == workspace_id,
+                        EvidenceSpan.is_deleted.is_(False),
                         EvidenceSpan.knowledge_item_id.in_(list(item_ids)),
                     )
                     .group_by(EvidenceSpan.knowledge_item_id)
@@ -1583,17 +1606,21 @@ class KnowledgeService:
         return "knowledge", node_id
 
     # -------------------------------------------------------- evidence
-    def list_evidence_for_item(self, item_id: str) -> list[EvidenceSpan]:
+    def list_evidence_for_item(
+        self, item_id: str, *, workspace_id: str
+    ) -> list[EvidenceSpan]:
         self._validate_uuid(item_id)
-        q = select(EvidenceSpan).where(EvidenceSpan.knowledge_item_id == item_id)
+        q = select(EvidenceSpan).where(
+            EvidenceSpan.knowledge_item_id == item_id,
+            EvidenceSpan.workspace_id == workspace_id,
+            EvidenceSpan.is_deleted.is_(False),
+        )
         return list(self.db.execute(q).scalars().all())
 
     def review_item(
         self, *, workspace_id: str, item_id: str, payload: KnowledgeItemReview
     ) -> KnowledgeItem:
-        item = self.get_item(item_id)
-        if item.workspace_id != workspace_id:
-            raise KnowledgeItemNotFoundError(item_id)
+        item = self.get_item(item_id, workspace_id=workspace_id)
         if payload.action == "edit":
             if payload.canonical_name is None and payload.content is None and payload.confidence is None:
                 raise KnowledgeItemReviewError("edit requires canonical_name, content, or confidence")
@@ -1630,10 +1657,12 @@ class KnowledgeService:
         confidence: float,
     ) -> PaperMention:
         query = select(PaperMention).where(
+            PaperMention.workspace_id == workspace_id,
             PaperMention.paper_id == paper_id,
             PaperMention.canonical_entity_id == canonical_entity_id,
             PaperMention.start_char == start_char,
             PaperMention.end_char == end_char,
+            PaperMention.is_deleted.is_(False),
         )
         existing = self.db.execute(query).scalar_one_or_none()
         if existing:
@@ -1730,11 +1759,13 @@ class KnowledgeService:
     def create_evidence_span(self, payload: EvidenceSpanCreate) -> EvidenceSpan:
         existing = self.db.execute(
             select(EvidenceSpan).where(
+                EvidenceSpan.workspace_id == payload.workspace_id,
                 EvidenceSpan.knowledge_item_id == payload.knowledge_item_id,
                 EvidenceSpan.artifact_id == payload.artifact_id,
                 EvidenceSpan.start_char == payload.start_char,
                 EvidenceSpan.end_char == payload.end_char,
                 EvidenceSpan.relation == payload.relation,
+                EvidenceSpan.is_deleted.is_(False),
             )
         ).scalar_one_or_none()
         if existing:
@@ -1754,6 +1785,7 @@ class KnowledgeService:
             text=payload.text,
             relation=payload.relation,
             confidence=payload.confidence,
+            is_deleted=False,
         )
         self.db.add(span)
         self.db.flush()

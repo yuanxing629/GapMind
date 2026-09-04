@@ -7,6 +7,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.domains.knowledge.schemas import GraphRAGPathRead
+
 
 class ChatConversationCreate(BaseModel):
     title: str | None = Field(default=None, max_length=255)
@@ -49,6 +51,13 @@ class ChatMessageCreate(BaseModel):
     research_plan_id: str | None = None
     source_artifact_ids: list[str] = Field(default_factory=list, max_length=4)
     images: list[ChatImageInput] = Field(default_factory=list, max_length=3)
+    # These fields are intentionally diagnostic-only during the PostgreSQL
+    # GraphRAG shadow phase.  They never replace dense answer evidence.
+    retrieval_mode: Literal["dense", "hybrid", "graph"] = "dense"
+    graph_expand: bool | None = None
+    graph_max_hops: int = Field(default=2, ge=1, le=2)
+    graph_node_limit: int = Field(default=32, ge=1, le=200)
+    graph_edge_limit: int = Field(default=64, ge=1, le=400)
 
     @field_validator("content")
     @classmethod
@@ -138,6 +147,32 @@ class CitationQualityRead(BaseModel):
     fallback: bool = False
 
 
+class GraphRetrievalAuditRead(BaseModel):
+    """Bounded GraphRAG diagnostics; it is not answer evidence by itself."""
+
+    mode: Literal["disabled", "shadow"] = "disabled"
+    projection_version: str = "sql_graph_v1"
+    seed_count: int = Field(default=0, ge=0)
+    expanded_node_count: int = Field(default=0, ge=0)
+    expanded_edge_count: int = Field(default=0, ge=0)
+    path_count: int = Field(default=0, ge=0)
+    # Path budget diagnostics: ``path_count`` remains the emitted path count;
+    # these fields explain how many eligible candidates were packed or
+    # dropped by the bounded node/edge budget.
+    candidate_path_count: int = Field(default=0, ge=0)
+    emitted_path_count: int = Field(default=0, ge=0)
+    dropped_path_count: int = Field(default=0, ge=0)
+    dropped_path_reasons: dict[str, int] = Field(default_factory=dict)
+    latency_ms: float = Field(default=0.0, ge=0)
+    supporting_paper_ids: list[str] = Field(default_factory=list)
+    supporting_evidence_ids: list[str] = Field(default_factory=list)
+    truncated: bool = False
+    truncation_reason: str | None = None
+    fallback: bool = False
+    fallback_reason: str | None = None
+    paths: list[GraphRAGPathRead] = Field(default_factory=list)
+
+
 class RetrievalAuditRead(BaseModel):
     """Persisted, non-sensitive retrieval observability for one answer."""
 
@@ -151,6 +186,7 @@ class RetrievalAuditRead(BaseModel):
     reranker_status: Literal[
         "applied", "enabled_no_rerank", "degraded", "disabled", "unknown"
     ] = "unknown"
+    graph: GraphRetrievalAuditRead = Field(default_factory=GraphRetrievalAuditRead)
 
 
 class ChatMessageSourceRead(BaseModel):

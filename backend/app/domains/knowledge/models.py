@@ -335,3 +335,8 @@ class EvidenceSpan(Base, UUIDPKMixin, TimestampMixin):
         String(16), default="supports", nullable=False
     )  # supports | qualifies | contradicts
     confidence: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    # Evidence is a first-class provenance object.  Keep soft deletion here so
+    # graph projections cannot resurrect an invalidated span.
+    is_deleted: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, index=True
+    )

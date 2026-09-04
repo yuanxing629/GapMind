@@ -181,6 +181,94 @@ class KnowledgeGraphSearchResponse(BaseModel):
     items: list[KnowledgeGraphSearchResult] = Field(default_factory=list)
 
 
+GraphRAGNodeKind = Literal[
+    "paper",
+    "canonical_entity",
+    "knowledge_item",
+    "evidence_span",
+    "chunk",
+]
+GraphRAGReviewStatus = Literal["confirmed", "candidate", "rejected"]
+
+
+class GraphRAGSeedRead(BaseModel):
+    """A dense hit adapted into a bounded graph seed."""
+
+    node_id: str
+    node_kind: GraphRAGNodeKind
+    workspace_id: str
+    paper_id: str | None = None
+    chunk_id: str | None = None
+    rank: int = Field(default=0, ge=0)
+    score: float = 0.0
+
+
+class GraphRAGNodeRead(BaseModel):
+    """A request-scoped graph node with explicit provenance identity."""
+
+    id: str
+    kind: GraphRAGNodeKind
+    workspace_id: str
+    label: str
+    paper_id: str | None = None
+    item_id: str | None = None
+    canonical_entity_id: str | None = None
+    chunk_id: str | None = None
+    evidence_span_id: str | None = None
+    type: str | None = None
+    status: str | None = None
+    review_status: GraphRAGReviewStatus = "candidate"
+
+
+class GraphRAGEvidenceRead(BaseModel):
+    """Evidence re-retrieved from PostgreSQL for a graph path."""
+
+    evidence_span_id: str
+    workspace_id: str
+    paper_id: str
+    item_id: str
+    artifact_id: str | None = None
+    chunk_id: str | None = None
+    section: str | None = None
+    excerpt: str = ""
+    start_char: int | None = None
+    end_char: int | None = None
+    relation: str = "supports"
+    confidence: float = 0.0
+    review_status: GraphRAGReviewStatus = "candidate"
+    # Diagnostic-only score used to keep graph evidence tied to the current
+    # question; it is not a scientific confidence or confirmation status.
+    query_relevance_score: float = Field(default=0.0, ge=0.0, le=1.0)
+
+
+class GraphRAGEdgeRead(BaseModel):
+    """A validated graph edge; source and target must be in the path nodes."""
+
+    id: str
+    type: str
+    source: str
+    target: str
+    workspace_id: str
+    paper_id: str | None = None
+    supporting_item_ids: list[str] = Field(default_factory=list)
+    supporting_evidence_ids: list[str] = Field(default_factory=list)
+    review_status: GraphRAGReviewStatus = "candidate"
+
+
+class GraphRAGPathRead(BaseModel):
+    """A bounded, auditable path; this is not a persisted scientific fact."""
+
+    path_id: str
+    workspace_id: str
+    nodes: list[GraphRAGNodeRead] = Field(default_factory=list)
+    edges: list[GraphRAGEdgeRead] = Field(default_factory=list)
+    supporting_paper_ids: list[str] = Field(default_factory=list)
+    supporting_item_ids: list[str] = Field(default_factory=list)
+    supporting_evidence_ids: list[str] = Field(default_factory=list)
+    evidence: list[GraphRAGEvidenceRead] = Field(default_factory=list)
+    review_status: GraphRAGReviewStatus = "candidate"
+
+
 class EvidenceSpanRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -197,6 +285,7 @@ class EvidenceSpanRead(BaseModel):
     text: str | None = None
     relation: str = "supports"
     confidence: float
+    is_deleted: bool = False
     created_at: datetime
     updated_at: datetime
 

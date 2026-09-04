@@ -16,6 +16,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.logging import get_logger
 from app.domains.agent.models import AgentArtifact, AgentRun
 from app.domains.artifact.models import Artifact
 from app.domains.artifact.service import ArtifactService
@@ -27,6 +28,11 @@ from app.domains.chat.models import (
     ChatMessageImage,
 )
 from app.domains.discover.models import ResearchOpportunity, ResearchPlan
+from app.domains.knowledge.graphrag import (
+    GRAPH_RAG_PROJECTION_VERSION,
+    BoundedGraphProjection,
+    build_bounded_projection,
+)
 from app.domains.paper.models import Paper
 from app.domains.retrieval.schemas import RetrievalResponse, RetrievalResultItem
 from app.domains.retrieval.service import (
@@ -37,6 +43,8 @@ from app.domains.retrieval.service import (
 from app.domains.workspace.models import Workspace
 from app.domains.workspace.service import WorkspaceService
 from app.gateway.llm import LLMGateway, LLMResponse, get_llm_gateway
+
+logger = get_logger(__name__)
 
 # A chat stream whose client disconnected mid-flight is marked failed by the
 # finally-guard in _stream_complete; rows older than this threshold that are
@@ -257,6 +265,11 @@ class ChatService:
         images: list[dict[str, str]] | None = None,
         *,
         actor_id: str | None = None,
+        retrieval_mode: str = "dense",
+        graph_expand: bool | None = None,
+        graph_max_hops: int | None = None,
+        graph_node_limit: int | None = None,
+        graph_edge_limit: int | None = None,
     ) -> tuple[ChatConversation, ChatMessage, ChatMessage]:
         content = self._validate_content(content)
         prepared_images = self._prepare_images(images)
@@ -280,6 +293,11 @@ class ChatService:
             research_plan_id=research_plan_id,
             source_artifact_ids=source_artifact_ids,
             image_data_urls=image_data_urls,
+            retrieval_mode=retrieval_mode,
+            graph_expand=graph_expand,
+            graph_max_hops=graph_max_hops,
+            graph_node_limit=graph_node_limit,
+            graph_edge_limit=graph_edge_limit,
         )
 
     def send(
@@ -292,6 +310,11 @@ class ChatService:
         images: list[dict[str, str]] | None = None,
         *,
         actor_id: str | None = None,
+        retrieval_mode: str = "dense",
+        graph_expand: bool | None = None,
+        graph_max_hops: int | None = None,
+        graph_node_limit: int | None = None,
+        graph_edge_limit: int | None = None,
     ) -> tuple[ChatConversation, ChatMessage, ChatMessage]:
         content = self._validate_content(content)
         prepared_images = self._prepare_images(images)
@@ -312,6 +335,11 @@ class ChatService:
             research_plan_id=research_plan_id,
             source_artifact_ids=source_artifact_ids,
             image_data_urls=image_data_urls,
+            retrieval_mode=retrieval_mode,
+            graph_expand=graph_expand,
+            graph_max_hops=graph_max_hops,
+            graph_node_limit=graph_node_limit,
+            graph_edge_limit=graph_edge_limit,
         )
 
     def retry(
@@ -675,6 +703,11 @@ class ChatService:
         research_plan_id: str | None = None,
         source_artifact_ids: list[str] | None = None,
         image_data_urls: list[str] | None = None,
+        retrieval_mode: str = "dense",
+        graph_expand: bool | None = None,
+        graph_max_hops: int | None = None,
+        graph_node_limit: int | None = None,
+        graph_edge_limit: int | None = None,
     ) -> tuple[ChatConversation, ChatMessage, ChatMessage]:
         assistant = self.db.get(ChatMessage, assistant_id)
         conversation = self.db.get(ChatConversation, conversation_id)
@@ -693,6 +726,11 @@ class ChatService:
                     assistant.id,
                     research_plan_id=research_plan_id,
                     source_artifact_ids=source_artifact_ids,
+                    retrieval_mode=retrieval_mode,
+                    graph_expand=graph_expand,
+                    graph_max_hops=graph_max_hops,
+                    graph_node_limit=graph_node_limit,
+                    graph_edge_limit=graph_edge_limit,
                 )
                 context, evidence, sources = (
                     workspace_context.messages,
@@ -791,6 +829,11 @@ class ChatService:
         images: list[dict[str, str]] | None = None,
         *,
         actor_id: str | None = None,
+        retrieval_mode: str = "dense",
+        graph_expand: bool | None = None,
+        graph_max_hops: int | None = None,
+        graph_node_limit: int | None = None,
+        graph_edge_limit: int | None = None,
     ) -> Generator[dict[str, Any], None, None]:
         """Stream a new-conversation message. Yields event dicts (see _stream_complete)."""
         content = self._validate_content(content)
@@ -813,6 +856,11 @@ class ChatService:
             research_plan_id=research_plan_id,
             source_artifact_ids=source_artifact_ids,
             image_data_urls=image_data_urls,
+            retrieval_mode=retrieval_mode,
+            graph_expand=graph_expand,
+            graph_max_hops=graph_max_hops,
+            graph_node_limit=graph_node_limit,
+            graph_edge_limit=graph_edge_limit,
         )
 
     def stream_send(
@@ -825,6 +873,11 @@ class ChatService:
         images: list[dict[str, str]] | None = None,
         *,
         actor_id: str | None = None,
+        retrieval_mode: str = "dense",
+        graph_expand: bool | None = None,
+        graph_max_hops: int | None = None,
+        graph_node_limit: int | None = None,
+        graph_edge_limit: int | None = None,
     ) -> Generator[dict[str, Any], None, None]:
         """Stream a message into an existing conversation. Yields event dicts."""
         content = self._validate_content(content)
@@ -846,6 +899,11 @@ class ChatService:
             research_plan_id=research_plan_id,
             source_artifact_ids=source_artifact_ids,
             image_data_urls=image_data_urls,
+            retrieval_mode=retrieval_mode,
+            graph_expand=graph_expand,
+            graph_max_hops=graph_max_hops,
+            graph_node_limit=graph_node_limit,
+            graph_edge_limit=graph_edge_limit,
         )
 
     def _stream_complete(
@@ -858,6 +916,11 @@ class ChatService:
         research_plan_id: str | None = None,
         source_artifact_ids: list[str] | None = None,
         image_data_urls: list[str] | None = None,
+        retrieval_mode: str = "dense",
+        graph_expand: bool | None = None,
+        graph_max_hops: int | None = None,
+        graph_node_limit: int | None = None,
+        graph_edge_limit: int | None = None,
     ) -> Generator[dict[str, Any], None, None]:
         """Stream LLM tokens for a message, persisting on completion.
 
@@ -882,6 +945,11 @@ class ChatService:
                     assistant.id,
                     research_plan_id=research_plan_id,
                     source_artifact_ids=source_artifact_ids,
+                    retrieval_mode=retrieval_mode,
+                    graph_expand=graph_expand,
+                    graph_max_hops=graph_max_hops,
+                    graph_node_limit=graph_node_limit,
+                    graph_edge_limit=graph_edge_limit,
                 )
                 context, evidence, sources = (
                     workspace_context.messages,
@@ -1161,6 +1229,11 @@ class ChatService:
         *,
         research_plan_id: str | None = None,
         source_artifact_ids: list[str] | None = None,
+        retrieval_mode: str = "dense",
+        graph_expand: bool | None = None,
+        graph_max_hops: int | None = None,
+        graph_node_limit: int | None = None,
+        graph_edge_limit: int | None = None,
     ) -> WorkspaceContext:
         workspace = WorkspaceService(self.db).get(conversation.workspace_id)
         selection = self._resolve_context_selection(
@@ -1183,7 +1256,11 @@ class ChatService:
                 RETRIEVAL_DIAGNOSTIC_MESSAGES["unknown"],
             )
             assistant = self.db.get(ChatMessage, assistant_id)
-            assistant.retrieval_audit = self._retrieval_audit(result, [])
+            assistant.retrieval_audit = self._retrieval_audit(
+                result,
+                [],
+                self._graph_audit_disabled("dense_retrieval_failed"),
+            )
             self._mark_failed(
                 assistant,
                 diagnostic_message,
@@ -1201,6 +1278,17 @@ class ChatService:
             workspace,
             assistant_id,
             result.items,
+        )
+        graph_audit = self._graph_shadow_audit(
+            workspace.id,
+            result.items,
+            result.request_id,
+            query_text=question,
+            retrieval_mode=retrieval_mode,
+            graph_expand=graph_expand,
+            graph_max_hops=graph_max_hops,
+            graph_node_limit=graph_node_limit,
+            graph_edge_limit=graph_edge_limit,
         )
         sources = self._source_manifest(selection.plan, evidence, selection.artifacts)
         profile = self._clip_context_text(
@@ -1233,13 +1321,147 @@ class ChatService:
             sources,
             selection.plan,
             result.diagnostic_code,
-            self._retrieval_audit(result, evidence),
+            self._retrieval_audit(result, evidence, graph_audit),
         )
+
+    @staticmethod
+    def _graph_audit_disabled(reason: str) -> dict[str, Any]:
+        return {
+            "mode": "disabled",
+            "projection_version": GRAPH_RAG_PROJECTION_VERSION,
+            "seed_count": 0,
+            "expanded_node_count": 0,
+            "expanded_edge_count": 0,
+            "path_count": 0,
+            "candidate_path_count": 0,
+            "emitted_path_count": 0,
+            "dropped_path_count": 0,
+            "dropped_path_reasons": {},
+            "latency_ms": 0.0,
+            "supporting_paper_ids": [],
+            "supporting_evidence_ids": [],
+            "truncated": False,
+            "truncation_reason": None,
+            "fallback": False,
+            "fallback_reason": reason,
+            "paths": [],
+        }
+
+    def _graph_shadow_audit(
+        self,
+        workspace_id: str,
+        dense_items: list[RetrievalResultItem],
+        request_id: str,
+        *,
+        query_text: str = "",
+        retrieval_mode: str,
+        graph_expand: bool | None,
+        graph_max_hops: int | None,
+        graph_node_limit: int | None,
+        graph_edge_limit: int | None,
+    ) -> dict[str, Any]:
+        """Run bounded GraphRAG diagnostics without changing answer context."""
+
+        enabled = (
+            retrieval_mode in {"hybrid", "graph"}
+            or graph_expand is True
+            or (graph_expand is not False and settings.chat_graphrag_shadow_enabled)
+        )
+        if not enabled:
+            return self._graph_audit_disabled("graph_disabled")
+
+        expected_version = settings.chat_graphrag_projection_version
+        if expected_version != GRAPH_RAG_PROJECTION_VERSION:
+            audit = self._graph_audit_disabled("projection_version_mismatch")
+            audit["mode"] = "shadow"
+            audit["fallback"] = True
+            audit["fallback_reason"] = "projection_version_mismatch"
+            return audit
+
+        started = time.perf_counter()
+        try:
+            projection: BoundedGraphProjection = build_bounded_projection(
+                self.db,
+                workspace_id=workspace_id,
+                dense_items=dense_items,
+                request_id=request_id,
+                query_text=query_text,
+                max_hops=graph_max_hops or settings.chat_graphrag_max_hops,
+                node_limit=graph_node_limit or settings.chat_graphrag_node_limit,
+                edge_limit=graph_edge_limit or settings.chat_graphrag_edge_limit,
+            )
+            elapsed_ms = (time.perf_counter() - started) * 1000
+            if projection.projection_version != expected_version:
+                return {
+                    **self._graph_audit_disabled("projection_version_mismatch"),
+                    "mode": "shadow",
+                    "fallback": True,
+                    "fallback_reason": "projection_version_mismatch",
+                    "latency_ms": round(elapsed_ms, 2),
+                }
+            if elapsed_ms > settings.chat_graphrag_timeout_ms:
+                return {
+                    "mode": "shadow",
+                    "projection_version": projection.projection_version,
+                    "seed_count": len(projection.seeds),
+                    "expanded_node_count": projection.expanded_node_count,
+                    "expanded_edge_count": projection.expanded_edge_count,
+                    "path_count": len(projection.paths),
+                    "candidate_path_count": projection.candidate_path_count,
+                    "emitted_path_count": projection.emitted_path_count,
+                    "dropped_path_count": projection.dropped_path_count,
+                    "dropped_path_reasons": projection.dropped_path_reasons,
+                    "latency_ms": round(elapsed_ms, 2),
+                    "supporting_paper_ids": projection.supporting_paper_ids,
+                    "supporting_evidence_ids": projection.supporting_evidence_ids,
+                    "truncated": projection.truncated,
+                    "truncation_reason": projection.truncation_reason,
+                    "fallback": True,
+                    "fallback_reason": "graph_timeout",
+                    # The projection is synchronous in this phase, so a
+                    # post-completion budget breach does not invalidate the
+                    # already workspace- and endpoint-validated diagnostic
+                    # paths.  Keep them visible for audit, but retain the
+                    # dense-only fallback and never add them to the answer.
+                    "paths": [path.model_dump(mode="json") for path in projection.paths],
+                }
+            return {
+                "mode": "shadow",
+                "projection_version": projection.projection_version,
+                "seed_count": len(projection.seeds),
+                "expanded_node_count": projection.expanded_node_count,
+                "expanded_edge_count": projection.expanded_edge_count,
+                "path_count": len(projection.paths),
+                "candidate_path_count": projection.candidate_path_count,
+                "emitted_path_count": projection.emitted_path_count,
+                "dropped_path_count": projection.dropped_path_count,
+                "dropped_path_reasons": projection.dropped_path_reasons,
+                "latency_ms": round(elapsed_ms, 2),
+                "supporting_paper_ids": projection.supporting_paper_ids,
+                "supporting_evidence_ids": projection.supporting_evidence_ids,
+                "truncated": projection.truncated,
+                "truncation_reason": projection.truncation_reason,
+                "fallback": not projection.evidence,
+                "fallback_reason": "insufficient_evidence" if not projection.evidence else None,
+                "paths": [path.model_dump(mode="json") for path in projection.paths],
+            }
+        except Exception as exc:
+            logger.warning(
+                "chat.graphrag_shadow_failed",
+                workspace_id=workspace_id,
+                error=str(exc),
+            )
+            audit = self._graph_audit_disabled("graph_query_failed")
+            audit["mode"] = "shadow"
+            audit["fallback"] = True
+            audit["fallback_reason"] = "graph_query_failed"
+            return audit
 
     @staticmethod
     def _retrieval_audit(
         result: RetrievalResponse,
         evidence: list[ChatMessageEvidence],
+        graph: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         filters = result.filters_applied or {}
         if result.diagnostic_code == "reranker_degraded":
@@ -1259,6 +1481,7 @@ class ChatService:
             "final_paper_count": len({item.paper_id for item in evidence if item.paper_id}),
             "latency_ms": result.latency_ms,
             "reranker_status": reranker_status,
+            "graph": graph or ChatService._graph_audit_disabled("graph_disabled"),
         }
 
     def context_options(

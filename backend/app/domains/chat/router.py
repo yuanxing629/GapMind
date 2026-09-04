@@ -136,6 +136,11 @@ def send_new(
             payload.source_artifact_ids,
             [image.model_dump() for image in payload.images],
             actor_id=user_id,
+            retrieval_mode=payload.retrieval_mode,
+            graph_expand=payload.graph_expand,
+            graph_max_hops=payload.graph_max_hops,
+            graph_node_limit=payload.graph_node_limit,
+            graph_edge_limit=payload.graph_edge_limit,
         )
     )
 
@@ -212,6 +217,11 @@ def stream_message(
             source_artifact_ids=payload.source_artifact_ids,
             images=[image.model_dump() for image in payload.images],
             actor_id=user_id,
+            retrieval_mode=payload.retrieval_mode,
+            graph_expand=payload.graph_expand,
+            graph_max_hops=payload.graph_max_hops,
+            graph_node_limit=payload.graph_node_limit,
+            graph_edge_limit=payload.graph_edge_limit,
         ):
             yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
     return StreamingResponse(event_stream(), media_type="text/event-stream")
@@ -231,6 +241,11 @@ def send_message(
             payload.source_artifact_ids,
             [image.model_dump() for image in payload.images],
             actor_id=user_id,
+            retrieval_mode=payload.retrieval_mode,
+            graph_expand=payload.graph_expand,
+            graph_max_hops=payload.graph_max_hops,
+            graph_node_limit=payload.graph_node_limit,
+            graph_edge_limit=payload.graph_edge_limit,
         )
     )
 

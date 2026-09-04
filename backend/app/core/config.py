@@ -230,6 +230,14 @@ class Settings(BaseSettings):
     chat_plan_max_context_chars: int = 6000
     chat_artifact_max_context_chars: int = 6000
     chat_workspace_profile_max_context_chars: int = 2000
+    # PostgreSQL-first GraphRAG is diagnostic-only in this phase.  It runs in
+    # shadow by default, while dense evidence remains the answer context.
+    chat_graphrag_shadow_enabled: bool = True
+    chat_graphrag_projection_version: str = "sql_graph_v1"
+    chat_graphrag_max_hops: int = 2
+    chat_graphrag_node_limit: int = 32
+    chat_graphrag_edge_limit: int = 64
+    chat_graphrag_timeout_ms: int = 250
 
     # Evidence Passport operational freshness policy. This describes the age
     # of the verification snapshot, not the scientific validity or publication

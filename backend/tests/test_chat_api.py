@@ -9,7 +9,10 @@ from uuid import uuid4
 
 import pytest
 
+from app.core.config import settings
 from app.domains.chat.service import ChatService
+from app.domains.knowledge.graphrag import BoundedGraphProjection
+from app.domains.knowledge.schemas import GraphRAGPathRead
 from app.domains.retrieval.schemas import RetrievalResponse, RetrievalResultItem
 
 
@@ -436,7 +439,10 @@ def test_workspace_chat_retrieves_persists_citations_and_opens_source(
     assert body["conversation"]["workspace_id"] == workspace["id"]
     assistant = body["assistant_message"]
     assert assistant["grounding_status"] == "grounded"
-    assert assistant["retrieval_audit"] == {
+    retrieval_audit = assistant["retrieval_audit"]
+    assert {
+        key: value for key, value in retrieval_audit.items() if key != "graph"
+    } == {
         "request_id": "retrieval-test-001",
         "status": "succeeded",
         "diagnostic_code": None,
@@ -446,6 +452,29 @@ def test_workspace_chat_retrieves_persists_citations_and_opens_source(
         "latency_ms": 12.5,
         "reranker_status": "applied",
     }
+    graph_audit = retrieval_audit["graph"]
+    assert {
+        key: value for key, value in graph_audit.items() if key != "latency_ms"
+    } == {
+        "mode": "shadow",
+        "projection_version": "sql_graph_v1",
+        "seed_count": 1,
+        "expanded_node_count": 1,
+        "expanded_edge_count": 0,
+        "path_count": 0,
+        "candidate_path_count": 0,
+        "emitted_path_count": 0,
+        "dropped_path_count": 0,
+        "dropped_path_reasons": {},
+        "supporting_paper_ids": [],
+        "supporting_evidence_ids": [],
+        "truncated": False,
+        "truncation_reason": None,
+        "fallback": True,
+        "fallback_reason": "insufficient_evidence",
+        "paths": [],
+    }
+    assert graph_audit["latency_ms"] >= 0
     assert len(assistant["citations"]) == 1
     citation = assistant["citations"][0]
     assert citation["paper_title"] == "Interpretable Graph Models"
@@ -461,6 +490,212 @@ def test_workspace_chat_retrieves_persists_citations_and_opens_source(
     assert context.status_code == 200
     assert context.json()["available"] is True
     assert context.json()["content"] == source_text
+
+
+def test_workspace_chat_graph_shadow_is_audit_only_and_keeps_dense_context(
+    client, db_session, fake_gateway, monkeypatch
+):
+    from app.domains.knowledge.models import (
+        CanonicalEntity,
+        EvidenceSpan,
+        KnowledgeItem,
+        PaperMention,
+    )
+
+    workspace = client.post("/api/v1/workspaces", json={"name": "Graph shadow"}).json()
+    paper_one = client.post(
+        f"/api/v1/workspaces/{workspace['id']}/papers",
+        json={"title": "Seed evidence", "authors": [], "year": 2024},
+    ).json()
+    paper_two = client.post(
+        f"/api/v1/workspaces/{workspace['id']}/papers",
+        json={"title": "Related evidence", "authors": [], "year": 2023},
+    ).json()
+    entity_id = str(uuid4())
+    item_one_id = str(uuid4())
+    item_two_id = str(uuid4())
+    evidence_id = str(uuid4())
+    db_session.add(CanonicalEntity(
+        id=entity_id,
+        workspace_id=workspace["id"],
+        type="method",
+        canonical_name="Shared Method",
+        normalization_key="shared method",
+        status="human_confirmed",
+    ))
+    db_session.add_all([
+        KnowledgeItem(
+            id=item_one_id,
+            workspace_id=workspace["id"],
+            paper_id=paper_one["id"],
+            canonical_entity_id=entity_id,
+            type="method",
+            canonical_name="Shared Method",
+            content={"description": "seed"},
+            source_provenance={},
+            status="human_confirmed",
+        ),
+        KnowledgeItem(
+            id=item_two_id,
+            workspace_id=workspace["id"],
+            paper_id=paper_two["id"],
+            canonical_entity_id=entity_id,
+            type="method",
+            canonical_name="Shared Method",
+            content={"description": "related"},
+            source_provenance={},
+            status="extracted_candidate",
+        ),
+        EvidenceSpan(
+            id=evidence_id,
+            workspace_id=workspace["id"],
+            knowledge_item_id=item_one_id,
+            paper_id=paper_one["id"],
+            text="The seed paper evaluates Shared Method.",
+            relation="supports",
+            confidence=0.9,
+            is_deleted=False,
+        ),
+        PaperMention(
+            id=str(uuid4()),
+            workspace_id=workspace["id"],
+            paper_id=paper_one["id"],
+            canonical_entity_id=entity_id,
+            knowledge_item_id=item_one_id,
+            mention_text="Shared Method",
+            status="human_confirmed",
+        ),
+        PaperMention(
+            id=str(uuid4()),
+            workspace_id=workspace["id"],
+            paper_id=paper_two["id"],
+            canonical_entity_id=entity_id,
+            knowledge_item_id=item_two_id,
+            mention_text="Shared Method",
+            status="extracted_candidate",
+        ),
+    ])
+    db_session.commit()
+
+    from app.domains.artifact.service import ArtifactService
+
+    artifact = ArtifactService(db_session).save_upload(
+        workspace_id=workspace["id"],
+        filename="seed.txt",
+        content=b"The seed paper evaluates Shared Method.",
+        mime_type="text/plain",
+        kind="parsed_text",
+    )
+    monkeypatch.setattr(
+        "app.domains.chat.service.semantic_search",
+        lambda **kwargs: RetrievalResponse(
+            workspace_id=kwargs["workspace_id"],
+            query=kwargs["query"],
+            request_id="dense-shadow-001",
+            items=[RetrievalResultItem(
+                paper_id=paper_one["id"],
+                chunk_id="seed-chunk",
+                artifact_id=artifact.id,
+                text="The seed paper evaluates Shared Method.",
+                score=0.92,
+            )],
+            total=1,
+            filters_applied={"recall_count": 1, "reranker_enabled": True},
+        ),
+    )
+    monkeypatch.setattr(
+        "app.domains.chat.service.find_chunk_record",
+        lambda *_, **__: SimpleNamespace(
+            source_artifact_id=artifact.id, start_char=0, end_char=42
+        ),
+    )
+    fake_gateway.content = "只使用 dense 论文证据回答。[E1]"
+
+    response = client.post(
+        "/api/v1/chat/conversations/send",
+        json={
+            "content": "哪些论文提到了这个方法？",
+            "workspace_id": workspace["id"],
+            "retrieval_mode": "hybrid",
+        },
+    )
+
+    assert response.status_code == 200
+    assistant = response.json()["assistant_message"]
+    graph = assistant["retrieval_audit"]["graph"]
+    assert graph["mode"] == "shadow"
+    assert graph["fallback"] is False
+    assert graph["path_count"] >= 1
+    assert graph["candidate_path_count"] == graph["emitted_path_count"]
+    assert graph["dropped_path_count"] == 0
+    assert graph["dropped_path_reasons"] == {}
+    # Query-mode paths must have a source span; a related paper without
+    # question-relevant evidence is not shown as a diagnostic result.
+    assert paper_two["id"] not in graph["supporting_paper_ids"]
+    assert all(path["evidence"] for path in graph["paths"])
+    assert evidence_id in graph["supporting_evidence_ids"]
+    # Phase 1 is shadow-only: GraphRAG does not add related-paper evidence to
+    # the prompt or to the answer citations.
+    assert [citation["paper_id"] for citation in assistant["citations"]] == [paper_one["id"]]
+    assert "Related evidence" not in fake_gateway.calls[-1][0]["content"]
+
+
+def test_workspace_chat_graph_failure_records_dense_fallback(monkeypatch, db_session):
+    def fail_graph(*args, **kwargs):
+        raise RuntimeError("graph unavailable")
+
+    monkeypatch.setattr("app.domains.chat.service.build_bounded_projection", fail_graph)
+    audit = ChatService(db_session)._graph_shadow_audit(
+        "workspace-fallback",
+        [RetrievalResultItem(paper_id="paper-dense", chunk_id="dense-chunk")],
+        "dense-fallback-001",
+        retrieval_mode="hybrid",
+        graph_expand=None,
+        graph_max_hops=None,
+        graph_node_limit=None,
+        graph_edge_limit=None,
+    )
+
+    assert audit["mode"] == "shadow"
+    assert audit["fallback"] is True
+    assert audit["fallback_reason"] == "graph_query_failed"
+
+
+def test_workspace_chat_graph_timeout_keeps_completed_paths_for_diagnostics(monkeypatch, db_session):
+    path = GraphRAGPathRead(
+        path_id="path:timeout",
+        workspace_id="workspace-timeout",
+    )
+    projection = BoundedGraphProjection(
+        projection_version="sql_graph_v1",
+        seeds=[],
+        paths=[path],
+        nodes=[],
+        edges=[],
+        evidence=[],
+        supporting_paper_ids=[],
+        supporting_evidence_ids=[],
+    )
+    monkeypatch.setattr(
+        "app.domains.chat.service.build_bounded_projection",
+        lambda *args, **kwargs: projection,
+    )
+    monkeypatch.setattr(settings, "chat_graphrag_timeout_ms", 0)
+
+    audit = ChatService(db_session)._graph_shadow_audit(
+        "workspace-timeout",
+        [RetrievalResultItem(paper_id="paper-dense", chunk_id="dense-chunk")],
+        "dense-timeout-001",
+        retrieval_mode="hybrid",
+        graph_expand=None,
+        graph_max_hops=None,
+        graph_node_limit=None,
+        graph_edge_limit=None,
+    )
+
+    assert audit["fallback"] is True
+    assert audit["fallback_reason"] == "graph_timeout"
+    assert [item["path_id"] for item in audit["paths"]] == ["path:timeout"]
 
 
 def test_workspace_chat_without_hits_does_not_ask_llm(client, fake_gateway, monkeypatch):

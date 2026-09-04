@@ -175,10 +175,13 @@ def index_paper_chunks(
 
     # 2. Idempotency: skip already-indexed chunks
     if force_reindex:
-        milvus_client.delete_by_paper(paper_id)
+        milvus_client.delete_by_paper(paper_id, workspace_id=workspace_id)
         to_index = chunks
     else:
-        existing_ids = milvus_client.get_existing_chunk_ids(paper_id)
+        existing_ids = milvus_client.get_existing_chunk_ids(
+            paper_id,
+            workspace_id=workspace_id,
+        )
         to_index = [c for c in chunks if c.chunk_id not in existing_ids]
         result.skipped_count = len(chunks) - len(to_index)
 

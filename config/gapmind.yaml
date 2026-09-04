@@ -101,6 +101,12 @@ chat:
   plan_max_context_chars: 6000
   artifact_max_context_chars: 6000
   workspace_profile_max_context_chars: 2000
+  graphrag_shadow_enabled: true
+  graphrag_projection_version: sql_graph_v1
+  graphrag_max_hops: 2
+  graphrag_node_limit: 32
+  graphrag_edge_limit: 64
+  graphrag_timeout_ms: 250
 
 evidence:
   freshness_max_age_days: 30

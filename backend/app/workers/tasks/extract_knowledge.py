@@ -628,10 +628,14 @@ def _validate_and_rebase_evidence(
 
 
 def _run_counts(db: Session, run_id: str) -> dict:
+    run_workspace_id = db.scalar(
+        select(ExtractionRun.workspace_id).where(ExtractionRun.id == run_id)
+    )
     item_ids = list(
         db.execute(
             select(KnowledgeItem.id).where(
                 KnowledgeItem.extraction_run_id == run_id,
+                KnowledgeItem.workspace_id == run_workspace_id,
                 KnowledgeItem.is_deleted.is_(False),
             )
         ).scalars()
@@ -649,7 +653,11 @@ def _run_counts(db: Session, run_id: str) -> dict:
         db.execute(
             select(func.count())
             .select_from(KnowledgeRelation)
-            .where(KnowledgeRelation.source_id.in_(item_ids))
+            .where(
+                KnowledgeRelation.workspace_id == run_workspace_id,
+                KnowledgeRelation.is_deleted.is_(False),
+                KnowledgeRelation.source_id.in_(item_ids),
+            )
         ).scalar()
         or 0
     )
@@ -657,7 +665,11 @@ def _run_counts(db: Session, run_id: str) -> dict:
         db.execute(
             select(func.count())
             .select_from(EvidenceSpan)
-            .where(EvidenceSpan.knowledge_item_id.in_(item_ids))
+            .where(
+                EvidenceSpan.workspace_id == run_workspace_id,
+                EvidenceSpan.is_deleted.is_(False),
+                EvidenceSpan.knowledge_item_id.in_(item_ids),
+            )
         ).scalar()
         or 0
     )

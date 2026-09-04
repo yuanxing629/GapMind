@@ -219,26 +219,36 @@ def count_by_workspace(workspace_id: str) -> int:
     return 0
 
 
-def get_existing_chunk_ids(paper_id: str) -> set[str]:
-    """Get all chunk_ids already indexed for a paper (for idempotency)."""
+def get_existing_chunk_ids(
+    paper_id: str,
+    *,
+    workspace_id: str | None = None,
+) -> set[str]:
+    """Get indexed chunk IDs for one paper, optionally workspace-scoped."""
     client = get_milvus_client()
     ensure_collection()
+    filters = [f'paper_id == "{paper_id}"']
+    if workspace_id:
+        filters.insert(0, f'workspace_id == "{workspace_id}"')
     results = client.query(
         collection_name=COLLECTION_NAME,
-        filter=f'paper_id == "{paper_id}"',
+        filter=" and ".join(filters),
         output_fields=["chunk_id"],
         limit=16384,
     )
     return {r["chunk_id"] for r in results}
 
 
-def delete_by_paper(paper_id: str) -> None:
-    """Remove all vectors for a paper (used on re-parse or paper deletion)."""
+def delete_by_paper(paper_id: str, *, workspace_id: str | None = None) -> None:
+    """Remove vectors for one paper, optionally constrained to its workspace."""
     client = get_milvus_client()
     ensure_collection()
+    filters = [f'paper_id == "{paper_id}"']
+    if workspace_id:
+        filters.insert(0, f'workspace_id == "{workspace_id}"')
     client.delete(
         collection_name=COLLECTION_NAME,
-        filter=f'paper_id == "{paper_id}"',
+        filter=" and ".join(filters),
     )
     logger.info("milvus.deleted_by_paper", paper_id=paper_id)
 

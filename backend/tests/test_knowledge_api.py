@@ -7,6 +7,8 @@ that workspace scoping works.
 
 from __future__ import annotations
 
+from uuid import uuid4
+
 from fastapi.testclient import TestClient
 
 from app.domains.artifact.service import ArtifactService
@@ -171,6 +173,55 @@ def test_evidence_context_and_markdown_download(client: TestClient, db_session) 
     download = client.get(f"/api/v1/workspaces/{ws['id']}/artifacts/{artifact.id}/download")
     assert download.status_code == 200
     assert download.content == b"# Intro\nEvidence sentence."
+
+
+def test_evidence_context_binds_selected_span_to_its_artifact(
+    client: TestClient, db_session
+) -> None:
+    ws = _create_workspace(client, "Exact evidence context")
+    artifact_one = ArtifactService(db_session).save_upload(
+        workspace_id=ws["id"], filename="paper-v1.md", content=b"Version one evidence.",
+        mime_type="text/markdown", kind="parsed_markdown",
+    )
+    artifact_two = ArtifactService(db_session).save_upload(
+        workspace_id=ws["id"], filename="paper-v2.md", content=b"Version two evidence.",
+        mime_type="text/markdown", kind="parsed_markdown",
+    )
+    paper = Paper(
+        workspace_id=ws["id"], title="Versioned evidence", authors=[], source="manual",
+        parsed_markdown_artifact_id=artifact_one.id, parse_status="parsed", is_deleted=False,
+    )
+    item = KnowledgeItem(
+        workspace_id=ws["id"], paper_id=paper.id, type="claim", canonical_name="Claim",
+        content={"statement": "Versioned evidence."}, source_provenance={}, created_by="agent",
+        confidence=0.8, status="extracted_candidate", is_deleted=False,
+    )
+    db_session.add_all([paper, item])
+    db_session.flush()
+    item.paper_id = paper.id
+    span_one = EvidenceSpan(
+        id=str(uuid4()), workspace_id=ws["id"], knowledge_item_id=item.id, paper_id=paper.id,
+        artifact_id=artifact_one.id, artifact_kind="parsed_markdown", artifact_version="v1",
+        start_char=0, end_char=21, text="Version one evidence.", relation="supports", confidence=0.8,
+    )
+    span_two = EvidenceSpan(
+        id=str(uuid4()), workspace_id=ws["id"], knowledge_item_id=item.id, paper_id=paper.id,
+        artifact_id=artifact_two.id, artifact_kind="parsed_markdown", artifact_version="v2",
+        start_char=0, end_char=21, text="Version two evidence.", relation="supports", confidence=0.8,
+    )
+    db_session.add_all([span_one, span_two])
+    db_session.commit()
+
+    context = client.get(
+        f"/api/v1/workspaces/{ws['id']}/knowledge/{item.id}/evidence/context"
+        f"?evidence_span_id={span_two.id}"
+    )
+
+    assert context.status_code == 200, context.text
+    body = context.json()
+    assert body["artifact_id"] == artifact_two.id
+    assert body["content"] == "Version two evidence."
+    assert [span["id"] for span in body["spans"]] == [span_two.id]
 
 
 def test_graph_contains_layered_nodes_and_expands_entity_neighbors(

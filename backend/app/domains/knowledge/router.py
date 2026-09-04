@@ -20,13 +20,14 @@ exceptions to that rule are:
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_db, get_owned_workspace
 from app.domains.knowledge.schemas import (
+    EvidenceContextRead,
     EvidenceSpanListResponse,
     EvidenceSpanRead,
-    EvidenceContextRead,
     ExtractionRejectionListResponse,
     ExtractionRejectionRead,
     KnowledgeGraphResponse,
@@ -326,9 +327,7 @@ def get_knowledge_item(
     workspace_service: WorkspaceService = Depends(_get_workspace_service),
 ) -> KnowledgeItemRead:
     workspace_service.get(workspace_id)
-    item = service.get_item(item_id)
-    if item.workspace_id != workspace_id:
-        raise KnowledgeItemNotFoundError(item_id)
+    item = service.get_item(item_id, workspace_id=workspace_id)
     return KnowledgeItemRead.model_validate(item)
 
 
@@ -363,10 +362,8 @@ def list_evidence(
     workspace_service: WorkspaceService = Depends(_get_workspace_service),
 ) -> EvidenceSpanListResponse:
     workspace_service.get(workspace_id)
-    item = service.get_item(item_id)
-    if item.workspace_id != workspace_id:
-        raise KnowledgeItemNotFoundError(item_id)
-    spans = service.list_evidence_for_item(item_id)
+    item = service.get_item(item_id, workspace_id=workspace_id)
+    spans = service.list_evidence_for_item(item_id, workspace_id=workspace_id)
     return EvidenceSpanListResponse(
         items=[EvidenceSpanRead.model_validate(s) for s in spans],
         total=len(spans),
@@ -380,6 +377,7 @@ def list_evidence(
 def get_evidence_context(
     workspace_id: str,
     item_id: str,
+    evidence_span_id: str | None = Query(None, min_length=1),
     db: Session = Depends(get_db),
     service: KnowledgeService = Depends(_get_knowledge_service),
     workspace_service: WorkspaceService = Depends(_get_workspace_service),
@@ -389,15 +387,40 @@ def get_evidence_context(
     from app.domains.paper.models import Paper
 
     workspace_service.get(workspace_id)
-    item = service.get_item(item_id)
-    if item.workspace_id != workspace_id:
-        raise KnowledgeItemNotFoundError(item_id)
+    item = service.get_item(item_id, workspace_id=workspace_id)
 
-    spans = service.list_evidence_for_item(item_id)
-    artifact_id = next((span.artifact_id for span in spans if span.artifact_id), None)
-    paper_id = next((span.paper_id for span in spans if span.paper_id), None) or item.paper_id
+    spans = service.list_evidence_for_item(item_id, workspace_id=workspace_id)
+    selected_span = None
+    if evidence_span_id is not None:
+        selected_span = next((span for span in spans if str(span.id) == str(evidence_span_id)), None)
+        if selected_span is None or str(selected_span.paper_id) != str(item.paper_id):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={
+                    "error": "evidence_source_not_found",
+                    "message": "Evidence span is not available for this knowledge item",
+                },
+            )
+        spans = [selected_span]
+
+    artifact_id = (
+        selected_span.artifact_id
+        if selected_span is not None
+        else next((span.artifact_id for span in spans if span.artifact_id), None)
+    )
+    paper_id = (
+        selected_span.paper_id
+        if selected_span is not None
+        else next((span.paper_id for span in spans if span.paper_id), None)
+    ) or item.paper_id
     if artifact_id is None and paper_id:
-        paper = db.get(Paper, paper_id)
+        paper = db.scalar(
+            select(Paper).where(
+                Paper.id == paper_id,
+                Paper.workspace_id == workspace_id,
+                Paper.is_deleted.is_(False),
+            )
+        )
         artifact_id = paper.parsed_markdown_artifact_id if paper else None
     if not artifact_id:
         raise HTTPException(
@@ -407,8 +430,14 @@ def get_evidence_context(
                 "message": "No parsed markdown artifact is linked to this item",
             },
         )
-    artifact = db.get(Artifact, artifact_id)
-    if artifact is None or artifact.is_deleted or artifact.workspace_id != workspace_id:
+    artifact = db.scalar(
+        select(Artifact).where(
+            Artifact.id == artifact_id,
+            Artifact.workspace_id == workspace_id,
+            Artifact.is_deleted.is_(False),
+        )
+    )
+    if artifact is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"error": "evidence_source_not_found", "message": "Evidence artifact not found"},
