@@ -35,7 +35,9 @@ RETRY_INSTRUCTION = (
     'JSON object only. It must contain the top-level keys "items" and "relations". '
     "Every item must contain non-empty evidence_text copied as a contiguous span from "
     "the paper batch. Keep the required schema fields, omit optional detail rather "
-    "than truncating, "
+    "than truncating. Every field declared as a list must be a JSON array of strings, "
+    "including method.content.inputs and method.content.outputs; use a one-element "
+    "array when there is one value and [] when unavailable. "
     "and do not include prose, Markdown fences, or any text outside the JSON object."
 )
 

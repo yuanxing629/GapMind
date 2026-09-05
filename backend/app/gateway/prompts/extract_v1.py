@@ -89,6 +89,67 @@ Return a JSON object with this structure:
   ]
 }
 
+## Few-shot examples (strict JSON shape)
+
+The following examples are format examples only. Do not copy their entities or
+evidence into the answer unless they occur in the paper batch.
+
+Example 1 — method with multiple input and output types:
+
+Source sentence:
+XGNN takes a trained GNN and a class label as input and outputs a representative graph pattern.
+
+Correct output:
+{
+  "items": [
+    {
+      "type": "method",
+      "canonical_name": "XGNN",
+      "content": {
+        "description": "XGNN generates representative graph patterns for graph classification explanations.",
+        "problem_addressed": "Model-level post-hoc explanation for graph classification.",
+        "inputs": ["A trained GNN", "A class label"],
+        "outputs": ["A representative graph pattern"],
+        "key_idea": "Generate a graph pattern that represents a class-level prediction.",
+        "training_paradigm": "post-hoc",
+        "computational_cost": null,
+        "code_repository": null
+      },
+      "source_provenance": {"start_char": 0, "end_char": 95},
+      "evidence_text": "XGNN takes a trained GNN and a class label as input and outputs a representative graph pattern.",
+      "confidence": 0.95
+    }
+  ],
+  "relations": []
+}
+
+Example 2 — dataset with exact non-empty evidence:
+
+Source sentence:
+The BBBP dataset contains 2039 molecular graphs for blood-brain barrier penetration prediction.
+
+Correct output:
+{
+  "items": [
+    {
+      "type": "dataset",
+      "canonical_name": "BBBP",
+      "content": {
+        "description": "A dataset of molecular graphs for blood-brain barrier penetration prediction.",
+        "domain": "chemistry",
+        "size": 2039,
+        "modality": "graph",
+        "source_url": null,
+        "license": null
+      },
+      "source_provenance": {"start_char": 0, "end_char": 95},
+      "evidence_text": "The BBBP dataset contains 2039 molecular graphs for blood-brain barrier penetration prediction.",
+      "confidence": 0.9
+    }
+  ],
+  "relations": []
+}
+
 ## Rules
 
 1. Only extract entities that are explicitly mentioned in the paper text.
@@ -101,6 +162,8 @@ Return a JSON object with this structure:
 8. Return ONLY the JSON object, no additional text or explanation.
 9. Every item must have non-empty evidence_text containing a contiguous source span. If no supporting span exists, omit the item instead of using an empty string, null, or a paraphrase.
 10. For dataset, method, and task items, include the shortest complete source sentence or phrase that directly supports the extracted item.
+11. Every field documented as a list MUST be a JSON array of strings, even when there is only one value. In particular, method.content.inputs and method.content.outputs must never be a scalar string; use ["..."] for one value and [] when unavailable.
+12. Split list values by semantic item, not by individual words. For example, "a trained GNN and a class label" becomes ["A trained GNN", "A class label"].
 """
 
 USER_PROMPT_TEMPLATE = """Extract structured knowledge items from the following paper text.

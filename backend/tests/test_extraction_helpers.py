@@ -98,6 +98,8 @@ def test_call_llm_with_retry_recovers_on_second_attempt() -> None:
     retry_messages = fake_gateway.chat_completion.call_args_list[1].args[0]
     assert retry_messages[-1]["role"] == "user"
     assert "compact and complete JSON" in retry_messages[-1]["content"]
+    assert "method.content.inputs" in retry_messages[-1]["content"]
+    assert "one-element" in retry_messages[-1]["content"]
 
 
 def test_call_llm_with_retry_retries_empty_evidence_items() -> None:
