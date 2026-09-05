@@ -1,0 +1,33 @@
+# Git 与本地开发环境
+.git
+.git/**
+.idea
+.vscode
+.claude
+.codex
+
+# 环境文件与密钥
+.env
+.env.*
+!.env.example
+!.env.docker.example
+
+# Python / Node 依赖与构建产物
+**/.venv
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.ruff_cache
+**/node_modules
+**/dist
+**/*.tsbuildinfo
+
+# 本地论文、附件、临时文件与运行数据
+storage
+**/storage
+data
+**/data
+tmp
+**/tmp
+*.log
+
