@@ -230,6 +230,65 @@ def test_evidence_whitespace_difference_uses_exact_artifact_slice() -> None:
     assert items[0]["evidence_text"] == "GNNExplainer\n\nis used."
 
 
+def test_evidence_layout_normalization_uses_exact_artifact_slice() -> None:
+    text = "ProtGNN uses a ﬁxed prototype—based explanation."
+    evidence = "ProtGNN uses a fixed prototype-based explanation."
+    output = ExtractionOutput.model_validate(
+        {
+            "items": [
+                {
+                    **_method_item(),
+                    "evidence_text": evidence,
+                    "source_provenance": {"start_char": 0, "end_char": 0},
+                }
+            ],
+            "relations": [],
+        }
+    )
+
+    items, _ = _validate_and_rebase_evidence(
+        items=output.items,
+        paper_text=text,
+        batch_text=text,
+        batch_start=0,
+        batch_index=0,
+    )
+
+    assert items[0]["evidence_text"] == text
+    assert items[0]["source_provenance"] == {
+        "start_char": 0,
+        "end_char": len(text),
+        "batch_index": 0,
+    }
+
+
+def test_evidence_pdf_line_hyphenation_uses_exact_artifact_slice() -> None:
+    text = "The non-\ninterpretable baseline is compared."
+    evidence = "The non-interpretable baseline is compared."
+    output = ExtractionOutput.model_validate(
+        {
+            "items": [
+                {
+                    **_method_item(),
+                    "evidence_text": evidence,
+                    "source_provenance": {"start_char": 0, "end_char": 0},
+                }
+            ],
+            "relations": [],
+        }
+    )
+
+    items, _ = _validate_and_rebase_evidence(
+        items=output.items,
+        paper_text=text,
+        batch_text=text,
+        batch_start=0,
+        batch_index=0,
+    )
+
+    assert items[0]["evidence_text"] == text
+
+
 def test_duplicate_exact_evidence_uses_nearest_reported_position() -> None:
     evidence = "GNNExplainer is used."
     text = f"{evidence}\nOther text.\n{evidence}"

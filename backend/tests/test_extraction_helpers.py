@@ -100,6 +100,33 @@ def test_call_llm_with_retry_recovers_on_second_attempt() -> None:
     assert "compact and complete JSON" in retry_messages[-1]["content"]
 
 
+def test_call_llm_with_retry_retries_empty_evidence_items() -> None:
+    fake_gateway = MagicMock(
+        chat_completion=MagicMock(
+            side_effect=[
+                MagicMock(
+                    content='{"items": [{"type": "dataset", "evidence_text": ""}]}'
+                ),
+                MagicMock(
+                    content='{"items": [{"type": "dataset", "evidence_text": "BBBP"}]}'
+                ),
+            ]
+        )
+    )
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr("app.workers.tasks.extraction.llm_caller.LLMGateway", lambda: fake_gateway)
+        mp.setattr("app.workers.tasks.extraction.llm_caller.RETRY_BACKOFF_SECONDS", 0)
+        raw, parsed = call_llm_with_retry(
+            [{"role": "user", "content": "extract"}],
+            max_retries=2,
+        )
+
+    assert parsed == {"items": [{"type": "dataset", "evidence_text": "BBBP"}]}
+    assert raw.endswith('"BBBP"}]}')
+    assert fake_gateway.chat_completion.call_count == 2
+
+
 def test_call_llm_with_retry_returns_none_after_exhaustion() -> None:
     """每次尝试都失败 -> 保留 raw，parsed 为 None。"""
     fake_gateway = MagicMock(chat_completion=MagicMock(return_value=MagicMock(content="garbage")))

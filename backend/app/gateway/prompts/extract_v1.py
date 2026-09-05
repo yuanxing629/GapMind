@@ -99,6 +99,8 @@ Return a JSON object with this structure:
 6. If a field is not available, use null for scalars and [] for lists.
 7. Do not invent entities not present in the paper.
 8. Return ONLY the JSON object, no additional text or explanation.
+9. Every item must have non-empty evidence_text containing a contiguous source span. If no supporting span exists, omit the item instead of using an empty string, null, or a paraphrase.
+10. For dataset, method, and task items, include the shortest complete source sentence or phrase that directly supports the extracted item.
 """
 
 USER_PROMPT_TEMPLATE = """Extract structured knowledge items from the following paper text.

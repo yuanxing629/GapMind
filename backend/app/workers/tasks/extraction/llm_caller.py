@@ -33,7 +33,9 @@ JSON_RESPONSE_FORMAT = {"type": "json_object"}
 RETRY_INSTRUCTION = (
     "Your previous response was invalid or incomplete. Return a compact and complete "
     'JSON object only. It must contain the top-level keys "items" and "relations". '
-    "Keep the required schema fields, omit optional detail rather than truncating, "
+    "Every item must contain non-empty evidence_text copied as a contiguous span from "
+    "the paper batch. Keep the required schema fields, omit optional detail rather "
+    "than truncating, "
     "and do not include prose, Markdown fences, or any text outside the JSON object."
 )
 
@@ -49,6 +51,19 @@ def _response_diagnostics(response: Any) -> dict[str, Any]:
         "completion_tokens": getattr(usage, "completion_tokens", None),
         "total_tokens": getattr(usage, "total_tokens", None),
     }
+
+
+def _missing_evidence_item_count(parsed: dict[str, Any]) -> int:
+    """统计需要触发结构化重试的空证据条目。"""
+    items = parsed.get("items")
+    if not isinstance(items, list):
+        return 0
+    return sum(
+        1
+        for item in items
+        if isinstance(item, dict)
+        and not str(item.get("evidence_text") or "").strip()
+    )
 
 
 def call_llm_with_retry(
@@ -86,14 +101,22 @@ def call_llm_with_retry(
             last_raw = raw
             parsed = parse_llm_json(raw)
             if parsed is not None and "items" in parsed:
-                return raw, parsed
-            logger.warning(
-                "extract_knowledge.parse_retry",
-                attempt=attempt,
-                raw_preview=raw[:200],
-                raw_length=len(raw),
-                **_response_diagnostics(response),
-            )
+                missing_evidence_count = _missing_evidence_item_count(parsed)
+                if missing_evidence_count == 0 or attempt >= max_retries:
+                    return raw, parsed
+                logger.warning(
+                    "extract_knowledge.evidence_retry",
+                    attempt=attempt,
+                    missing_evidence_items=missing_evidence_count,
+                )
+            else:
+                logger.warning(
+                    "extract_knowledge.parse_retry",
+                    attempt=attempt,
+                    raw_preview=raw[:200],
+                    raw_length=len(raw),
+                    **_response_diagnostics(response),
+                )
         except Exception as exc:  # pragma: no cover — depends on gateway behaviour
             logger.warning("extract_knowledge.llm_error", attempt=attempt, error=str(exc))
         if attempt < max_retries:
