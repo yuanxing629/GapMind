@@ -104,6 +104,24 @@ def test_generic_chat_completion_does_not_send_provider_specific_thinking_fields
     assert "extra_body" not in backup.calls[0]
 
 
+def test_deepseek_chat_completion_disables_thinking_via_extra_body():
+    gateway = LLMGateway(
+        api_key="primary-key",
+        base_url="https://api.deepseek.com",
+        model="deepseek-v4-flash",
+    )
+    primary = FakeCompletions([_resp("ok", "deepseek-v4-flash")])
+    gateway._client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=primary.create))
+    )
+
+    gateway.chat_completion(
+        [{"role": "user", "content": "extract"}], disable_thinking=True
+    )
+
+    assert primary.calls[0]["extra_body"] == {"thinking": {"type": "disabled"}}
+
+
 def test_failure_without_backup_configured_raises_primary_error():
     gateway = LLMGateway(api_key="k", base_url="u", model="m")  # no backup fields
     assert gateway.backup_enabled is False
@@ -144,6 +162,25 @@ def test_stream_falls_over_before_first_chunk():
     assert len(primary.calls) == 1
     assert backup is not None and len(backup.calls) == 1
     assert backup.calls[0]["stream"] is True
+
+
+def test_deepseek_stream_disables_thinking_via_extra_body():
+    gateway = LLMGateway(
+        api_key="primary-key",
+        base_url="https://api.deepseek.com",
+        model="deepseek-v4-flash",
+    )
+    primary = FakeCompletions([_stream_chunks("ok")])
+    gateway._client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=primary.create))
+    )
+
+    assert list(
+        gateway.stream_chat_completion(
+            [{"role": "user", "content": "answer"}], disable_thinking=True
+        )
+    ) == ["ok"]
+    assert primary.calls[0]["extra_body"] == {"thinking": {"type": "disabled"}}
 
 
 def test_backup_requires_all_three_fields():
