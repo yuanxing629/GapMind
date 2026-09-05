@@ -73,10 +73,8 @@ export default function ReadingPaperPage() {
     if (!paperId) return;
     setLoading(true);
     try {
-      const [paperResponse, annotationResponse] = await Promise.all([
-        readingApi.get(paperId),
-        readingApi.listAnnotations(paperId),
-      ]);
+      const paperResponse = await readingApi.ensure(paperId);
+      const annotationResponse = await readingApi.listAnnotations(paperId);
       setPaper(paperResponse);
       setAnnotations(annotationResponse);
       setPage(paperResponse.last_read_page || 1);

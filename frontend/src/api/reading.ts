@@ -99,6 +99,16 @@ export const readingApi = {
     return data;
   },
 
+  async ensure(paperId: string): Promise<ReadingPaper> {
+    try {
+      return await this.get(paperId);
+    } catch (error) {
+      const status = (error as { response?: { status?: number } }).response?.status;
+      if (status !== 404) throw error;
+      return this.add(paperId);
+    }
+  },
+
   async add(paperId: string): Promise<ReadingPaper> {
     const { data } = await apiClient.post<ReadingPaper>(`/reading/papers/${encodeURIComponent(paperId)}`);
     return data;

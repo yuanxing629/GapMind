@@ -26,6 +26,7 @@ import {
 import type { UploadRequestOption } from "rc-upload/lib/interface";
 import { useNavigate } from "react-router-dom";
 import paperApi from "../api/paper";
+import readingApi from "../api/reading";
 import type { Paper, PaperUpdate } from "../api/types/domain";
 import StatusBadge from "./common/StatusBadge";
 import { readingPaperPath } from "./layout/navigation";
@@ -76,6 +77,7 @@ export default function PapersSection({ workspaceId, papers, loading, onChanged 
   const [editOpen, setEditOpen] = useState(false);
   const [editingPaper, setEditingPaper] = useState<Paper | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [openingPaperId, setOpeningPaperId] = useState<string | null>(null);
   const [manualForm] = Form.useForm<ManualFormValues>();
   const [editForm] = Form.useForm<EditFormValues>();
 
@@ -231,6 +233,20 @@ export default function PapersSection({ workspaceId, papers, loading, onChanged 
     });
   };
 
+  const openPaper = async (paper: Paper) => {
+    if (openingPaperId) return;
+    setOpeningPaperId(paper.id);
+    try {
+      const readingPaper = await readingApi.add(paper.id);
+      navigate(readingPaperPath(readingPaper.paper_id));
+    } catch (err) {
+      const detail = (err as { response?: { data?: { detail?: { message?: string } } } }).response?.data?.detail;
+      message.error(`打开论文失败：${detail?.message || (err as Error).message}`);
+    } finally {
+      setOpeningPaperId(null);
+    }
+  };
+
   return (
     <Card
       title="文献"
@@ -331,7 +347,8 @@ export default function PapersSection({ workspaceId, papers, loading, onChanged 
                     size="small"
                     type="primary"
                     icon={<ReadOutlined />}
-                    onClick={() => navigate(readingPaperPath(p.id))}
+                    loading={openingPaperId === p.id}
+                    onClick={() => void openPaper(p)}
                   >
                     阅读
                   </Button>
