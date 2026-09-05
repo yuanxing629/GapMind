@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Generator
+from urllib.parse import urlparse
 
 from openai import OpenAI
 
@@ -15,6 +16,12 @@ from app.core.config import settings
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+def _is_deepseek_endpoint(base_url: str | None) -> bool:
+    """判断 endpoint 是否为 DeepSeek，以便按其 SDK 约定控制 thinking。"""
+    hostname = urlparse(base_url or "").hostname or ""
+    return hostname == "api.deepseek.com" or hostname.endswith(".deepseek.com")
 
 
 @dataclass
@@ -136,7 +143,23 @@ class LLMGateway:
         except Exception as primary_error:
             backup_attempts: list[dict[str, Any]] = []
             if allow_backup and self.backup_enabled:
-                backup_attempts.append({**kwargs, "model": self.backup_model})
+                backup_kwargs = {**kwargs, "model": self.backup_model}
+                extra_body = backup_kwargs.get("extra_body")
+                if (
+                    isinstance(extra_body, dict)
+                    and "thinking" in extra_body
+                    and not _is_deepseek_endpoint(self.backup_base_url)
+                ):
+                    backup_extra_body = {
+                        key: value
+                        for key, value in extra_body.items()
+                        if key != "thinking"
+                    }
+                    if backup_extra_body:
+                        backup_kwargs["extra_body"] = backup_extra_body
+                    else:
+                        backup_kwargs.pop("extra_body")
+                backup_attempts.append(backup_kwargs)
             if not backup_attempts:
                 raise
             logger.warning(
@@ -168,11 +191,12 @@ class LLMGateway:
     ) -> LLMResponse:
         """使用配置的远程模型执行 chat completion。
 
-        保留接受 ``disable_thinking``，使既有结构化调用方无需修改；但 OpenAI Chat
-        Completions 没有 provider-neutral 的 thinking 开关，因此不会将其序列化为
-        厂商特定的 request field。
+        保留接受 ``disable_thinking``，使既有结构化调用方无需修改。标准 OpenAI Chat
+        Completions 没有统一的 thinking 开关；仅当 endpoint 是 DeepSeek 时，按其
+        OpenAI SDK 约定通过 ``extra_body`` 发送禁用标记，其他 endpoint 不增加厂商字段。
         """
         request_model = model_override or self.model
+        request_base_url = self.vision_base_url if model_override is not None else self.base_url
         kwargs: dict[str, Any] = {
             "model": request_model,
             "messages": messages,
@@ -182,6 +206,8 @@ class LLMGateway:
             kwargs["max_tokens"] = max_tokens
         if response_format is not None:
             kwargs["response_format"] = response_format
+        if disable_thinking and _is_deepseek_endpoint(request_base_url):
+            kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
 
         logger.info("llm.chat.start", model=request_model, messages=len(messages))
         client = self.vision_client if model_override is not None else self.client
@@ -217,6 +243,7 @@ class LLMGateway:
         content delta。结构化格式的调用方应继续使用非流式版本。
         """
         request_model = model_override or self.model
+        request_base_url = self.vision_base_url if model_override is not None else self.base_url
         kwargs: dict[str, Any] = {
             "model": request_model,
             "messages": messages,
@@ -224,6 +251,8 @@ class LLMGateway:
         }
         if max_tokens is not None:
             kwargs["max_tokens"] = max_tokens
+        if disable_thinking and _is_deepseek_endpoint(request_base_url):
+            kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
         client = self.vision_client if model_override is not None else self.client
         stream = self._create_with_fallback(
             kwargs,

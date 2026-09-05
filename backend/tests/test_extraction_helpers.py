@@ -72,6 +72,9 @@ def test_call_llm_with_retry_returns_parsed_on_success() -> None:
     assert parsed == {"items": []}
     assert raw == fake_response.content
     assert fake_gateway.chat_completion.call_count == 1
+    call_kwargs = fake_gateway.chat_completion.call_args.kwargs
+    assert call_kwargs["response_format"] == {"type": "json_object"}
+    assert call_kwargs["disable_thinking"] is True
 
 
 def test_call_llm_with_retry_recovers_on_second_attempt() -> None:
@@ -92,6 +95,9 @@ def test_call_llm_with_retry_recovers_on_second_attempt() -> None:
 
     assert parsed == {"items": ["a"]}
     assert fake_gateway.chat_completion.call_count == 2
+    retry_messages = fake_gateway.chat_completion.call_args_list[1].args[0]
+    assert retry_messages[-1]["role"] == "user"
+    assert "compact and complete JSON" in retry_messages[-1]["content"]
 
 
 def test_call_llm_with_retry_returns_none_after_exhaustion() -> None:

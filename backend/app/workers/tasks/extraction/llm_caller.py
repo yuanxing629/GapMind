@@ -29,6 +29,26 @@ DEFAULT_MAX_TOKENS = 16_384
 DEFAULT_TEMPERATURE = 0.1
 DEFAULT_MAX_RETRIES = 2
 RETRY_BACKOFF_SECONDS = 2.0
+JSON_RESPONSE_FORMAT = {"type": "json_object"}
+RETRY_INSTRUCTION = (
+    "Your previous response was invalid or incomplete. Return a compact and complete "
+    'JSON object only. It must contain the top-level keys "items" and "relations". '
+    "Keep the required schema fields, omit optional detail rather than truncating, "
+    "and do not include prose, Markdown fences, or any text outside the JSON object."
+)
+
+
+def _response_diagnostics(response: Any) -> dict[str, Any]:
+    """从 OpenAI-compatible 响应中提取不会泄漏正文的截断诊断字段。"""
+    raw_response = getattr(response, "raw", None)
+    choices = getattr(raw_response, "choices", None) or []
+    choice = choices[0] if choices else None
+    usage = getattr(raw_response, "usage", None)
+    return {
+        "finish_reason": getattr(choice, "finish_reason", None),
+        "completion_tokens": getattr(usage, "completion_tokens", None),
+        "total_tokens": getattr(usage, "total_tokens", None),
+    }
 
 
 def call_llm_with_retry(
@@ -47,10 +67,17 @@ def call_llm_with_retry(
     last_raw = ""
     for attempt in range(max_retries + 1):
         try:
+            attempt_messages = messages
+            if attempt > 0:
+                attempt_messages = [
+                    *messages,
+                    {"role": "user", "content": RETRY_INSTRUCTION},
+                ]
             response = gateway.chat_completion(
-                messages,
+                attempt_messages,
                 temperature=temperature,
                 max_tokens=max_tokens,
+                response_format=JSON_RESPONSE_FORMAT,
 # 结构化抽取：否则 reasoning model 可能将整个预算耗费在 CoT 上并返回空内容
 #（见方案 §八）。
                 disable_thinking=True,
@@ -60,7 +87,13 @@ def call_llm_with_retry(
             parsed = parse_llm_json(raw)
             if parsed is not None and "items" in parsed:
                 return raw, parsed
-            logger.warning("extract_knowledge.parse_retry", attempt=attempt, raw_preview=raw[:200])
+            logger.warning(
+                "extract_knowledge.parse_retry",
+                attempt=attempt,
+                raw_preview=raw[:200],
+                raw_length=len(raw),
+                **_response_diagnostics(response),
+            )
         except Exception as exc:  # pragma: no cover — depends on gateway behaviour
             logger.warning("extract_knowledge.llm_error", attempt=attempt, error=str(exc))
         if attempt < max_retries:

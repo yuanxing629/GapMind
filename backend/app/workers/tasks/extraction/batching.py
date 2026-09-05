@@ -14,10 +14,10 @@
 from __future__ import annotations
 
 # 默认值说明：
-#   * ``max_chars``（40 000）：为配置的远程模型提供有界文本切片，同时为提示词
-#     骨架和 JSON 响应留出空间。
+#   * ``max_chars``（24 000）：为配置的远程模型提供更小的有界文本切片，降低
+#     ``items + relations`` JSON 响应达到输出上限而被截断的概率。
 #   * ``overlap_chars``（1 000）：足以重新呈现段尾方法，又不会明显增加 token 消耗。
-DEFAULT_MAX_CHARS = 40_000
+DEFAULT_MAX_CHARS = 24_000
 DEFAULT_OVERLAP_CHARS = 1_000
 
 
