@@ -124,7 +124,10 @@ class Settings(BaseSettings):
     parser_provider: Literal["pymupdf", "mineru_local"] = "pymupdf"
     parser_fallback_enabled: bool = True
     mineru_api_url: str = "http://127.0.0.1:8002"
+    mineru_backend: str = "pipeline"
     mineru_timeout_seconds: float = 1800.0
+# 设为 false 时，分块和向量检索也使用 MinerU 的纯文本结果。
+    mineru_prefer_pymupdf_text: bool = True
 # 原始 PDF 是阅读来源；派生论文图片需显式启用。
     parser_return_images: bool = False
 

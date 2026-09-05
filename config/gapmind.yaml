@@ -17,7 +17,10 @@ parser:
   provider: pymupdf
   fallback_enabled: true
   mineru_api_url: http://127.0.0.1:8002
+  backend: pipeline
   mineru_timeout_seconds: 1800
+  # 生产环境使用 MinerU 的纯文本作为分块和向量检索输入时设为 false。
+  prefer_pymupdf_text: true
   # 原始 PDF 是阅读来源；默认不持久化派生图片。
   return_images: false
 

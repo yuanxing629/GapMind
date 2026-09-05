@@ -207,6 +207,40 @@ def test_parse_with_mineru_posts_pdf_and_reads_zip_result() -> None:
         assert request_body[value_start:value_end] == expected.encode()
 
 
+def test_parse_with_mineru_uses_configured_backend(monkeypatch) -> None:
+    from app.domains.artifact import mineru_parser
+
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w") as archive:
+        archive.writestr(
+            "paper_content_list.json",
+            json.dumps([{"type": "text", "text": "MinerU", "page_idx": 0}]),
+        )
+
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, content=output.getvalue(), request=request)
+
+    monkeypatch.setattr(mineru_parser.settings, "mineru_backend", "hybrid-auto-engine")
+
+    result = parse_with_mineru(
+        b"%PDF-test",
+        api_url="http://mineru.test",
+        client_factory=lambda **kwargs: httpx.Client(
+            transport=httpx.MockTransport(handler), **kwargs
+        ),
+    )
+
+    assert result.parsed.full_text == "MinerU"
+    request_body = requests[0].content
+    field_start = request_body.index(b'name="backend"')
+    value_start = request_body.index(b"\r\n\r\n", field_start) + 4
+    value_end = request_body.index(b"\r\n", value_start)
+    assert request_body[value_start:value_end] == b"hybrid-auto-engine"
+
+
 def test_parse_with_mineru_uses_clean_pymupdf_text_backstop(monkeypatch) -> None:
     from app.domains.artifact import mineru_parser
 
@@ -251,6 +285,45 @@ def test_parse_with_mineru_uses_clean_pymupdf_text_backstop(monkeypatch) -> None
     assert result.parsed.full_text == clean_text
     assert "difference effectiveness" in result.parsed.to_markdown()
     assert "mineru_plain_text_replaced_with_pymupdf" in result.parsed.warnings
+
+
+def test_parse_with_mineru_can_keep_mineru_plain_text(monkeypatch) -> None:
+    from app.domains.artifact import mineru_parser
+
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w") as archive:
+        archive.writestr(
+            "paper_content_list.json",
+            json.dumps(
+                [{"type": "text", "text": "MinerU preferred text", "page_idx": 0}]
+            ),
+        )
+        archive.writestr("paper.md", "MinerU preferred text")
+
+    monkeypatch.setattr(mineru_parser.settings, "mineru_prefer_pymupdf_text", False)
+    monkeypatch.setattr(
+        mineru_parser,
+        "parse_pdf",
+        lambda content: ParsedPdf(
+            full_text="PyMuPDF text",
+            page_count=1,
+            page_char_ranges=[(0, 12)],
+        ),
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=output.getvalue(), request=request)
+
+    result = parse_with_mineru(
+        b"%PDF-test",
+        api_url="http://mineru.test",
+        client_factory=lambda **kwargs: httpx.Client(
+            transport=httpx.MockTransport(handler), **kwargs
+        ),
+    )
+
+    assert result.parsed.full_text == "MinerU preferred text"
+    assert "mineru_plain_text_replaced_with_pymupdf" not in result.parsed.warnings
 
 
 def test_parse_document_falls_back_to_pymupdf(monkeypatch) -> None:

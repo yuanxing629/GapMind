@@ -87,7 +87,7 @@ def parse_with_mineru(
                 "/file_parse",
                 files={"files": ("document.pdf", content, "application/pdf")},
                 data={
-                    "backend": "pipeline",
+                    "backend": settings.mineru_backend,
                     "parse_method": "auto",
                     "return_md": "true",
                     "return_content_list": "true",
@@ -125,6 +125,8 @@ def parse_with_mineru(
         output_files,
         include_images=settings.parser_return_images,
     )
+    if not settings.mineru_prefer_pymupdf_text:
+        return result
     return _prefer_pymupdf_text(content, result)
 
 
