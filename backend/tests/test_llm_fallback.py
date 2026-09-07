@@ -122,6 +122,24 @@ def test_deepseek_chat_completion_disables_thinking_via_extra_body():
     assert primary.calls[0]["extra_body"] == {"thinking": {"type": "disabled"}}
 
 
+def test_glm_chat_completion_disables_thinking_via_extra_body():
+    gateway = LLMGateway(
+        api_key="primary-key",
+        base_url="https://open.bigmodel.cn/api/coding/paas/v4",
+        model="GLM-5.3-Flash",
+    )
+    primary = FakeCompletions([_resp("ok", "GLM-5.3-Flash")])
+    gateway._client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=primary.create))
+    )
+
+    gateway.chat_completion(
+        [{"role": "user", "content": "extract"}], disable_thinking=True
+    )
+
+    assert primary.calls[0]["extra_body"] == {"thinking": {"type": "disabled"}}
+
+
 def test_failure_without_backup_configured_raises_primary_error():
     gateway = LLMGateway(api_key="k", base_url="u", model="m")  # no backup fields
     assert gateway.backup_enabled is False
@@ -169,6 +187,25 @@ def test_deepseek_stream_disables_thinking_via_extra_body():
         api_key="primary-key",
         base_url="https://api.deepseek.com",
         model="deepseek-v4-flash",
+    )
+    primary = FakeCompletions([_stream_chunks("ok")])
+    gateway._client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=primary.create))
+    )
+
+    assert list(
+        gateway.stream_chat_completion(
+            [{"role": "user", "content": "answer"}], disable_thinking=True
+        )
+    ) == ["ok"]
+    assert primary.calls[0]["extra_body"] == {"thinking": {"type": "disabled"}}
+
+
+def test_glm_stream_disables_thinking_via_extra_body():
+    gateway = LLMGateway(
+        api_key="primary-key",
+        base_url="https://open.bigmodel.cn/api/coding/paas/v4",
+        model="GLM-5.3-Flash",
     )
     primary = FakeCompletions([_stream_chunks("ok")])
     gateway._client = SimpleNamespace(

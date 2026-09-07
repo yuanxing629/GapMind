@@ -24,6 +24,17 @@ def _is_deepseek_endpoint(base_url: str | None) -> bool:
     return hostname == "api.deepseek.com" or hostname.endswith(".deepseek.com")
 
 
+def _is_glm_endpoint(base_url: str | None) -> bool:
+    """判断 endpoint 是否为智谱 GLM，以便控制 Coding Plan 的 thinking。"""
+    hostname = urlparse(base_url or "").hostname or ""
+    return hostname == "open.bigmodel.cn" or hostname.endswith(".bigmodel.cn")
+
+
+def _supports_thinking_control(base_url: str | None) -> bool:
+    """判断 endpoint 是否支持本项目使用的 thinking 禁用参数。"""
+    return _is_deepseek_endpoint(base_url) or _is_glm_endpoint(base_url)
+
+
 @dataclass
 class LLMResponse:
     """规范化的 LLM 响应。"""
@@ -148,7 +159,7 @@ class LLMGateway:
                 if (
                     isinstance(extra_body, dict)
                     and "thinking" in extra_body
-                    and not _is_deepseek_endpoint(self.backup_base_url)
+                    and not _supports_thinking_control(self.backup_base_url)
                 ):
                     backup_extra_body = {
                         key: value
@@ -192,8 +203,8 @@ class LLMGateway:
         """使用配置的远程模型执行 chat completion。
 
         保留接受 ``disable_thinking``，使既有结构化调用方无需修改。标准 OpenAI Chat
-        Completions 没有统一的 thinking 开关；仅当 endpoint 是 DeepSeek 时，按其
-        OpenAI SDK 约定通过 ``extra_body`` 发送禁用标记，其他 endpoint 不增加厂商字段。
+        Completions 没有统一的 thinking 开关；DeepSeek 和 GLM endpoint 按其兼容协议通过
+        ``extra_body`` 发送禁用标记，其他 endpoint 不增加厂商字段。
         """
         request_model = model_override or self.model
         request_base_url = self.vision_base_url if model_override is not None else self.base_url
@@ -206,7 +217,7 @@ class LLMGateway:
             kwargs["max_tokens"] = max_tokens
         if response_format is not None:
             kwargs["response_format"] = response_format
-        if disable_thinking and _is_deepseek_endpoint(request_base_url):
+        if disable_thinking and _supports_thinking_control(request_base_url):
             kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
 
         logger.info("llm.chat.start", model=request_model, messages=len(messages))
@@ -251,7 +262,7 @@ class LLMGateway:
         }
         if max_tokens is not None:
             kwargs["max_tokens"] = max_tokens
-        if disable_thinking and _is_deepseek_endpoint(request_base_url):
+        if disable_thinking and _supports_thinking_control(request_base_url):
             kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
         client = self.vision_client if model_override is not None else self.client
         stream = self._create_with_fallback(
