@@ -69,6 +69,20 @@ export interface PaperAnnotationInput {
 
 const apiBase = apiBaseURL.replace(/\/$/, "");
 
+const READING_READY_RETRY_DELAYS_MS = [300, 700, 1200] as const;
+
+function responseStatus(error: unknown): number | undefined {
+  return (error as { response?: { status?: number } }).response?.status;
+}
+
+function isRetryableReadingError(error: unknown): boolean {
+  return [404, 408, 425, 429, 500, 502, 503, 504].includes(responseStatus(error) ?? 0);
+}
+
+function wait(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => globalThis.setTimeout(resolve, milliseconds));
+}
+
 function paperArtifactUrl(workspaceId: string, artifactId: string): string {
   return `${apiBase}/workspaces/${encodeURIComponent(workspaceId)}/artifacts/${encodeURIComponent(artifactId)}/view`;
 }
@@ -107,6 +121,22 @@ export const readingApi = {
       if (status !== 404) throw error;
       return this.add(paperId);
     }
+  },
+
+  async ensureReady(paperId: string): Promise<ReadingPaper> {
+    let lastError: unknown;
+    for (let attempt = 0; attempt <= READING_READY_RETRY_DELAYS_MS.length; attempt += 1) {
+      if (attempt > 0) await wait(READING_READY_RETRY_DELAYS_MS[attempt - 1]);
+      try {
+        return await this.ensure(paperId);
+      } catch (error) {
+        lastError = error;
+        if (!isRetryableReadingError(error) || attempt === READING_READY_RETRY_DELAYS_MS.length) {
+          throw error;
+        }
+      }
+    }
+    throw lastError ?? new Error("论文阅读记录暂时不可用");
   },
 
   async add(paperId: string): Promise<ReadingPaper> {

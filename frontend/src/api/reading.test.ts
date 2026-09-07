@@ -5,6 +5,7 @@ import readingApi from "./reading";
 describe("readingApi.ensure", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
   it("creates a reading item when a direct reading link has no record", async () => {
@@ -25,5 +26,20 @@ describe("readingApi.ensure", () => {
 
     await expect(readingApi.ensure("paper-1")).rejects.toBe(error);
     expect(add).not.toHaveBeenCalled();
+  });
+
+  it("retries transient availability failures before opening a paper", async () => {
+    vi.useFakeTimers();
+    const paper = { paper_id: "paper-1" };
+    const ensure = vi
+      .spyOn(readingApi, "ensure")
+      .mockRejectedValueOnce({ response: { status: 503 } })
+      .mockResolvedValueOnce(paper as never);
+
+    const resultPromise = readingApi.ensureReady("paper-1");
+    await vi.advanceTimersByTimeAsync(300);
+
+    await expect(resultPromise).resolves.toBe(paper);
+    expect(ensure).toHaveBeenCalledTimes(2);
   });
 });

@@ -153,7 +153,7 @@ export default function ReadingPage() {
 
   const openImportedPaper = async (paper: Paper) => {
     try {
-      const readingPaper = await readingApi.add(paper.id);
+      const readingPaper = await readingApi.ensureReady(paper.id);
       navigate(readingPaperPath(readingPaper.paper_id));
     } catch (error) {
       message.error(`加入阅读库失败：${(error as Error).message}`);
@@ -164,7 +164,7 @@ export default function ReadingPage() {
     try {
       const readingPaper = paper.reading_item_id
         ? paper
-        : await readingApi.add(paper.paper_id);
+        : await readingApi.ensureReady(paper.paper_id);
       navigate(readingPaperPath(readingPaper.paper_id));
     } catch (error) {
       message.error(`打开论文失败：${(error as Error).message}`);

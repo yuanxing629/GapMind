@@ -73,7 +73,7 @@ export default function ReadingPaperPage() {
     if (!paperId) return;
     setLoading(true);
     try {
-      const paperResponse = await readingApi.ensure(paperId);
+      const paperResponse = await readingApi.ensureReady(paperId);
       const annotationResponse = await readingApi.listAnnotations(paperId);
       setPaper(paperResponse);
       setAnnotations(annotationResponse);
