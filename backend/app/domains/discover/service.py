@@ -389,6 +389,19 @@ class DiscoverService(OpportunityWorkflow):
             "external_selection": {"selected": len(rows), "status": "queued"},
         }
         self.db.commit()
+        self._agent_step(
+            self._discover_agent_run(run),
+            "external_selection",
+            "completed",
+            f"User selected {len(rows)} external candidate(s) for full-text verification.",
+            {
+                "trigger": "user_selection",
+                "selected_candidate_ids": sorted(row.id for row in rows),
+                "selected_count": len(rows),
+                "next_stage": "fulltext_verification",
+            },
+            event_key=f"external_selection:{','.join(sorted(row.id for row in rows))}",
+        )
         if run.task_id:
             try:
                 TaskService(self.db).resume_from_user(
@@ -423,6 +436,18 @@ class DiscoverService(OpportunityWorkflow):
             },
         }
         self.db.commit()
+        self._agent_step(
+            self._discover_agent_run(run),
+            "external_selection",
+            "skipped",
+            "User skipped external candidate full-text verification.",
+            {
+                "trigger": "user_skip",
+                "selected_count": 0,
+                "next_stage": "synthesis",
+            },
+            event_key="external_selection:skipped",
+        )
         if run.task_id:
             TaskService(self.db).resume_from_user(
                 run.task_id,
@@ -495,11 +520,26 @@ class DiscoverService(OpportunityWorkflow):
                 task_service.transition(task.id, "running")
             elif task.status in {"cancel_requested", "cancelled"}:
                 return self._cancelled_result(run)
+        resume_phase = (
+            "fulltext_verification"
+            if run.stage == "fulltext_verification"
+            else "synthesis_after_skip"
+            if run.stage == "synthesis" and self._external_selection_skipped(run)
+            else None
+        )
         run.status = "running"
         run.started_at = run.started_at or datetime.now(timezone.utc)
 # 刷新 corpus fingerprint——run 在队列中等待时 workspace 可能已经发生变化。
         run.corpus_version = self._corpus_snapshot(run.workspace_id)
-        self._stage(run, "preflight", 0.05)
+        if resume_phase is None:
+            self._stage(run, "preflight", 0.05)
+        else:
+            self._stage(
+                run,
+                "synthesis" if resume_phase == "synthesis_after_skip" else resume_phase,
+                max(run.progress, 0.65 if resume_phase == "synthesis_after_skip" else 0.68),
+                {"status": "running", "trigger": "resume", "resume_phase": resume_phase},
+            )
 
         claim = self._resolve_claim(run.workspace_id, run.input_claim_item_id)
         claim_text = self._claim_text(claim) if claim else (run.input_topic or "")
@@ -510,128 +550,267 @@ class DiscoverService(OpportunityWorkflow):
 
         agent_run = self._discover_agent_run(run)
         self._sync_agent_run(agent_run, run)
-        self._agent_step(
-            agent_run,
-            "planner",
-            "completed",
-            "Decomposed the research question and planned evidence gathering.",
-            {"research_question": claim_text[:300], "claim_item_id": run.input_claim_item_id},
-        )
-
         config = DiscoverConfig.model_validate(run.config or {})
-        self._checkpoint(run)
-        similar = self._workspace_similar(run, claim, claim_text, config)
-        self._stage(run, "workspace_retrieval", 0.28, {"similar_work": len(similar.items)})
-        self._checkpoint(run)
-        self._stage(
-            run, "similar_work", 0.34, {"items": len(similar.items), "status": similar.status}
-        )
-        counter = self._workspace_counter(run, claim, claim_text, config)
-        self._stage(
-            run,
-            "counter_evidence",
-            0.42,
-            {
-                **self._counter_summary(counter),
-                "status": counter.status,
-            },
-        )
-        self._agent_step(
-            agent_run,
-            "evidence",
-            "completed",
-            "Retrieved workspace supporting, similar-work, and counter-evidence.",
-            {
-                "similar": len(similar.items),
-                "counter": len(counter.items),
-                "workspace_status": similar.status,
-            },
-        )
-
-        external_queries, exact_lookups = self._external_query_plan(run, claim_text)
-        external = self._external_verify(run, external_queries, exact_lookups)
-        external_summary = (run.stage_summaries or {}).get("external_search")
-        if not isinstance(external_summary, dict):
-            external_summary = {}
-        self._stage(
-            run,
-            "external_search",
-            0.58,
-            {**external_summary, "external_candidates": external},
-        )
-        self._agent_step(
-            agent_run,
-            "external_novelty",
-            "completed",
-            "Searched external literature and classified candidate roles.",
-            {"candidates": external, "query_count": len(external_queries)},
-        )
-        self._checkpoint(run)
-        candidate_state = self._external_candidate_state(run)
-        selected = candidate_state["selected"]
-        pending = candidate_state["pending"]
-        verified = candidate_state["verified"]
-        failed = candidate_state["failed"]
-        if (
-            external
-            and not self._external_selection_skipped(run)
-            and not selected
-            and not pending
-            and not verified
-            and not failed
-        ):
-            run.status = "waiting_for_user"
-            run.stage = "external_selection"
-            run.progress = 0.62
-            run.verification_status = "incomplete"
-            run.stage_summaries = {
-                **(run.stage_summaries or {}),
-                "external_selection": {"status": "waiting_for_user", "candidate_count": external},
-            }
-            self.db.commit()
-            if run.task_id:
-                try:
-                    task_service.transition(run.task_id, "waiting_for_user", progress=run.progress)
-                except Exception:
-                    pass
-            self.timeline.record(workspace_id=run.workspace_id, event_type="discover.external_input_requested", subject_type="discover_run", subject_id=run.id, actor="agent", payload={"run_id": run.id, "candidate_count": external})
-            self._sync_agent_run(agent_run, run)
-            self._agent_step(
-                agent_run,
-                "external_selection",
-                "waiting",
-                "Waiting for the user to select external candidates for full-text verification.",
-                {"candidate_count": external},
-            )
-            return {"run_id": run.id, "status": run.status, "waiting_for_user": True}
-        if selected:
-            self._import_selected_candidates(run)
+        if resume_phase == "fulltext_verification":
             candidate_state = self._external_candidate_state(run)
-            if candidate_state["pending"]:
-                return self._wait_for_fulltext(run, candidate_state)
-            if not candidate_state["verified"] and candidate_state["failed"]:
-                return self._wait_for_fulltext(run, candidate_state)
-            self._stage(
-                run,
-                "fulltext_verification",
-                0.68,
-                {"selected": selected, "verified": candidate_state["verified"]},
+            if candidate_state["selected"]:
+                self._import_selected_candidates(run)
+                candidate_state = self._external_candidate_state(run)
+
+            rows = candidate_state.get("rows") or []
+            pending_ids = sorted(
+                row.id
+                for row in rows
+                if row.verification_status == "imported_pending_parse"
             )
-        elif pending:
-            return self._wait_for_fulltext(run, candidate_state)
-        elif verified:
-# W1：恢复运行时完成 full-text verification——根据导入论文的全文优化 metadata-level role。
+            verified_ids = sorted(
+                row.id for row in rows if row.verification_status == "verified"
+            )
+            failed_ids = sorted(
+                row.id
+                for row in rows
+                if row.verification_status
+                in {"no_pdf", "import_failed", "verification_failed"}
+            )
+            if pending_ids or (failed_ids and not verified_ids):
+                self._agent_step(
+                    agent_run,
+                    "fulltext_verification",
+                    "waiting",
+                    "Waiting for selected papers to finish PDF parsing, extraction, and indexing.",
+                    {
+                        "trigger": "external_selection_resume",
+                        "pending_candidate_ids": pending_ids,
+                        "verified_candidate_ids": verified_ids,
+                        "failed_candidate_ids": failed_ids,
+                        "pending_count": len(pending_ids),
+                        "verified_count": len(verified_ids),
+                        "failed_count": len(failed_ids),
+                    },
+                    event_key=(
+                        "fulltext_verification:waiting:"
+                        + ",".join([*pending_ids, *failed_ids])
+                    ),
+                )
+                return self._wait_for_fulltext(run, candidate_state)
+            if not verified_ids:
+                return self._fail_run(
+                    run,
+                    "discover_fulltext_state_missing",
+                    "Selected external candidates have no verified full-text result.",
+                )
+
+# W1：全文流水线完成后，根据导入论文全文优化外部候选角色。
             judged = self._judge_external_fulltext_roles(run, claim_text)
             self._stage(
                 run,
                 "fulltext_verification",
                 0.70,
-                {"selected": selected, "verified": verified, "fulltext_roles_judged": judged},
+                {
+                    "status": "succeeded",
+                    "trigger": "fulltext_ready",
+                    "verified_candidate_ids": verified_ids,
+                    "failed_candidate_ids": failed_ids,
+                    "fulltext_roles_judged": judged,
+                },
             )
+            self._agent_step(
+                agent_run,
+                "fulltext_verification",
+                "completed",
+                "Verified selected external papers and completed full-text role review.",
+                {
+                    "trigger": "fulltext_ready",
+                    "verified_candidate_ids": verified_ids,
+                    "failed_candidate_ids": failed_ids,
+                    "verified_count": len(verified_ids),
+                    "failed_count": len(failed_ids),
+                    "fulltext_roles_judged": judged,
+                },
+                event_key="fulltext_verification:completed:" + ",".join(verified_ids),
+            )
+        if resume_phase is not None:
+            self._checkpoint(run)
+            similar = self._workspace_similar(run, claim, claim_text, config)
+            self._stage(
+                run,
+                "workspace_retrieval",
+                0.72,
+                {
+                    "trigger": "post_selection_retrieval"
+                    if resume_phase == "fulltext_verification"
+                    else "post_skip_retrieval",
+                    "similar_work": len(similar.items),
+                    "status": similar.status,
+                },
+            )
+            counter = self._workspace_counter(run, claim, claim_text, config)
+            self._stage(
+                run,
+                "counter_evidence",
+                0.74,
+                {
+                    **self._counter_summary(counter),
+                    "trigger": "post_selection_retrieval"
+                    if resume_phase == "fulltext_verification"
+                    else "post_skip_retrieval",
+                    "status": counter.status,
+                },
+            )
+        else:
+            self._agent_step(
+                agent_run,
+                "planner",
+                "completed",
+                "Decomposed the research question and planned evidence gathering.",
+                {
+                    "trigger": "initial_run",
+                    "research_question": claim_text[:300],
+                    "claim_item_id": run.input_claim_item_id,
+                },
+            )
+            self._checkpoint(run)
+            similar = self._workspace_similar(run, claim, claim_text, config)
+            self._stage(run, "workspace_retrieval", 0.28, {"similar_work": len(similar.items)})
+            self._checkpoint(run)
+            self._stage(
+                run, "similar_work", 0.34, {"items": len(similar.items), "status": similar.status}
+            )
+            counter = self._workspace_counter(run, claim, claim_text, config)
+            self._stage(
+                run,
+                "counter_evidence",
+                0.42,
+                {
+                    **self._counter_summary(counter),
+                    "status": counter.status,
+                },
+            )
+            self._agent_step(
+                agent_run,
+                "evidence",
+                "completed",
+                "Retrieved workspace supporting, similar-work, and counter-evidence.",
+                {
+                    "trigger": "initial_run",
+                    "similar": len(similar.items),
+                    "counter": len(counter.items),
+                    "workspace_status": similar.status,
+                },
+            )
+
+            external_queries, exact_lookups = self._external_query_plan(run, claim_text)
+            external = self._external_verify(run, external_queries, exact_lookups)
+            external_summary = (run.stage_summaries or {}).get("external_search")
+            if not isinstance(external_summary, dict):
+                external_summary = {}
+            self._stage(
+                run,
+                "external_search",
+                0.58,
+                {**external_summary, "external_candidates": external},
+            )
+            self._agent_step(
+                agent_run,
+                "external_novelty",
+                "completed",
+                "Searched external literature and classified candidate roles.",
+                {
+                    "trigger": "initial_run",
+                    "executed": bool(external_summary.get("executed", True)),
+                    "candidates": external,
+                    "query_count": len(external_queries),
+                    "successful_query_count": external_summary.get("successful_query_count"),
+                    "failed_query_count": external_summary.get("failed_query_count", 0),
+                    "exact_lookup_count": external_summary.get("exact_lookup_count", 0),
+                },
+            )
+            self._checkpoint(run)
+            candidate_state = self._external_candidate_state(run)
+            selected = candidate_state["selected"]
+            pending = candidate_state["pending"]
+            verified = candidate_state["verified"]
+            failed = candidate_state["failed"]
+            if (
+                external
+                and not self._external_selection_skipped(run)
+                and not selected
+                and not pending
+                and not verified
+                and not failed
+            ):
+                run.status = "waiting_for_user"
+                run.stage = "external_selection"
+                run.progress = 0.62
+                run.verification_status = "incomplete"
+                run.stage_summaries = {
+                    **(run.stage_summaries or {}),
+                    "external_selection": {"status": "waiting_for_user", "candidate_count": external},
+                }
+                self.db.commit()
+                if run.task_id:
+                    try:
+                        task_service.transition(run.task_id, "waiting_for_user", progress=run.progress)
+                    except Exception:
+                        pass
+                self.timeline.record(workspace_id=run.workspace_id, event_type="discover.external_input_requested", subject_type="discover_run", subject_id=run.id, actor="agent", payload={"run_id": run.id, "candidate_count": external})
+                self._sync_agent_run(agent_run, run)
+                self._agent_step(
+                    agent_run,
+                    "external_selection",
+                    "waiting",
+                    "Waiting for the user to select external candidates for full-text verification.",
+                    {"trigger": "initial_run", "candidate_count": external},
+                )
+                return {"run_id": run.id, "status": run.status, "waiting_for_user": True}
+            if selected:
+                self._import_selected_candidates(run)
+                candidate_state = self._external_candidate_state(run)
+                if candidate_state["pending"]:
+                    return self._wait_for_fulltext(run, candidate_state)
+                if not candidate_state["verified"] and candidate_state["failed"]:
+                    return self._wait_for_fulltext(run, candidate_state)
+                self._stage(
+                    run,
+                    "fulltext_verification",
+                    0.68,
+                    {"selected": selected, "verified": candidate_state["verified"]},
+                )
+            elif pending:
+                return self._wait_for_fulltext(run, candidate_state)
+            elif verified:
+# W1：恢复运行时完成 full-text verification——根据导入论文的全文优化 metadata-level role。
+                judged = self._judge_external_fulltext_roles(run, claim_text)
+                self._stage(
+                    run,
+                    "fulltext_verification",
+                    0.70,
+                    {"selected": selected, "verified": verified, "fulltext_roles_judged": judged},
+                )
 
         self._checkpoint(run)
         supporting = self._workspace_supporting(run, claim, claim_text, config)
         external_fulltext = self._external_fulltext(run, supporting)
+        if resume_phase is not None:
+            self._agent_step(
+                agent_run,
+                "evidence_refinement",
+                "completed",
+                "Re-retrieved workspace evidence after the external-selection checkpoint.",
+                {
+                    "trigger": "fulltext_ready"
+                    if resume_phase == "fulltext_verification"
+                    else "external_selection_skipped",
+                    "similar": len(similar.items),
+                    "counter": len(counter.items),
+                    "supporting": len(supporting.items),
+                    "external_fulltext": len(external_fulltext.items),
+                    "similar_status": similar.status,
+                    "counter_status": counter.status,
+                    "supporting_status": supporting.status,
+                },
+                event_key=f"evidence_refinement:{resume_phase}",
+            )
         preliminary_gate = self._evidence_gate(
             run,
             candidate=None,
@@ -656,7 +835,11 @@ class DiscoverService(OpportunityWorkflow):
             "opportunity",
             "completed",
             f"Synthesized {len(candidates)} candidate opportunities from workspace and external evidence.",
-            {"candidate_count": len(candidates)},
+            {
+                "trigger": "evidence_synthesis",
+                "candidate_count": len(candidates),
+                "candidate_titles": [str(item.get("title") or "")[:160] for item in candidates],
+            },
         )
         self._checkpoint(run)
 
@@ -674,10 +857,15 @@ class DiscoverService(OpportunityWorkflow):
             verdict_counts = self._apply_critic_reviews(candidates, critic_reviews)
             self._agent_step(
                 agent_run,
-                "critic",
+                "critic_review",
                 "completed",
                 "Critic reviewed candidates against the evidence ledger.",
-                {"reviews": critic_reviews, "verdicts": verdict_counts},
+                {
+                    "trigger": "post_synthesis_review",
+                    "reviews": critic_reviews,
+                    "review_count": len(critic_reviews),
+                    "verdicts": verdict_counts,
+                },
             )
 # W2：将 critic challenge 注入第二次 synthesis，使优化后的 opportunity 明确回应 critic 的 gap。
             challenges = self._critic_challenges(critic_reviews)
@@ -701,10 +889,15 @@ class DiscoverService(OpportunityWorkflow):
                         existing_titles.add(cand["title"])
                 self._agent_step(
                     agent_run,
-                    "critic",
+                    "critic_repair",
                     "completed",
                     f"Re-synthesized opportunities addressing {len(challenges)} critic challenge(s).",
-                    {"challenges": challenges, "refined": sum(1 for c in candidates if c.get("critic_refined"))},
+                    {
+                        "trigger": "critic_feedback",
+                        "challenges": challenges,
+                        "challenge_count": len(challenges),
+                        "refined": sum(1 for c in candidates if c.get("critic_refined")),
+                    },
                 )
 # Orchestrator 收窄循环（有界）：对标记为 "narrow" 的候选，针对建议方向执行 focused
 # 反证检索阶段。
@@ -720,9 +913,10 @@ class DiscoverService(OpportunityWorkflow):
         else:
             self._agent_step(
                 agent_run,
-                "critic",
+                "critic_review",
                 "skipped",
                 "Critic review unavailable; candidates kept as synthesized.",
+                {"trigger": "post_synthesis_review", "review_count": 0},
             )
         self._checkpoint(run)
 
@@ -743,8 +937,10 @@ class DiscoverService(OpportunityWorkflow):
             "Applied the evidence gate and persisted opportunities.",
             {
                 "opportunities": len(created),
+                "opportunity_ids": [item.id for item in created],
                 "verified": any(gate["verified"] for gate in final_gates),
                 "needs_more_evidence": sum(not gate["verified"] for gate in final_gates),
+                "gate_count": len(final_gates),
             },
         )
         self._checkpoint(run)
@@ -796,7 +992,10 @@ class DiscoverService(OpportunityWorkflow):
                 "complete",
                 "completed",
                 f"Discovery run finished with {len(created)} opportunities.",
-                {"verification_status": run.verification_status},
+                {
+                    "verification_status": run.verification_status,
+                    "opportunity_ids": [item.id for item in created],
+                },
             )
         return {"run_id": run.id, "status": run.status, "opportunity_ids": [item.id for item in created]}
 
@@ -850,11 +1049,29 @@ class DiscoverService(OpportunityWorkflow):
         self.db.flush()
         return agent_run
 
-    def _agent_step(self, agent_run: AgentRun | None, stage: str, status: str, summary: str, details: dict[str, Any] | None = None) -> None:
-        """向 discover AgentRun 追加 AgentStep（跨恢复操作保持幂等）。"""
+    def _agent_step(
+        self,
+        agent_run: AgentRun | None,
+        stage: str,
+        status: str,
+        summary: str,
+        details: dict[str, Any] | None = None,
+        *,
+        event_key: str | None = None,
+    ) -> None:
+        """向 discover AgentRun 追加 AgentStep；带 event_key 的步骤跨恢复保持幂等。"""
         if agent_run is None:
             return
+        if event_key:
+            existing_steps = self.db.execute(
+                select(AgentStep).where(AgentStep.run_id == agent_run.id)
+            ).scalars()
+            if any((step.details or {}).get("event_key") == event_key for step in existing_steps):
+                return
         max_seq = int(self.db.scalar(select(func.max(AgentStep.sequence)).where(AgentStep.run_id == agent_run.id)) or 0)
+        step_details = {**(details or {})}
+        if event_key:
+            step_details["event_key"] = event_key
         self.db.add(
             AgentStep(
                 run_id=agent_run.id,
@@ -862,7 +1079,7 @@ class DiscoverService(OpportunityWorkflow):
                 stage=stage,
                 status=status,
                 summary=summary,
-                details=details or {},
+                details=step_details,
             )
         )
         agent_run.current_stage = stage

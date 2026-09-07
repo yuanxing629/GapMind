@@ -20,6 +20,7 @@ if str(_REPO_ROOT) not in sys.path:
 
 from app.domains.agent.models import AgentRun, AgentStep  # noqa: E402
 from app.domains.discover.models import (  # noqa: E402
+    DiscoverExternalCandidate,
     DiscoverRun,
     OpportunityEvidence,
     OpportunityVersion,
@@ -186,6 +187,104 @@ def test_agent_step_does_not_overwrite_terminal_status(db_session) -> None:
     service._agent_step(agent_run, "complete", "completed", "Finished")
     assert agent_run.status == "succeeded"  # terminal status preserved
     assert agent_run.current_stage == "complete"
+
+
+def test_agent_step_with_event_key_is_idempotent(db_session) -> None:
+    workspace_id = str(uuid4())
+    _workspace(db_session, workspace_id)
+    agent_run = AgentRun(workspace_id=workspace_id, agent_type="discover", status="running", current_stage="planner")
+    db_session.add(agent_run)
+    db_session.commit()
+    service = _service(db_session)
+
+    service._agent_step(
+        agent_run,
+        "fulltext_verification",
+        "waiting",
+        "Waiting for full-text processing.",
+        {"pending_count": 1},
+        event_key="fulltext_verification:waiting:batch-1",
+    )
+    service._agent_step(
+        agent_run,
+        "fulltext_verification",
+        "waiting",
+        "This duplicate must not be appended.",
+        {"pending_count": 1},
+        event_key="fulltext_verification:waiting:batch-1",
+    )
+
+    steps = list(db_session.query(AgentStep).filter(AgentStep.run_id == agent_run.id).all())
+    assert len(steps) == 1
+    assert steps[0].details["event_key"] == "fulltext_verification:waiting:batch-1"
+
+
+def test_fulltext_resume_skips_initial_planner_and_external_search(db_session, monkeypatch) -> None:
+    workspace_id = str(uuid4())
+    _workspace(db_session, workspace_id)
+    task = Task(
+        id=str(uuid4()),
+        workspace_id=workspace_id,
+        task_type="discover_agent",
+        status="queued",
+        payload={},
+    )
+    run = _run(
+        workspace_id,
+        task_id=task.id,
+        status="queued",
+        stage="fulltext_verification",
+        progress=0.70,
+        stage_summaries={
+            "external_selection": {"status": "queued", "selected": 1},
+            "fulltext_verification": {"status": "succeeded"},
+        },
+    )
+    candidate = DiscoverExternalCandidate(
+        id="candidate-1",
+        discover_run_id=run.id,
+        query="topic",
+        rank=1,
+        external_paper_id="S2-1",
+        title="Verified external paper",
+        authors=[],
+        evidence_level="full_text",
+        verification_status="verified",
+        snapshot_payload={},
+    )
+    db_session.add_all([task, run, candidate])
+    db_session.commit()
+
+    service = _service(db_session)
+    empty_similar = _empty_response(workspace_id, "similar_work")
+    empty_counter = _empty_response(workspace_id, "counter_evidence")
+    empty_supporting = _empty_response(workspace_id, "supporting")
+    monkeypatch.setattr(service, "_judge_external_fulltext_roles", lambda *args: 1)
+    monkeypatch.setattr(service, "_workspace_similar", lambda *args: empty_similar)
+    monkeypatch.setattr(service, "_workspace_counter", lambda *args: empty_counter)
+    monkeypatch.setattr(service, "_workspace_supporting", lambda *args: empty_supporting)
+    monkeypatch.setattr(service, "_synthesize_candidates", lambda *args, **kwargs: [])
+    monkeypatch.setattr(service, "_persist_candidates", lambda *args, **kwargs: ([], []))
+    monkeypatch.setattr(
+        service,
+        "_external_query_plan",
+        lambda *args: (_ for _ in ()).throw(AssertionError("resume must not rebuild external queries")),
+    )
+    monkeypatch.setattr(
+        service,
+        "_external_verify",
+        lambda *args: (_ for _ in ()).throw(AssertionError("resume must not rerun external search")),
+    )
+
+    result = service.execute_run(run.id)
+
+    assert result["status"] == "succeeded"
+    steps = service._run_agent_steps(run)
+    stages = [step.stage for step in steps]
+    assert "planner" not in stages
+    assert "external_novelty" not in stages
+    assert "fulltext_verification" in stages
+    assert "evidence_refinement" in stages
 
 
 def test_run_agent_steps_returns_handoff_for_task(db_session) -> None:

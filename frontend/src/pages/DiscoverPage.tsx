@@ -5,6 +5,7 @@ import {
   Button,
   Card,
   Checkbox,
+  Collapse,
   Descriptions,
   Divider,
   Drawer,
@@ -54,6 +55,102 @@ function agentStepColor(status: string): string {
   if (status === "failed") return "red";
   if (status === "skipped") return "default";
   return "processing";
+}
+
+const AGENT_STAGE_LABELS: Record<string, string> = {
+  planner: "Planner",
+  evidence: "Evidence",
+  evidence_refinement: "证据复核",
+  external_novelty: "External Novelty",
+  external_selection: "外部候选选择",
+  fulltext_verification: "全文核验",
+  opportunity: "Opportunity",
+  critic: "Critic",
+  critic_review: "Critic 审查",
+  critic_repair: "Critic 修复",
+  narrowing: "候选收窄",
+  gate: "Evidence Gate",
+  complete: "完成",
+};
+
+const AGENT_DETAIL_LABELS: Record<string, string> = {
+  trigger: "触发原因",
+  resume_phase: "恢复阶段",
+  status: "阶段状态",
+  research_question: "研究问题",
+  claim_item_id: "论断 ID",
+  selected_candidate_ids: "已选候选 ID",
+  pending_candidate_ids: "等待候选 ID",
+  verified_candidate_ids: "已核验候选 ID",
+  failed_candidate_ids: "失败候选 ID",
+  selected_count: "已选数量",
+  pending_count: "等待数量",
+  verified_count: "已核验数量",
+  failed_count: "失败数量",
+  next_stage: "下一阶段",
+  similar: "相似工作数",
+  counter: "反证数",
+  supporting: "支持性证据数",
+  external_fulltext: "外部全文证据数",
+  workspace_status: "工作区检索状态",
+  similar_status: "相似工作状态",
+  counter_status: "反证检索状态",
+  supporting_status: "支持性检索状态",
+  executed: "实际执行外部检索",
+  candidates: "外部候选数",
+  candidate_count: "候选数",
+  candidate_titles: "候选标题",
+  query_count: "查询数",
+  successful_query_count: "成功查询数",
+  failed_query_count: "失败查询数",
+  exact_lookup_count: "精确查找数",
+  fulltext_roles_judged: "全文角色复核数",
+  review_count: "审查数",
+  verdicts: "审查判定",
+  challenge_count: "挑战数",
+  refined: "修复后候选数",
+  narrowed: "收窄候选数",
+  opportunities: "研究机会数",
+  opportunity_ids: "研究机会 ID",
+  verified: "存在已验证机会",
+  needs_more_evidence: "需要更多证据数",
+  gate_count: "Gate 数",
+  verification_status: "核验状态",
+};
+
+function agentStepDetailValue(key: string, value: unknown): string {
+  if (key === "verdicts" && value && typeof value === "object" && !Array.isArray(value)) {
+    const verdicts = value as Record<string, unknown>;
+    return ["keep", "narrow", "reject"].map((item) => `${item}: ${verdicts[item] ?? 0}`).join("，");
+  }
+  if (value === null || value === undefined) return "—";
+  if (typeof value === "string" || typeof value === "number") return String(value);
+  if (typeof value === "boolean") return value ? "是" : "否";
+  if (Array.isArray(value)) {
+    if (value.length === 0) return "0 项";
+    if (value.every((item) => typeof item === "string" || typeof item === "number")) {
+      const preview = value.slice(0, 4).join("，");
+      return value.length > 4 ? `${preview}（另有 ${value.length - 4} 项）` : preview;
+    }
+    return `${value.length} 项结构化记录`;
+  }
+  return `结构化数据（${Object.keys(value).length} 项）`;
+}
+
+function agentStepDetailEntries(details: Record<string, unknown>): Array<[string, string, string]> {
+  return Object.entries(details)
+    .filter(([key]) => key !== "event_key" && valueIsDisplayable(details[key]))
+    .map(([key, value]) => [key, AGENT_DETAIL_LABELS[key] || key, agentStepDetailValue(key, value)]);
+}
+
+function valueIsDisplayable(value: unknown): boolean {
+  if (value === null || value === undefined) return false;
+  if (Array.isArray(value) && value.length === 0) return false;
+  return true;
+}
+
+function agentStepLabel(stage: string): string {
+  return AGENT_STAGE_LABELS[stage] || stage.replaceAll("_", " ");
 }
 
 function verificationStatusLabel(status: string): string {
@@ -416,7 +513,7 @@ export default function DiscoverPage() {
               </>}
             </Card>
             <Card size="small" title="Multi-agent handoff">
-              {!runDetail?.agent_steps?.length ? <Empty description="The run records Planner → Evidence → External → Critic → Gate as it executes" image={Empty.PRESENTED_IMAGE_SIMPLE} /> : <List size="small" dataSource={runDetail.agent_steps} renderItem={(step) => { const verdicts = step.stage === "critic" ? (step.details?.verdicts as Record<string, number> | undefined) : undefined; const narrowing = step.stage === "narrowing" ? (step.details?.narrowed as number | undefined) : undefined; return <List.Item><Space direction="vertical" size={2} style={{ width: "100%" }}><Space wrap><Tag color={agentStepColor(step.status)}>{step.status}</Tag><Text strong style={{ textTransform: "capitalize" }}>{step.stage.replaceAll("_", " ")}</Text><Text type="secondary">step {step.sequence}</Text></Space><Text type="secondary">{step.summary}</Text>{verdicts ? <Space wrap>{(["keep", "narrow", "reject"] as const).map((key) => <Tag key={key} color={key === "reject" ? "red" : key === "narrow" ? "orange" : "green"}>{key}: {verdicts[key] ?? 0}</Tag>)}</Space> : null}{narrowing ? <Text type="secondary">Focused counter-evidence pass narrowed {narrowing} candidate(s)</Text> : null}</Space></List.Item>; }} />}
+              {!runDetail?.agent_steps?.length ? <Empty description="运行过程中会记录 Planner → Evidence → External → Critic → Gate 的交接信息" image={Empty.PRESENTED_IMAGE_SIMPLE} /> : <List size="small" dataSource={runDetail.agent_steps} renderItem={(step) => { const verdicts = ["critic", "critic_review"].includes(step.stage) ? (step.details?.verdicts as Record<string, number> | undefined) : undefined; const narrowing = step.stage === "narrowing" ? (step.details?.narrowed as number | undefined) : undefined; const detailEntries = agentStepDetailEntries(step.details || {}); return <List.Item><Space direction="vertical" size={4} style={{ width: "100%" }}><Space wrap><Tag color={agentStepColor(step.status)}>{step.status}</Tag><Text strong>{agentStepLabel(step.stage)}</Text><Text type="secondary">step {step.sequence}</Text></Space><Text type="secondary">{step.summary}</Text>{verdicts ? <Space wrap>{(["keep", "narrow", "reject"] as const).map((key) => <Tag key={key} color={key === "reject" ? "red" : key === "narrow" ? "orange" : "green"}>{key}: {verdicts[key] ?? 0}</Tag>)}</Space> : null}{narrowing ? <Text type="secondary">Focused counter-evidence pass narrowed {narrowing} candidate(s)</Text> : null}{detailEntries.length > 0 ? <Collapse ghost size="small" items={[{ key: "details", label: "查看步骤详情", children: <Descriptions size="small" column={1}>{detailEntries.map(([key, label, value]) => <Descriptions.Item key={key} label={label}><Text style={{ wordBreak: "break-word" }}>{value}</Text></Descriptions.Item>)}</Descriptions> }]} /> : null}</Space></List.Item>; }} />}
             </Card>
             <Card title={`本次运行的研究机会候选（${selectedOpportunities.length}）`}>
       {selectedOpportunities.length === 0 ? <Empty description={selectedRun?.status === "waiting_for_fulltext" ? "完成全文核验后将生成候选结果" : "候选综合完成后将在这里显示结果"} /> : <List dataSource={selectedOpportunities} renderItem={(item) => { const displayStatus = opportunityStatus(item); return <List.Item actions={[<Button key="open" type="link" onClick={() => void openOpportunity(item.id)}>查看详情</Button>]}><List.Item.Meta title={<Space wrap><Text strong>{localizedGeneratedText(item.title)}</Text><Tag color={statusColor(displayStatus)}>{opportunityStatusLabel(displayStatus)}</Tag></Space>} description={<Paragraph ellipsis={{ rows: 2 }} style={{ margin: 0 }}>{localizedGeneratedText(item.summary)}</Paragraph>} /><Tag>智能体置信度 {Math.round(item.confidence * 100)}%</Tag></List.Item>; }} />}
