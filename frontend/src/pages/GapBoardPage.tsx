@@ -140,7 +140,9 @@ export default function GapBoardPage() {
         for (const task of response.tasks) {
           if (task.skipped) skipped += 1;
           else submitted += 1;
-          if (task.dependency_status === "legacy_fallback") legacyFallback += 1;
+          if (!task.skipped && task.dependency_status === "legacy_fallback") {
+            legacyFallback += 1;
+          }
         }
       }
       if (submitted === 0) {
