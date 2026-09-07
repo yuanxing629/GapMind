@@ -518,6 +518,84 @@ def list_papers(
 
 
 @router.post(
+    "/workspaces/{workspace_id}/papers/{paper_id}/parse",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def trigger_paper_parsing(
+    workspace_id: str,
+    paper_id: str,
+    _owner_id: str = Depends(get_owned_workspace),
+    service: PaperService = Depends(_get_paper_service),
+    workspace_service: WorkspaceService = Depends(_get_workspace_service),
+) -> dict[str, str]:
+    """幂等地触发或重试带 PDF 论文的解析。"""
+    workspace_service.get(workspace_id)
+    paper = service.get(paper_id)
+    if paper.workspace_id != workspace_id:
+        from app.domains.paper.service import PaperNotFoundError
+
+        raise PaperNotFoundError(paper_id)
+    if not paper.primary_artifact_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": "paper_pdf_missing",
+                "message": "Paper must have a PDF before parsing.",
+            },
+        )
+    if paper.parse_status == "parsed":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": "paper_already_parsed",
+                "message": "Paper has already been parsed.",
+            },
+        )
+
+    paper.parse_status = "pending"
+    paper.parse_error = None
+    service.db.commit()
+
+    from app.workers.tasks.parse_pdf import spawn_parse_pdf_task
+
+    task_id = spawn_parse_pdf_task(service.db, paper.id, workspace_id)
+    return {"task_id": task_id, "status": "queued"}
+
+
+@router.post(
+    "/workspaces/{workspace_id}/papers/{paper_id}/index",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def trigger_paper_indexing(
+    workspace_id: str,
+    paper_id: str,
+    _owner_id: str = Depends(get_owned_workspace),
+    service: PaperService = Depends(_get_paper_service),
+    workspace_service: WorkspaceService = Depends(_get_workspace_service),
+) -> dict[str, str]:
+    """幂等地触发或重试已解析论文的全文向量索引。"""
+    workspace_service.get(workspace_id)
+    paper = service.get(paper_id)
+    if paper.workspace_id != workspace_id:
+        from app.domains.paper.service import PaperNotFoundError
+
+        raise PaperNotFoundError(paper_id)
+    if paper.parse_status != "parsed" or not paper.chunk_index_artifact_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": "paper_not_parsed",
+                "message": "Paper must have parsed chunks before indexing.",
+            },
+        )
+
+    from app.workers.tasks.embed_chunks import spawn_embed_chunks
+
+    task_id = spawn_embed_chunks(service.db, paper.id, workspace_id)
+    return {"task_id": task_id, "status": "queued"}
+
+
+@router.post(
     "/workspaces/{workspace_id}/papers/{paper_id}/extract",
     status_code=status.HTTP_202_ACCEPTED,
 )

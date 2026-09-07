@@ -22,14 +22,22 @@ import {
   PaperClipOutlined,
   PlusOutlined,
   ReadOutlined,
+  ReloadOutlined,
 } from "@ant-design/icons";
 import type { UploadRequestOption } from "rc-upload/lib/interface";
 import { useNavigate } from "react-router-dom";
 import paperApi from "../api/paper";
 import readingApi from "../api/reading";
-import type { Paper, PaperUpdate } from "../api/types/domain";
+import type { Paper, PaperUpdate, Task } from "../api/types/domain";
 import StatusBadge from "./common/StatusBadge";
 import { readingPaperPath } from "./layout/navigation";
+import {
+  isActivePaperTask,
+  latestPaperTask,
+  paperPipelineStatus,
+  pipelineActionLabel,
+  type PaperPipelineStatus,
+} from "../state/paperProcessing";
 
 const { Text } = Typography;
 const { TextArea } = Input;
@@ -37,8 +45,10 @@ const { TextArea } = Input;
 interface Props {
   workspaceId: string;
   papers: Paper[];
+  tasks: Task[];
+  tasksAvailable: boolean;
   loading: boolean;
-  onChanged: () => void;
+  onChanged: () => void | Promise<void>;
 }
 
 interface ManualFormValues {
@@ -70,7 +80,7 @@ function toEditValues(p: Paper): EditFormValues {
   };
 }
 
-export default function PapersSection({ workspaceId, papers, loading, onChanged }: Props) {
+export default function PapersSection({ workspaceId, papers, tasks, tasksAvailable, loading, onChanged }: Props) {
   const { message, modal } = App.useApp();
   const navigate = useNavigate();
   const [manualOpen, setManualOpen] = useState(false);
@@ -78,6 +88,7 @@ export default function PapersSection({ workspaceId, papers, loading, onChanged 
   const [editingPaper, setEditingPaper] = useState<Paper | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [openingPaperId, setOpeningPaperId] = useState<string | null>(null);
+  const [processingKey, setProcessingKey] = useState<string | null>(null);
   const [manualForm] = Form.useForm<ManualFormValues>();
   const [editForm] = Form.useForm<EditFormValues>();
 
@@ -97,7 +108,7 @@ export default function PapersSection({ workspaceId, papers, loading, onChanged 
         mime_type: file.type || "application/pdf",
       });
       message.success(`已上传“${paper.title}”，解析任务已排队；请查看解析列的质量反馈`);
-      onChanged();
+      await onChanged();
     } catch (err) {
       const msg = (err as { response?: { data?: { detail?: { message?: string } } } }).response?.data?.detail?.message
         || (err as Error).message;
@@ -138,7 +149,7 @@ export default function PapersSection({ workspaceId, papers, loading, onChanged 
           mime_type: file.type || "application/pdf",
         });
         message.success(`PDF attached to "${updated.title}"`);
-        onChanged();
+        await onChanged();
       } catch (err) {
         const detail = (err as { response?: { data?: { detail?: { message?: string; error?: string } } } }).response?.data?.detail;
         if (detail?.error === "paper_already_has_pdf") {
@@ -171,7 +182,7 @@ export default function PapersSection({ workspaceId, papers, loading, onChanged 
       message.success("Paper created");
       setManualOpen(false);
       manualForm.resetFields();
-      onChanged();
+      await onChanged();
     } catch (err) {
       message.error(`Create failed: ${(err as Error).message}`);
     } finally {
@@ -205,7 +216,7 @@ export default function PapersSection({ workspaceId, papers, loading, onChanged 
       message.success("Paper updated");
       setEditOpen(false);
       setEditingPaper(null);
-      onChanged();
+      await onChanged();
     } catch (err) {
       message.error(`Update failed: ${(err as Error).message}`);
     } finally {
@@ -225,7 +236,7 @@ export default function PapersSection({ workspaceId, papers, loading, onChanged 
         try {
           await paperApi.remove(workspaceId, paper.id);
           message.success("Paper deleted");
-          onChanged();
+          await onChanged();
         } catch (err) {
           message.error(`Delete failed: ${(err as Error).message}`);
         }
@@ -237,7 +248,7 @@ export default function PapersSection({ workspaceId, papers, loading, onChanged 
     if (openingPaperId) return;
     setOpeningPaperId(paper.id);
     try {
-      const readingPaper = await readingApi.add(paper.id);
+      const readingPaper = await readingApi.ensureReady(paper.id);
       navigate(readingPaperPath(readingPaper.paper_id));
     } catch (err) {
       const detail = (err as { response?: { data?: { detail?: { message?: string } } } }).response?.data?.detail;
@@ -245,6 +256,42 @@ export default function PapersSection({ workspaceId, papers, loading, onChanged 
     } finally {
       setOpeningPaperId(null);
     }
+  };
+
+  const triggerProcessing = async (
+    paper: Paper,
+    kind: "parse" | "index" | "knowledge",
+  ) => {
+    if (!tasksAvailable) {
+      message.warning("暂时无法确认后台任务状态，请刷新后重试");
+      return;
+    }
+    const key = `${paper.id}:${kind}`;
+    setProcessingKey(key);
+    try {
+      if (kind === "parse") await paperApi.parse(workspaceId, paper.id);
+      if (kind === "index") await paperApi.index(workspaceId, paper.id);
+      if (kind === "knowledge") await paperApi.extract(workspaceId, paper.id);
+      message.success(`${pipelineActionLabel(kind, "pending")}任务已提交`);
+      await onChanged();
+    } catch (err) {
+      const detail = (err as { response?: { data?: { detail?: { message?: string } } } }).response?.data?.detail;
+      message.error(`${pipelineActionLabel(kind, "pending")}失败：${detail?.message || (err as Error).message}`);
+    } finally {
+      setProcessingKey(null);
+    }
+  };
+
+  const statusDetail = (paper: Paper, kind: "parse" | "index" | "knowledge", state: PaperPipelineStatus) => {
+    const taskType = kind === "parse" ? "parse_pdf" : kind === "index" ? "embed_chunks" : "extract_knowledge";
+    const task = latestPaperTask(tasks, paper.id, taskType);
+    if (task?.error) return task.error;
+    if (kind === "parse" && paper.parse_error) return paper.parse_error;
+    if (state === "not_applicable") return kind === "parse" ? "尚未上传 PDF" : "请先完成前一步处理";
+    if (state === "pending") return "等待后台任务处理";
+    if (state === "running") return "后台任务正在处理";
+    if (state === "failed") return "处理失败，可点击重试";
+    return "处理已完成";
   };
 
   return (
@@ -331,6 +378,30 @@ export default function PapersSection({ workspaceId, papers, loading, onChanged 
               },
             },
             {
+              title: "处理状态",
+              key: "processing",
+              width: 270,
+              render: (_: unknown, p) => {
+                const states = {
+                  parse: paperPipelineStatus(p, p.id, tasks, "parse"),
+                  index: paperPipelineStatus(p, p.id, tasks, "index"),
+                  knowledge: paperPipelineStatus(p, p.id, tasks, "knowledge"),
+                } as const;
+                return (
+                  <Space direction="vertical" size={2}>
+                    {(Object.entries(states) as [keyof typeof states, PaperPipelineStatus][]).map(([kind, state]) => (
+                      <Tooltip key={kind} title={statusDetail(p, kind, state)}>
+                        <Space size={4}>
+                          <Text type="secondary">{kind === "parse" ? "解析" : kind === "index" ? "全文索引" : "知识提取"}</Text>
+                          <StatusBadge status={state} />
+                        </Space>
+                      </Tooltip>
+                    ))}
+                  </Space>
+                );
+              },
+            },
+            {
               title: "来源",
               dataIndex: "source",
               key: "source",
@@ -340,9 +411,15 @@ export default function PapersSection({ workspaceId, papers, loading, onChanged 
             {
               title: "操作",
               key: "actions",
-              width: 220,
-              render: (_: unknown, p) => (
-                <Space size={4}>
+              width: 430,
+              render: (_: unknown, p) => {
+                const states = {
+                  parse: paperPipelineStatus(p, p.id, tasks, "parse"),
+                  index: paperPipelineStatus(p, p.id, tasks, "index"),
+                  knowledge: paperPipelineStatus(p, p.id, tasks, "knowledge"),
+                } as const;
+                return (
+                <Space wrap size={4}>
                   <Button
                     size="small"
                     type="primary"
@@ -372,10 +449,31 @@ export default function PapersSection({ workspaceId, papers, loading, onChanged 
                     danger
                     icon={<DeleteOutlined />}
                     onClick={() => handleDelete(p)}
-                      title="删除"
+                    title="删除"
                   />
+                  {(["parse", "index", "knowledge"] as const).map((kind) => {
+                    const state = states[kind];
+                    if (state === "succeeded" || state === "not_applicable") return null;
+                    const taskType = kind === "parse" ? "parse_pdf" : kind === "index" ? "embed_chunks" : "extract_knowledge";
+                    const task = latestPaperTask(tasks, p.id, taskType);
+                    const active = isActivePaperTask(task);
+                    if (kind === "parse" && !p.primary_artifact_id) return null;
+                    return (
+                      <Button
+                        key={kind}
+                        size="small"
+                        icon={<ReloadOutlined />}
+                        disabled={!tasksAvailable || active}
+                        loading={processingKey === `${p.id}:${kind}` || active}
+                        onClick={() => void triggerProcessing(p, kind)}
+                      >
+                        {pipelineActionLabel(kind, state)}
+                      </Button>
+                    );
+                  })}
                 </Space>
-              ),
+                );
+              },
             },
           ]}
         />

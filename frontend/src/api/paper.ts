@@ -6,6 +6,11 @@ import type {
   PaperUpdate,
 } from "./types/domain";
 
+export interface PaperTaskTriggerResponse {
+  task_id: string;
+  status: string;
+}
+
 export interface PaperUploadParams {
   filename: string;
   content: Blob;
@@ -82,6 +87,27 @@ export const paperApi = {
   async remove(workspaceId: string, paperId: string): Promise<{ id: string; deleted: boolean }> {
     const resp = await apiClient.delete<{ id: string; deleted: boolean }>(
       `/workspaces/${workspaceId}/papers/${paperId}`
+    );
+    return resp.data;
+  },
+
+  async parse(workspaceId: string, paperId: string): Promise<PaperTaskTriggerResponse> {
+    const resp = await apiClient.post<PaperTaskTriggerResponse>(
+      `/workspaces/${workspaceId}/papers/${paperId}/parse`,
+    );
+    return resp.data;
+  },
+
+  async index(workspaceId: string, paperId: string): Promise<PaperTaskTriggerResponse> {
+    const resp = await apiClient.post<PaperTaskTriggerResponse>(
+      `/workspaces/${workspaceId}/papers/${paperId}/index`,
+    );
+    return resp.data;
+  },
+
+  async extract(workspaceId: string, paperId: string): Promise<PaperTaskTriggerResponse> {
+    const resp = await apiClient.post<PaperTaskTriggerResponse>(
+      `/workspaces/${workspaceId}/papers/${paperId}/extract`,
     );
     return resp.data;
   },

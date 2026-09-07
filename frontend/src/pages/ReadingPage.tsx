@@ -26,11 +26,19 @@ import PageHeader from "../components/common/PageHeader";
 import SemanticPaperSearch from "../components/SemanticPaperSearch";
 import paperApi from "../api/paper";
 import readingApi, { type ReadingPaper, type ReadingStatus } from "../api/reading";
+import taskApi from "../api/task";
 import workspaceApi from "../api/workspace";
 import type { Workspace } from "../api/types/workspace";
-import type { Paper } from "../api/types/domain";
+import type { Paper, Task } from "../api/types/domain";
 import { useAppStore } from "../store/appStore";
 import { readingPaperPath, resolveReadingWorkspace } from "../components/layout/navigation";
+import {
+  isActivePaperTask,
+  latestPaperTask,
+  paperPipelineStatus,
+  pipelineActionLabel,
+  type PaperPipelineStatus,
+} from "../state/paperProcessing";
 
 const { Text, Paragraph } = Typography;
 
@@ -39,6 +47,11 @@ const STATUS_META: Record<ReadingStatus, { label: string; color: string }> = {
   reading: { label: "阅读中", color: "processing" },
   completed: { label: "已读完", color: "success" },
 };
+
+function errorMessage(error: unknown): string {
+  const detail = (error as { response?: { data?: { detail?: { message?: string } } } }).response?.data?.detail;
+  return detail?.message || (error as Error).message || "操作失败";
+}
 
 export default function ReadingPage() {
   const navigate = useNavigate();
@@ -51,8 +64,11 @@ export default function ReadingPage() {
   const [workspaceSelectionError, setWorkspaceSelectionError] = useState(false);
   const [workspaceSelectionResolved, setWorkspaceSelectionResolved] = useState(false);
   const [items, setItems] = useState<ReadingPaper[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [tasksAvailable, setTasksAvailable] = useState(true);
   const [loading, setLoading] = useState(true);
   const [workspacesLoading, setWorkspacesLoading] = useState(true);
+  const [processingKey, setProcessingKey] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (workspacesLoading || !workspaceSelectionResolved) return;
@@ -63,17 +79,31 @@ export default function ReadingPage() {
     }
     setLoading(true);
     setItems([]);
+    setTasksAvailable(false);
     try {
-      const [papersResponse, readingResponse] = await Promise.all([
+      const [papersResult, readingResult, tasksResult] = await Promise.allSettled([
         paperApi.list(workspaceId, { limit: 100 }),
         readingApi.list({ workspace_id: workspaceId, limit: 100 }),
+        taskApi.list(workspaceId, { limit: 200 }),
       ]);
+      if (papersResult.status === "rejected") throw papersResult.reason;
+      const readingItems = readingResult.status === "fulfilled" ? readingResult.value.items : [];
+      if (readingResult.status === "rejected") {
+        message.warning("阅读记录暂时不可用，已先展示课题空间中的论文");
+      }
+      if (tasksResult.status === "fulfilled") {
+        setTasks(tasksResult.value.items);
+        setTasksAvailable(true);
+      } else {
+        setTasks([]);
+        message.warning("后台任务状态暂时不可用，论文处理按钮已暂停，请稍后刷新");
+      }
       const readingByPaper = new Map(
-        readingResponse.items.map((item) => [item.paper_id, item]),
+        readingItems.map((item) => [item.paper_id, item]),
       );
       const workspaceName = workspaces.find((item) => item.id === workspaceId)?.name ?? null;
       setItems(
-        papersResponse.items.map((paper) => {
+        papersResult.value.items.map((paper) => {
           const readingPaper = readingByPaper.get(paper.id);
           if (readingPaper) return readingPaper;
           return {
@@ -92,7 +122,9 @@ export default function ReadingPage() {
             primary_artifact_id: paper.primary_artifact_id ?? null,
             parse_status: paper.parse_status ?? "not_applicable",
             parsed_markdown_artifact_id: paper.parsed_markdown_artifact_id ?? null,
+            chunk_index_artifact_id: paper.chunk_index_artifact_id ?? null,
             chunk_count: paper.chunk_count ?? 0,
+            extract_status: paper.extract_status ?? "not_applicable",
             reading_status: "unread" as const,
             last_read_page: 1,
             last_read_at: null,
@@ -168,6 +200,29 @@ export default function ReadingPage() {
       navigate(readingPaperPath(readingPaper.paper_id));
     } catch (error) {
       message.error(`打开论文失败：${(error as Error).message}`);
+    }
+  };
+
+  const triggerProcessing = async (
+    paper: ReadingPaper,
+    kind: "parse" | "index" | "knowledge",
+  ) => {
+    if (!tasksAvailable) {
+      message.warning("暂时无法确认后台任务状态，请刷新后重试");
+      return;
+    }
+    const key = `${paper.paper_id}:${kind}`;
+    setProcessingKey(key);
+    try {
+      if (kind === "parse") await paperApi.parse(paper.workspace_id, paper.paper_id);
+      if (kind === "index") await paperApi.index(paper.workspace_id, paper.paper_id);
+      if (kind === "knowledge") await paperApi.extract(paper.workspace_id, paper.paper_id);
+      message.success(`${pipelineActionLabel(kind, "pending")}任务已提交`);
+      await load();
+    } catch (error) {
+      message.error(`${pipelineActionLabel(kind, "pending")}失败：${errorMessage(error)}`);
+    } finally {
+      setProcessingKey(null);
     }
   };
 
@@ -293,13 +348,26 @@ export default function ReadingPage() {
                       {
                         title: "原文",
                         key: "pdf",
-                        width: 120,
-                        render: (_: unknown, paper) => (
-                          <Space size={4}>
+                        width: 260,
+                        render: (_: unknown, paper) => {
+                          const states = {
+                            parse: paperPipelineStatus(paper, paper.paper_id, tasks, "parse"),
+                            index: paperPipelineStatus(paper, paper.paper_id, tasks, "index"),
+                            knowledge: paperPipelineStatus(paper, paper.paper_id, tasks, "knowledge"),
+                          } as const;
+                          return (
+                          <Space direction="vertical" size={2}>
                             {paper.primary_artifact_id ? <Tag color="green">PDF 可读</Tag> : <Tag>待上传</Tag>}
-                            {paper.parse_status === "parsed" && <Tag color="blue">已索引</Tag>}
+                            <Space wrap size={2}>
+                              {(Object.entries(states) as [keyof typeof states, PaperPipelineStatus][]).map(([kind, state]) => (
+                                <Tag key={kind} color={state === "succeeded" ? "success" : state === "failed" ? "error" : state === "running" ? "processing" : "default"}>
+                                  {kind === "parse" ? "解析" : kind === "index" ? "索引" : "知识"}：{state === "succeeded" ? "已完成" : state === "not_applicable" ? "待前置" : state === "running" ? "处理中" : state === "failed" ? "失败" : "待处理"}
+                                </Tag>
+                              ))}
+                            </Space>
                           </Space>
-                        ),
+                          );
+                        },
                       },
                       {
                         title: "进度",
@@ -310,17 +378,44 @@ export default function ReadingPage() {
                       {
                         title: "操作",
                         key: "actions",
-                        width: 160,
-                        render: (_: unknown, paper) => (
-                          <Space size={4}>
+                        width: 440,
+                        render: (_: unknown, paper) => {
+                          const states = {
+                            parse: paperPipelineStatus(paper, paper.paper_id, tasks, "parse"),
+                            index: paperPipelineStatus(paper, paper.paper_id, tasks, "index"),
+                            knowledge: paperPipelineStatus(paper, paper.paper_id, tasks, "knowledge"),
+                          } as const;
+                          return (
+                          <Space wrap size={4}>
                             <Button size="small" type="primary" icon={<PlayCircleOutlined />} onClick={() => void openPaper(paper)}>
                               阅读
                             </Button>
                             {paper.reading_item_id && (
                               <Button size="small" danger icon={<DeleteOutlined />} title="清除阅读记录" onClick={() => remove(paper)} />
                             )}
+                            {(["parse", "index", "knowledge"] as const).map((kind) => {
+                              const state = states[kind];
+                              if (state === "succeeded" || state === "not_applicable") return null;
+                              const taskType = kind === "parse" ? "parse_pdf" : kind === "index" ? "embed_chunks" : "extract_knowledge";
+                              const task = latestPaperTask(tasks, paper.paper_id, taskType);
+                              const active = isActivePaperTask(task);
+                              if (kind === "parse" && !paper.primary_artifact_id) return null;
+                              return (
+                                <Button
+                                  key={kind}
+                                  size="small"
+                                  icon={<ReloadOutlined />}
+                                  disabled={!tasksAvailable || active}
+                                  loading={processingKey === `${paper.paper_id}:${kind}` || active}
+                                  onClick={() => void triggerProcessing(paper, kind)}
+                                >
+                                  {pipelineActionLabel(kind, state)}
+                                </Button>
+                              );
+                            })}
                           </Space>
-                        ),
+                          );
+                        },
                       },
                     ]}
                   />

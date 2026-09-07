@@ -68,6 +68,7 @@ export default function WorkspaceDetailPage() {
   const [papersLoading, setPapersLoading] = useState(false);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [tasksLoading, setTasksLoading] = useState(false);
+  const [tasksAvailable, setTasksAvailable] = useState(false);
   const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
   const [timelineLoading, setTimelineLoading] = useState(false);
 
@@ -99,9 +100,11 @@ export default function WorkspaceDetailPage() {
   const loadTasks = useCallback(async () => {
     if (!id) return;
     setTasksLoading(true);
+    setTasksAvailable(false);
     try {
       const resp = await taskApi.list(id, { limit: 100 });
       setTasks(resp.items);
+      setTasksAvailable(true);
     } catch {
       setTasks([]);
     } finally {
@@ -278,6 +281,8 @@ export default function WorkspaceDetailPage() {
         <PapersSection
           workspaceId={workspace.id}
           papers={papers}
+          tasks={tasks}
+          tasksAvailable={tasksAvailable}
           loading={papersLoading}
           onChanged={loadAll}
         />

@@ -26,7 +26,9 @@ export interface ReadingPaper {
   primary_artifact_id: string | null;
   parse_status: string;
   parsed_markdown_artifact_id: string | null;
+  chunk_index_artifact_id: string | null;
   chunk_count: number;
+  extract_status: string;
   reading_status: ReadingStatus;
   last_read_page: number;
   last_read_at: string | null;

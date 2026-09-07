@@ -30,7 +30,9 @@ class ReadingPaperRead(BaseModel):
     quality_flags: list[str] = Field(default_factory=list)
     parse_error: str | None = None
     parsed_markdown_artifact_id: str | None = None
+    chunk_index_artifact_id: str | None = None
     chunk_count: int = 0
+    extract_status: str = "not_applicable"
     reading_status: str = "unread"
     last_read_page: int = 1
     last_read_at: datetime | None = None

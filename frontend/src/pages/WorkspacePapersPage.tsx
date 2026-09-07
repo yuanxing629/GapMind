@@ -3,7 +3,8 @@ import { App, Button } from "antd";
 import { ReadOutlined } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
 import paperApi from "../api/paper";
-import type { Paper } from "../api/types/domain";
+import taskApi from "../api/task";
+import type { Paper, Task } from "../api/types/domain";
 import PapersSection from "../components/PapersSection";
 import SemanticPaperSearch from "../components/SemanticPaperSearch";
 import PageHeader from "../components/common/PageHeader";
@@ -15,12 +16,27 @@ export default function WorkspacePapersPage() {
   const { message } = App.useApp();
   const navigate = useNavigate();
   const [papers, setPapers] = useState<Paper[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [tasksAvailable, setTasksAvailable] = useState(true);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setPapers((await paperApi.list(workspace.id, { limit: 100 })).items);
+      const [papersResult, tasksResult] = await Promise.allSettled([
+        paperApi.list(workspace.id, { limit: 100 }),
+        taskApi.list(workspace.id, { limit: 200 }),
+      ]);
+      if (papersResult.status === "rejected") throw papersResult.reason;
+      setPapers(papersResult.value.items);
+      if (tasksResult.status === "fulfilled") {
+        setTasks(tasksResult.value.items);
+        setTasksAvailable(true);
+      } else {
+        setTasks([]);
+        setTasksAvailable(false);
+        message.warning("后台任务状态暂时不可用，论文处理按钮已暂停，请稍后刷新");
+      }
     } catch (error) {
       message.error(`文献加载失败：${(error as Error).message}`);
     } finally {
@@ -39,7 +55,7 @@ export default function WorkspacePapersPage() {
         extra={<Button type="primary" icon={<ReadOutlined />} onClick={() => navigate(readingLibraryPath(workspace.id))}>进入论文阅读</Button>}
       />
       <SemanticPaperSearch workspaceId={workspace.id} />
-      <div style={{ marginTop: 20 }}><PapersSection workspaceId={workspace.id} papers={papers} loading={loading} onChanged={load} /></div>
+      <div style={{ marginTop: 20 }}><PapersSection workspaceId={workspace.id} papers={papers} tasks={tasks} tasksAvailable={tasksAvailable} loading={loading} onChanged={load} /></div>
     </div>
   );
 }

@@ -10,9 +10,7 @@
 import type { components } from "./api.gen";
 
 type LooseDictField<T, K extends keyof T> = Omit<T, K> & {
-  [P in K]: NonNullable<T[P]> | undefined extends T[P]
-    ? Record<string, unknown> | undefined
-    : Record<string, unknown>;
+  [P in K]: Record<string, unknown> | Extract<T[P], null | undefined>;
 };
 
 export type Paper = components["schemas"]["PaperRead"];
@@ -22,8 +20,10 @@ export type PaperListResponse = components["schemas"]["PaperListResponse"];
 
 export type Artifact = components["schemas"]["ArtifactRead"];
 
-export type Task = components["schemas"]["TaskRead"];
-export type TaskListResponse = components["schemas"]["TaskListResponse"];
+type _TaskRaw = components["schemas"]["TaskRead"];
+export type Task = LooseDictField<_TaskRaw, "payload" | "result">;
+type _TaskListRaw = components["schemas"]["TaskListResponse"];
+export type TaskListResponse = Omit<_TaskListRaw, "items"> & { items: Task[] };
 
 type _TimelineEventRaw = components["schemas"]["TimelineEventRead"];
 export type TimelineEvent = LooseDictField<_TimelineEventRaw, "payload">;

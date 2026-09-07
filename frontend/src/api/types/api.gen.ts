@@ -13,7 +13,7 @@ export interface paths {
         };
         /**
          * Health
-         * @description Liveness check - always 200 if the process is up.
+         * @description 存活检查：进程运行时始终返回 200。
          */
         get: operations["health_api_v1_health__get"];
         put?: never;
@@ -33,7 +33,7 @@ export interface paths {
         };
         /**
          * Health
-         * @description Liveness check - always 200 if the process is up.
+         * @description 存活检查：进程运行时始终返回 200。
          */
         get: operations["health_api_v1_health_get"];
         put?: never;
@@ -53,13 +53,11 @@ export interface paths {
         };
         /**
          * Readiness
-         * @description Return dependency readiness with a truthful HTTP status.
+         * @description 返回依赖就绪状态，并使用真实反映状态的 HTTP 状态码。
          *
-         *     Database, Redis, Milvus, storage, LLM and Embedding are required for the
-         *     core workspace path. A Celery worker is required for asynchronous
-         *     extraction/agent paths. Reranker and Semantic Scholar are reported but do
-         *     not make the API entirely unavailable because the product has explicit
-         *     degraded/partial-success paths for them.
+         *     Database、Redis、Milvus、storage、LLM 和 Embedding 是核心工作区路径的必要依赖。
+         *     异步抽取/Agent 路径需要 Celery worker。Reranker 和 Semantic Scholar 会被报告，
+         *     但不会使 API 完全不可用，因为产品为它们提供了明确的 degraded/partial-success 路径。
          */
         get: operations["readiness_api_v1_health_ready_get"];
         put?: never;
@@ -353,7 +351,7 @@ export interface paths {
         };
         /**
          * Get Independent Workspace
-         * @description System independent workspace for standalone W7 agents (no workspace selected).
+         * @description standalone W7 agent 使用的系统 independent workspace（未选择 workspace）。
          */
         get: operations["get_independent_workspace_api_v1_workspaces_independent_get"];
         put?: never;
@@ -392,10 +390,10 @@ export interface paths {
         };
         /**
          * Get Workspace Readiness
-         * @description Research readiness for one workspace (W0): five dimensions + next action.
+         * @description 单个 workspace 的研究就绪度（W0）：五个维度和下一步操作。
          *
-         *     Single source of truth for the overview progress bar and "why not /
-         *     where to go" explanations. Raises 404 if the workspace is missing.
+         *     概览进度条和“为什么未就绪 / 下一步去哪里”说明的单一事实来源。workspace 不存在时
+         *     返回 404。
          */
         get: operations["get_workspace_readiness_api_v1_workspaces__workspace_id__readiness_get"];
         put?: never;
@@ -449,7 +447,7 @@ export interface paths {
         };
         /**
          * Search External Papers
-         * @description Search Semantic Scholar without exposing the upstream API key.
+         * @description 搜索 Semantic Scholar，同时不暴露上游 API 密钥。
          */
         get: operations["search_external_papers_api_v1_papers_search_get"];
         put?: never;
@@ -540,10 +538,9 @@ export interface paths {
         put?: never;
         /**
          * Import External Paper
-         * @description Import Semantic Scholar metadata into a workspace.
+         * @description 将 Semantic Scholar 元数据导入工作区。
          *
-         *     Import metadata and, when requested, download the advertised open-access
-         *     PDF. PDF processing continues through the existing Celery pipeline.
+         *     导入元数据，并在请求时下载声明的开放获取 PDF。PDF 处理继续沿用现有 Celery 流程。
          */
         post: operations["import_external_paper_api_v1_workspaces__workspace_id__papers_import_from_s2_post"];
         delete?: never;
@@ -580,11 +577,10 @@ export interface paths {
         put?: never;
         /**
          * Attach Pdf To Paper
-         * @description Attach a PDF to an existing metadata-only paper.
+         * @description 向已有的仅元数据论文附加 PDF。
          *
-         *     Use case: paper was created via `POST /papers` (metadata only), and the
-         *     user later obtains the PDF. Any empty metadata fields on the paper row
-         *     are best-effort filled from the PDF's embedded metadata.
+         *     使用场景：论文先通过 `POST /papers`（仅元数据）创建，用户之后获得 PDF。
+         *     论文行中为空的元数据字段会尽力使用 PDF 内嵌元数据补齐。
          */
         post: operations["attach_pdf_to_paper_api_v1_workspaces__workspace_id__papers__paper_id__upload_pdf_post"];
         delete?: never;
@@ -611,6 +607,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{workspace_id}/papers/{paper_id}/parse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Trigger Paper Parsing
+         * @description 幂等地触发或重试带 PDF 论文的解析。
+         */
+        post: operations["trigger_paper_parsing_api_v1_workspaces__workspace_id__papers__paper_id__parse_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/papers/{paper_id}/index": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Trigger Paper Indexing
+         * @description 幂等地触发或重试已解析论文的全文向量索引。
+         */
+        post: operations["trigger_paper_indexing_api_v1_workspaces__workspace_id__papers__paper_id__index_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces/{workspace_id}/papers/{paper_id}/extract": {
         parameters: {
             query?: never;
@@ -622,7 +658,7 @@ export interface paths {
         put?: never;
         /**
          * Trigger Paper Extraction
-         * @description Idempotently trigger or retry extraction for a parsed paper.
+         * @description 幂等地触发或重试已解析论文的知识抽取。
          */
         post: operations["trigger_paper_extraction_api_v1_workspaces__workspace_id__papers__paper_id__extract_post"];
         delete?: never;
@@ -693,7 +729,7 @@ export interface paths {
         };
         /**
          * Download Artifact
-         * @description Download an artifact, including parsed_markdown source files.
+         * @description 下载 artifact，包括 parsed_markdown 源文件。
          */
         get: operations["download_artifact_api_v1_workspaces__workspace_id__artifacts__artifact_id__download_get"];
         put?: never;
@@ -713,7 +749,7 @@ export interface paths {
         };
         /**
          * View Artifact
-         * @description Serve an artifact inline for the in-app PDF reader.
+         * @description 以内嵌方式提供 artifact，供应用内 PDF 阅读器使用。
          */
         get: operations["view_artifact_api_v1_workspaces__workspace_id__artifacts__artifact_id__view_get"];
         put?: never;
@@ -886,7 +922,7 @@ export interface paths {
         };
         /**
          * Get Knowledge Graph
-         * @description Return a self-contained, workspace-scoped graph projection.
+         * @description 返回自包含、按 workspace 限定的 graph 投影。
          */
         get: operations["get_knowledge_graph_api_v1_workspaces__workspace_id__knowledge_graph_get"];
         put?: never;
@@ -1010,7 +1046,7 @@ export interface paths {
         put?: never;
         /**
          * Api Semantic Search
-         * @description Semantic search over workspace paper chunks.
+         * @description 在 workspace 论文分块上执行语义搜索。
          */
         post: operations["api_semantic_search_api_v1_workspaces__workspace_id__retrieval_search_post"];
         delete?: never;
@@ -1030,7 +1066,7 @@ export interface paths {
         put?: never;
         /**
          * Api Similar Work
-         * @description Find similar work from other papers in the workspace.
+         * @description 从 workspace 的其他论文中查找相似工作。
          */
         post: operations["api_similar_work_api_v1_workspaces__workspace_id__retrieval_similar_work_post"];
         delete?: never;
@@ -1050,7 +1086,7 @@ export interface paths {
         put?: never;
         /**
          * Api Counter Evidence
-         * @description Find counter-evidence for a claim (reranked + LLM judged).
+         * @description 查找 claim 的 counter-evidence（重排序 + LLM 判断）。
          */
         post: operations["api_counter_evidence_api_v1_workspaces__workspace_id__retrieval_counter_evidence_post"];
         delete?: never;
@@ -1157,7 +1193,7 @@ export interface paths {
         };
         /**
          * List Recommendations
-         * @description Return cached recommendations, generating the first batch on demand.
+         * @description 返回缓存推荐，必要时按需生成第一批。
          */
         get: operations["list_recommendations_api_v1_workspaces__workspace_id__recommendations_get"];
         put?: never;
@@ -1559,11 +1595,11 @@ export interface paths {
         put?: never;
         /**
          * Stream Message
-         * @description Stream a chat completion as Server-Sent Events (P0.5-1).
+         * @description 将 chat completion 作为 Server-Sent Events 流式返回（P0.5-1）。
          *
-         *     Events are ``data: {json}`` lines: ``start`` (ids), ``evidence`` (retrieval
-         *     citations), ``token`` (one delta each), ``done`` (final content), or
-         *     ``error``. The full persisted message is available via GET afterwards.
+         *     事件是 ``data: {json}`` 行：``start``（ID）、``evidence``（检索引用）、
+         *     ``token``（每行一个增量）、``done``（最终内容）或 ``error``。
+         *     完整的持久化消息可在之后通过 GET 获取。
          */
         post: operations["stream_message_api_v1_chat_conversations__conversation_id__messages_stream_post"];
         delete?: never;
@@ -1837,7 +1873,7 @@ export interface paths {
         };
         /**
          * Root
-         * @description Root redirect hint - real API lives under /api/v1.
+         * @description 根路径重定向提示，实际 API 位于 /api/v1 下。
          */
         get: operations["root__get"];
         put?: never;
@@ -2035,7 +2071,7 @@ export interface components {
         };
         /**
          * ArtifactRead
-         * @description Artifact as returned from the API.
+         * @description API 返回的 Artifact。
          */
         ArtifactRead: {
             /** Id */
@@ -2248,7 +2284,7 @@ export interface components {
         };
         /**
          * ChatImageInput
-         * @description A browser image encoded as a data URL for the current request.
+         * @description 当前请求中编码为 data URL 的浏览器图片。
          */
         ChatImageInput: {
             /**
@@ -2421,7 +2457,7 @@ export interface components {
         };
         /**
          * ChatMessageSourceRead
-         * @description One explicitly labelled context source used for an answer.
+         * @description 回答使用的一条明确标注的上下文来源。
          */
         ChatMessageSourceRead: {
             /** Marker */
@@ -2450,7 +2486,7 @@ export interface components {
         };
         /**
          * CitationCheckRead
-         * @description Result of validating [En] markers in an assistant message against its citations.
+         * @description 校验 assistant 消息中的 [En] 标记与其 citation 后的结果。
          */
         CitationCheckRead: {
             /** Referenced */
@@ -2470,7 +2506,7 @@ export interface components {
         };
         /**
          * CitationQualityRead
-         * @description Persisted audit of the bounded citation/source quality gate.
+         * @description 有界 citation/source 质量门的持久化审计记录。
          */
         CitationQualityRead: {
             /**
@@ -2724,11 +2760,10 @@ export interface components {
         };
         /**
          * DiscoverRunListResponse
-         * @description Standard list envelope for ``GET /discover/runs``.
+         * @description ``GET /discover/runs`` 的标准列表封装。
          *
-         *     Defined explicitly so the front-end's OpenAPI codegen produces a
-         *     stable shape and so the endpoint can declare ``response_model=...``
-         *     instead of returning a hand-written dict.
+         *     显式定义该结构，使前端 OpenAPI codegen 生成稳定的类型，并允许 endpoint 声明
+         *     ``response_model=...``，而不是返回手写 dict。
          */
         DiscoverRunListResponse: {
             /** Items */
@@ -2826,7 +2861,7 @@ export interface components {
         };
         /**
          * EvidenceContextRead
-         * @description Parsed-markdown source plus the spans to highlight in the UI.
+         * @description parsed-markdown 源文本及 UI 需要高亮的范围。
          */
         EvidenceContextRead: {
             /** Workspace Id */
@@ -2846,12 +2881,11 @@ export interface components {
         };
         /**
          * EvidenceManifest
-         * @description Unified evidence-credibility passport for an AI-generated research artifact.
+         * @description AI 生成研究 artifact 的统一证据可信度 passport。
          *
-         *     Aggregates what the artifact can honestly claim: how much evidence, from
-         *     how many independent papers, full-text vs metadata, gate status, versions,
-         *     and human-review state — so a "confidence" number is never conflated with
-         *     evidence coverage. Reused across Opportunity / Plan / Chat / AgentArtifact.
+         *     汇总 artifact 能够如实声称的内容：证据数量、独立论文数量、全文与元数据的区别、
+         *     gate 状态、版本和人工审查状态，避免将 "confidence" 数字与证据覆盖度混为一谈。
+         *     Opportunity / Plan / Chat / AgentArtifact 共用该结构。
          */
         EvidenceManifest: {
             /** Source Type */
@@ -2931,7 +2965,7 @@ export interface components {
         };
         /**
          * EvidenceManifestItem
-         * @description One evidence row in the passport — a single support/similar/counter entry.
+         * @description passport 中的一条证据行——一条 support/similar/counter 记录。
          */
         EvidenceManifestItem: {
             /** Relation */
@@ -3626,7 +3660,7 @@ export interface components {
         };
         /**
          * KnowledgeGraphEdgeRead
-         * @description A relation projected as a graph edge.
+         * @description 投影为 graph 边的关系。
          */
         KnowledgeGraphEdgeRead: {
             /** Id */
@@ -3671,7 +3705,7 @@ export interface components {
         };
         /**
          * KnowledgeGraphNodeRead
-         * @description A knowledge item projected as a graph node.
+         * @description 投影为 graph 节点的知识条目。
          */
         KnowledgeGraphNodeRead: {
             /** Id */
@@ -3758,7 +3792,7 @@ export interface components {
         };
         /**
          * KnowledgeGraphResponse
-         * @description Workspace-scoped graph projection for the Knowledge UI.
+         * @description 面向 Knowledge UI 的工作区级 graph 投影。
          */
         KnowledgeGraphResponse: {
             /** Workspace Id */
@@ -3952,7 +3986,7 @@ export interface components {
         };
         /**
          * KnowledgeItemReview
-         * @description Human-in-the-loop review action for one Knowledge Item.
+         * @description 单个 Knowledge Item 的 Human-in-the-loop 审核操作。
          */
         KnowledgeItemReview: {
             /**
@@ -4263,12 +4297,11 @@ export interface components {
         };
         /**
          * PaperCreate
-         * @description Body for POST /api/v1/workspaces/{id}/papers (JSON metadata-only create).
+         * @description POST /api/v1/workspaces/{id}/papers 的请求体（JSON 仅元数据创建）。
          *
-         *     For PDF upload, use the `/papers/upload` endpoint instead. For JSON
-         *     creation, `title` is required - you can't create a metadata-only paper
-         *     without a title. For upload, the router builds a PaperCreate internally
-         *     and may leave title=None so the service can fill it from PDF metadata.
+         *     PDF 上传请改用 `/papers/upload` endpoint。通过 JSON 创建时必须提供 `title`，不能在
+         *     没有标题的情况下创建仅含元数据的论文。上传时 router 会在内部构建 PaperCreate，
+         *     并可能保留 title=None，以便 service 从 PDF 元数据中补全标题。
          */
         PaperCreate: {
             /** Title */
@@ -4286,7 +4319,7 @@ export interface components {
         };
         /**
          * PaperListResponse
-         * @description Paginated list response.
+         * @description 分页列表响应。
          */
         PaperListResponse: {
             /** Items */
@@ -4300,7 +4333,7 @@ export interface components {
         };
         /**
          * PaperRead
-         * @description Full paper as returned from the API.
+         * @description API 返回的完整论文。
          */
         PaperRead: {
             /** Id */
@@ -4440,7 +4473,7 @@ export interface components {
         };
         /**
          * PaperUpdate
-         * @description Body for PATCH /api/v1/workspaces/{id}/papers/{paper_id}.
+         * @description PATCH /api/v1/workspaces/{id}/papers/{paper_id} 的请求体。
          */
         PaperUpdate: {
             /** Title */
@@ -4462,7 +4495,7 @@ export interface components {
         };
         /**
          * ReadinessBlockingAction
-         * @description One explainable blocking step: what to do, why, and where.
+         * @description 一个可解释的阻塞步骤：做什么、为什么以及在哪里做。
          */
         ReadinessBlockingAction: {
             /** Action */
@@ -4474,11 +4507,11 @@ export interface components {
         };
         /**
          * ReadinessDimension
-         * @description One readiness dimension (corpus / retrieval / knowledge / discover / research).
+         * @description 一个就绪度维度（corpus / retrieval / knowledge / discover / research）。
          *
-         *     ``ready`` means usable; ``waiting`` means a background pipeline task is
-         *     still running (not a user action); otherwise the dimension is blocked and
-         *     ``blocking_actions`` explains what to do and where.
+         *     ``ready`` 表示可用；``waiting`` 表示后台流水线 task
+         *     仍在运行（不是用户操作）；否则该维度会被标记为阻塞，并由 ``blocking_actions``
+         *     说明应做什么以及在哪里做。
          */
         ReadinessDimension: {
             /** Key */
@@ -4496,7 +4529,7 @@ export interface components {
         };
         /**
          * ReadinessRecommendedAction
-         * @description The single next step the user should take.
+         * @description 用户下一步应该执行的唯一操作。
          */
         ReadinessRecommendedAction: {
             /** Title */
@@ -4571,11 +4604,18 @@ export interface components {
             parse_error?: string | null;
             /** Parsed Markdown Artifact Id */
             parsed_markdown_artifact_id?: string | null;
+            /** Chunk Index Artifact Id */
+            chunk_index_artifact_id?: string | null;
             /**
              * Chunk Count
              * @default 0
              */
             chunk_count: number;
+            /**
+             * Extract Status
+             * @default not_applicable
+             */
+            extract_status: string;
             /**
              * Reading Status
              * @default unread
@@ -4725,7 +4765,7 @@ export interface components {
         };
         /**
          * RetrievalAuditRead
-         * @description Persisted, non-sensitive retrieval observability for one answer.
+         * @description 一条回答的持久化、非敏感检索观测信息。
          */
         RetrievalAuditRead: {
             /**
@@ -4767,7 +4807,7 @@ export interface components {
         };
         /**
          * RetrievalResponse
-         * @description Full retrieval response (Contract D).
+         * @description 完整检索响应（契约 D）。
          */
         RetrievalResponse: {
             /**
@@ -4820,7 +4860,7 @@ export interface components {
         };
         /**
          * RetrievalResultItem
-         * @description A single retrieval hit (Contract D item).
+         * @description 单条检索命中（契约 D 条目）。
          */
         RetrievalResultItem: {
             /**
@@ -4903,7 +4943,7 @@ export interface components {
         };
         /**
          * SemanticScholarAuthor
-         * @description The author fields used by the search result UI.
+         * @description 搜索结果 UI 使用的作者字段。
          */
         SemanticScholarAuthor: {
             /** Authorid */
@@ -4941,7 +4981,7 @@ export interface components {
         };
         /**
          * SemanticScholarImportRequest
-         * @description Import one search result into a selected Workspace as metadata.
+         * @description 将一条搜索结果作为元数据导入选定的 Workspace。
          */
         SemanticScholarImportRequest: {
             /** Semantic Scholar Paper Id */
@@ -4954,7 +4994,7 @@ export interface components {
         };
         /**
          * SemanticScholarPaper
-         * @description A deliberately small, forward-compatible S2 paper projection.
+         * @description 有意保持精简且向前兼容的 S2 论文投影。
          */
         SemanticScholarPaper: {
             /** Paperid */
@@ -5021,7 +5061,7 @@ export interface components {
         };
         /**
          * SemanticScholarSearchResponse
-         * @description Normalized wrapper for both offset and token based S2 searches.
+         * @description 同时包装 offset 和 token 两种 S2 搜索结果的规范化结构。
          */
         SemanticScholarSearchResponse: {
             /**
@@ -5063,7 +5103,7 @@ export interface components {
         };
         /**
          * SourceCheckRead
-         * @description Validation of [P1]/[D1]/[C1] markers against the source passport.
+         * @description 校验 [P1]/[D1]/[C1] 标记与来源 passport 后的结果。
          */
         SourceCheckRead: {
             /** Referenced */
@@ -5089,7 +5129,7 @@ export interface components {
         };
         /**
          * TaskRead
-         * @description Full task as returned from the API.
+         * @description API 返回的完整任务。
          */
         TaskRead: {
             /** Id */
@@ -5195,7 +5235,7 @@ export interface components {
         };
         /**
          * WorkspaceCreate
-         * @description Body for POST /api/v1/workspaces.
+         * @description POST /api/v1/workspaces 的请求体。
          */
         WorkspaceCreate: {
             /** Name */
@@ -5215,7 +5255,7 @@ export interface components {
         };
         /**
          * WorkspaceListResponse
-         * @description Paginated list response.
+         * @description 分页列表响应。
          */
         WorkspaceListResponse: {
             /** Items */
@@ -5229,7 +5269,7 @@ export interface components {
         };
         /**
          * WorkspaceRead
-         * @description Full workspace as returned from the API.
+         * @description API 返回的完整 workspace。
          */
         WorkspaceRead: {
             /** Id */
@@ -5276,7 +5316,7 @@ export interface components {
         };
         /**
          * WorkspaceReadiness
-         * @description Full readiness document returned by GET /workspaces/{id}/readiness.
+         * @description GET /workspaces/{id}/readiness 返回的完整就绪度文档。
          */
         WorkspaceReadiness: {
             /** Workspace Id */
@@ -5288,7 +5328,7 @@ export interface components {
         };
         /**
          * WorkspaceReadinessCounts
-         * @description Single-source counts used by the overview progress bar and stats.
+         * @description 概览进度条和统计信息使用的单一来源计数。
          */
         WorkspaceReadinessCounts: {
             /**
@@ -5364,11 +5404,10 @@ export interface components {
         };
         /**
          * WorkspaceUpdate
-         * @description Body for PATCH /api/v1/workspaces/{id}.
+         * @description PATCH /api/v1/workspaces/{id} 的请求体。
          *
-         *     All fields optional. Fields set to None are ignored (not nulled-out) -
-         *     use explicit empty string for text fields or empty list for list fields
-         *     if you want to clear them.
+         *     所有字段均可选。设为 None 的字段会被忽略（不会置空）；若要清除字段，请对文本
+         *     使用显式空字符串，对列表使用空列表。
          */
         WorkspaceUpdate: {
             /** Name */
@@ -6690,6 +6729,80 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PaperRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    trigger_paper_parsing_api_v1_workspaces__workspace_id__papers__paper_id__parse_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
+            path: {
+                workspace_id: string;
+                paper_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    trigger_paper_indexing_api_v1_workspaces__workspace_id__papers__paper_id__index_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-User-ID"?: string | null;
+                Authorization?: string | null;
+            };
+            path: {
+                workspace_id: string;
+                paper_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
                 };
             };
             /** @description Validation Error */

@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.logging import configure_logging, get_logger
@@ -25,6 +26,7 @@ from app.domains.artifact.document_parser import parse_document
 from app.domains.artifact.models import Artifact
 from app.domains.artifact.service import ArtifactService
 from app.domains.paper.models import Paper
+from app.domains.task.models import Task
 from app.domains.task.schemas import TaskCreate
 from app.domains.task.service import TaskService
 from app.domains.timeline.service import TimelineService
@@ -348,6 +350,18 @@ def spawn_parse_pdf_task(db: Session, paper_id: str, workspace_id: str) -> str:
 # 确保已导入 parse_pdf 模块，使任务注册到 celery_app（`imports` 配置只在
 # worker 进程中触发，不会在调用 .delay() 的 FastAPI 进程中触发）。
     import app.workers.tasks.parse_pdf  # noqa: F401  (import side-effect)
+
+    active_tasks = db.execute(
+        select(Task).where(
+            Task.workspace_id == workspace_id,
+            Task.task_type == "parse_pdf",
+            Task.status.in_(["queued", "running"]),
+            Task.is_deleted.is_(False),
+        )
+    ).scalars()
+    for active_task in active_tasks:
+        if (active_task.payload or {}).get("paper_id") == paper_id:
+            return active_task.id
 
     task_service = TaskService(db)
     task = task_service.create(

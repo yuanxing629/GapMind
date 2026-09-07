@@ -17,10 +17,12 @@ from pathlib import Path
 
 import fitz
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
 
 from app.domains.artifact.document_parser import DocumentParseResult
 from app.domains.artifact.mineru_parser import MinerUImage
 from app.domains.artifact.pdf_parser import ParsedPdf
+from app.domains.paper.models import Paper
 
 
 def _create_workspace(client: TestClient, name: str = "WS") -> dict:
@@ -291,6 +293,71 @@ def test_metadata_only_paper_not_parsed(
 # 不应创建任何任务。
     tasks = client.get(f"/api/v1/workspaces/{ws['id']}/tasks").json()
     assert tasks["total"] == 0
+
+
+def test_manual_parse_trigger_requires_pdf_and_retries_failed_parse(
+    client: TestClient, db_session: Session, tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr(
+        "app.domains.artifact.service.settings.app_storage_dir",
+        str(tmp_path / "storage"),
+    )
+    ws = _create_workspace(client)
+    metadata_paper = client.post(
+        f"/api/v1/workspaces/{ws['id']}/papers",
+        json={"title": "Metadata only"},
+    ).json()
+    missing_pdf = client.post(
+        f"/api/v1/workspaces/{ws['id']}/papers/{metadata_paper['id']}/parse"
+    )
+    assert missing_pdf.status_code == 409
+    assert missing_pdf.json()["detail"]["error"] == "paper_pdf_missing"
+
+    uploaded = client.post(
+        f"/api/v1/workspaces/{ws['id']}/papers/upload",
+        files={"file": ("retry.pdf", _make_real_pdf(["Retryable paper text. " * 80]), "application/pdf")},
+    ).json()
+    db_paper = db_session.get(Paper, uploaded["id"])
+    assert db_paper is not None
+    db_paper.parse_status = "failed"
+    db_paper.parse_error = "simulated historical failure"
+    db_session.commit()
+
+    retry = client.post(
+        f"/api/v1/workspaces/{ws['id']}/papers/{uploaded['id']}/parse"
+    )
+    assert retry.status_code == 202
+    assert retry.json()["task_id"]
+    assert client.get(f"/api/v1/workspaces/{ws['id']}/papers/{uploaded['id']}").json()["parse_status"] == "parsed"
+
+
+def test_manual_index_trigger_requires_parsed_chunks_and_accepts_parsed_paper(
+    client: TestClient, tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr(
+        "app.domains.artifact.service.settings.app_storage_dir",
+        str(tmp_path / "storage"),
+    )
+    ws = _create_workspace(client)
+    paper = client.post(
+        f"/api/v1/workspaces/{ws['id']}/papers",
+        json={"title": "Metadata only"},
+    ).json()
+    not_ready = client.post(
+        f"/api/v1/workspaces/{ws['id']}/papers/{paper['id']}/index"
+    )
+    assert not_ready.status_code == 409
+    assert not_ready.json()["detail"]["error"] == "paper_not_parsed"
+
+    uploaded = client.post(
+        f"/api/v1/workspaces/{ws['id']}/papers/upload",
+        files={"file": ("index.pdf", _make_real_pdf(["Indexable paper text. " * 80]), "application/pdf")},
+    ).json()
+    accepted = client.post(
+        f"/api/v1/workspaces/{ws['id']}/papers/{uploaded['id']}/index"
+    )
+    assert accepted.status_code == 202
+    assert accepted.json() == {"task_id": "test-embed-task", "status": "queued"}
 
 
 def test_attach_pdf_triggers_parse(
