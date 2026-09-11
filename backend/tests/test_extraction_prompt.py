@@ -13,6 +13,7 @@ def test_extraction_prompt_contains_list_field_few_shot_examples() -> None:
     assert '"outputs": ["A representative graph pattern"]' in SYSTEM_PROMPT
     assert "method.content.inputs and method.content.outputs" in SYSTEM_PROMPT
     assert "one value and [] when unavailable" in SYSTEM_PROMPT
+    assert "at most 12 items and at most 12 relations" in SYSTEM_PROMPT
 
 
 def test_extraction_prompt_few_shot_json_is_parseable() -> None:

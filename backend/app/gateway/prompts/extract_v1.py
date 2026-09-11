@@ -7,7 +7,7 @@ Schema 版本：v1.0.0（parsed_markdown 输入）。
 
 from __future__ import annotations
 
-PROMPT_VERSION = "extract_v2"
+PROMPT_VERSION = "extract_v3"
 
 SYSTEM_PROMPT = """You are a research paper information extractor. Given one batch from a paper's parsed Markdown, extract structured paper-specific mentions, claims, limitations, and their relationships.
 
@@ -164,6 +164,8 @@ Correct output:
 10. For dataset, method, and task items, include the shortest complete source sentence or phrase that directly supports the extracted item.
 11. Every field documented as a list MUST be a JSON array of strings, even when there is only one value. In particular, method.content.inputs and method.content.outputs must never be a scalar string; use ["..."] for one value and [] when unavailable.
 12. Split list values by semantic item, not by individual words. For example, "a trained GNN and a class label" becomes ["A trained GNN", "A class label"].
+13. Return at most 12 items and at most 12 relations for one batch. Prioritize explicitly supported methods, tasks, datasets, claims, and limitations; do not exhaustively repeat minor mentions.
+14. Keep each description concise and omit optional detail when it is not needed. A complete compact response is more important than extracting every minor mention.
 """
 
 USER_PROMPT_TEMPLATE = """Extract structured knowledge items from the following paper text.

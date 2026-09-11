@@ -84,6 +84,22 @@ def extract_knowledge_task(self, task_id: str) -> dict:
 def _run_extract(db: Session, task_id: str) -> dict:
     task_service = TaskService(db)
 
+    task = task_service.get(task_id)
+    if task.status != "queued":
+        # Celery 至少一次投递可能在任务完成后再次执行。任务行是状态真源，
+        # 非 queued 状态不能重新进入 running，避免重复写入和终态转换异常。
+        result = dict(task.result or {})
+        result["status"] = task.status
+        result["idempotent"] = True
+        if task.error:
+            result["error"] = task.error
+        logger.info(
+            "extract_knowledge.duplicate_delivery_ignored",
+            task_id=task_id,
+            status=task.status,
+        )
+        return result
+
     try:
         task = task_service.transition(task_id, "running", progress=0.05)
     except Exception as e:

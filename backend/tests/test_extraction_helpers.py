@@ -57,6 +57,15 @@ def test_parse_llm_json_handles_common_shapes(raw: str, expected) -> None:
     assert parse_llm_json(raw) == expected
 
 
+def test_parse_llm_json_recovers_complete_items_from_truncated_envelope() -> None:
+    raw = '{"items": [{"type": "dataset", "evidence_text": "BBBP"}'
+
+    assert parse_llm_json(raw) == {
+        "items": [{"type": "dataset", "evidence_text": "BBBP"}],
+        "relations": [],
+    }
+
+
 def test_call_llm_with_retry_returns_parsed_on_success() -> None:
     """第一次尝试成功 -> parsed dict + raw。"""
     fake_response = MagicMock(content='```json\n{"items": []}\n```')

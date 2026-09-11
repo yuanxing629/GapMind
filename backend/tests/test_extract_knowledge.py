@@ -659,6 +659,57 @@ def test_celery_task_raises_when_business_task_failed(monkeypatch) -> None:
     db.close.assert_called_once()
 
 
+def test_duplicate_delivery_of_succeeded_task_is_idempotent(
+    db_session: Session,
+) -> None:
+    ws = _workspace(db_session)
+    task = TaskService(db_session).create(
+        TaskCreate(
+            workspace_id=ws.id,
+            task_type="extract_knowledge",
+            payload={"paper_id": _id()},
+        )
+    )
+    task_service = TaskService(db_session)
+    task_service.transition(task.id, "running", progress=0.9)
+    task_service.transition(
+        task.id,
+        "succeeded",
+        progress=1.0,
+        result={"knowledge_items": 3, "extraction_run_id": "run-1"},
+    )
+
+    result = _run_extract(db_session, task.id)
+
+    assert result == {
+        "knowledge_items": 3,
+        "extraction_run_id": "run-1",
+        "status": "succeeded",
+        "idempotent": True,
+    }
+
+
+def test_duplicate_delivery_of_running_task_does_not_start_again(
+    db_session: Session,
+) -> None:
+    ws = _workspace(db_session)
+    task = TaskService(db_session).create(
+        TaskCreate(
+            workspace_id=ws.id,
+            task_type="extract_knowledge",
+            payload={"paper_id": _id()},
+        )
+    )
+    TaskService(db_session).transition(task.id, "running", progress=0.2)
+
+    result = _run_extract(db_session, task.id)
+
+    assert result == {
+        "status": "running",
+        "idempotent": True,
+    }
+
+
 # ==================================================================
 # P0 精确去重集成测试
 # ==================================================================

@@ -33,6 +33,9 @@ JSON_RESPONSE_FORMAT = {"type": "json_object"}
 RETRY_INSTRUCTION = (
     "Your previous response was invalid or incomplete. Return a compact and complete "
     'JSON object only. It must contain the top-level keys "items" and "relations". '
+    "Return at most 8 highest-priority items and set relations to [] if necessary to "
+    "fit the response budget. Keep descriptions concise and omit optional detail "
+    "rather than truncating an item. "
     "Every item must contain non-empty evidence_text copied as a contiguous span from "
     "the paper batch. Keep the required schema fields, omit optional detail rather "
     "than truncating. Every field declared as a list must be a JSON array of strings, "
@@ -134,6 +137,7 @@ def parse_llm_json(raw: str) -> dict[str, Any] | None:
     1. ```` ```json\n{...}\n``` ```` 代码围栏
     2. 嵌入 ``{...}`` 的 prose（提取最外层大括号）
     3. 带多余末尾逗号的有效 JSON（先移除末尾逗号）
+    4. 外层对象被截断时，恢复已经完整闭合的 ``items`` 条目；不恢复未闭合条目
     """
     match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", raw)
     if match:
@@ -146,8 +150,78 @@ def parse_llm_json(raw: str) -> dict[str, Any] | None:
     try:
         value = json.loads(raw)
     except json.JSONDecodeError:
-        return None
+        return _recover_complete_items(raw)
     return value if isinstance(value, dict) else None
+
+
+def _recover_complete_items(raw: str) -> dict[str, Any] | None:
+    """从被截断的响应中恢复已经完整闭合的 item。
+
+    只接受 ``items`` 数组中完整闭合且自身可解析的 JSON 对象，并丢弃可能被
+    截断的尾部条目和 relations。后续仍会执行 Pydantic、evidence 和关系端点
+    校验，因此该恢复不会绕过现有的证据安全边界。
+    """
+    items_match = re.search(r'"items"\s*:', raw)
+    if not items_match:
+        return None
+    array_start = raw.find("[", items_match.end())
+    if array_start < 0:
+        return None
+
+    items: list[dict[str, Any]] = []
+    cursor = array_start + 1
+    while cursor < len(raw):
+        while cursor < len(raw) and (raw[cursor].isspace() or raw[cursor] == ","):
+            cursor += 1
+        if cursor >= len(raw):
+            break
+        if raw[cursor] == "]":
+            return {"items": items, "relations": []}
+        if raw[cursor] != "{":
+            break
+        end = _find_matching_json_delimiter(raw, cursor, "{", "}")
+        if end is None:
+            break
+        candidate = raw[cursor : end + 1]
+        candidate = re.sub(r",\s*([}\]])", r"\1", candidate)
+        try:
+            value = json.loads(candidate)
+        except json.JSONDecodeError:
+            break
+        if not isinstance(value, dict):
+            break
+        items.append(value)
+        cursor = end + 1
+
+    return {"items": items, "relations": []} if items else None
+
+
+def _find_matching_json_delimiter(
+    raw: str, start: int, opening: str, closing: str
+) -> int | None:
+    """在 JSON 字符串语义下查找对象/数组的闭合位置。"""
+    depth = 0
+    in_string = False
+    escaped = False
+    for index in range(start, len(raw)):
+        char = raw[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char == opening:
+            depth += 1
+        elif char == closing:
+            depth -= 1
+            if depth == 0:
+                return index
+    return None
 
 
 __all__ = ["call_llm_with_retry", "parse_llm_json"]
