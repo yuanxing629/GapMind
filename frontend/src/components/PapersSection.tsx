@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   App,
   Button,
@@ -10,7 +10,6 @@ import {
   Space,
   Table,
   Tag,
-  Tooltip,
   Typography,
   Upload,
   type UploadProps,
@@ -27,9 +26,8 @@ import {
 import type { UploadRequestOption } from "rc-upload/lib/interface";
 import { useNavigate } from "react-router-dom";
 import paperApi from "../api/paper";
-import readingApi from "../api/reading";
+import readingApi, { type ReadingPaper, type ReadingStatus } from "../api/reading";
 import type { Paper, PaperUpdate, Task } from "../api/types/domain";
-import StatusBadge from "./common/StatusBadge";
 import { readingPaperPath } from "./layout/navigation";
 import {
   isActivePaperTask,
@@ -39,8 +37,14 @@ import {
   type PaperPipelineStatus,
 } from "../state/paperProcessing";
 
-const { Text } = Typography;
+const { Paragraph } = Typography;
 const { TextArea } = Input;
+
+const READING_STATUS_META: Record<ReadingStatus, { label: string; color: string }> = {
+  unread: { label: "未开始", color: "default" },
+  reading: { label: "阅读中", color: "processing" },
+  completed: { label: "已读完", color: "success" },
+};
 
 interface Props {
   workspaceId: string;
@@ -89,8 +93,30 @@ export default function PapersSection({ workspaceId, papers, tasks, tasksAvailab
   const [submitting, setSubmitting] = useState(false);
   const [openingPaperId, setOpeningPaperId] = useState<string | null>(null);
   const [processingKey, setProcessingKey] = useState<string | null>(null);
+  const [readingByPaper, setReadingByPaper] = useState<Map<string, Pick<ReadingPaper, "reading_status" | "last_read_page">>>(new Map());
   const [manualForm] = Form.useForm<ManualFormValues>();
   const [editForm] = Form.useForm<EditFormValues>();
+
+  useEffect(() => {
+    let cancelled = false;
+    setReadingByPaper(new Map());
+    void readingApi.list({ workspace_id: workspaceId, limit: 100 })
+      .then((result) => {
+        if (cancelled) return;
+        setReadingByPaper(new Map(
+          result.items.map((item) => [item.paper_id, {
+            reading_status: item.reading_status,
+            last_read_page: item.last_read_page,
+          }]),
+        ));
+      })
+      .catch(() => {
+        if (!cancelled) setReadingByPaper(new Map());
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [workspaceId]);
 
   // ---------- 上传（带 PDF 的新论文） ----------
   const handleUpload = async (req: UploadRequestOption) => {
@@ -282,18 +308,6 @@ export default function PapersSection({ workspaceId, papers, tasks, tasksAvailab
     }
   };
 
-  const statusDetail = (paper: Paper, kind: "parse" | "index" | "knowledge", state: PaperPipelineStatus) => {
-    const taskType = kind === "parse" ? "parse_pdf" : kind === "index" ? "embed_chunks" : "extract_knowledge";
-    const task = latestPaperTask(tasks, paper.id, taskType);
-    if (task?.error) return task.error;
-    if (kind === "parse" && paper.parse_error) return paper.parse_error;
-    if (state === "not_applicable") return kind === "parse" ? "尚未上传 PDF" : "请先完成前一步处理";
-    if (state === "pending") return "等待后台任务处理";
-    if (state === "running") return "后台任务正在处理";
-    if (state === "failed") return "处理失败，可点击重试";
-    return "处理已完成";
-  };
-
   return (
     <Card
       title="文献"
@@ -317,70 +331,41 @@ export default function PapersSection({ workspaceId, papers, tasks, tasksAvailab
           rowKey="id"
           dataSource={papers}
           loading={loading}
-          pagination={{ pageSize: 10, showSizeChanger: false }}
-          scroll={{ x: 820 }}
+          pagination={false}
+          scroll={{ x: 900 }}
           columns={[
             {
-              title: "标题",
-              dataIndex: "title",
+              title: "论文",
               key: "title",
-              render: (v: string) => <Text strong>{v}</Text>,
-            },
-            {
-              title: "作者",
-              dataIndex: "authors",
-              key: "authors",
-              render: (a: string[]) =>
-                a.length > 0 ? (
-                  <Text type="secondary">
-                    {a.slice(0, 3).join("; ")}
-                    {a.length > 3 ? `; +${a.length - 3} more` : ""}
-                  </Text>
-                ) : (
-                  <Text type="secondary" italic>未填写</Text>
-                ),
-            },
-            {
-              title: "年份",
-              dataIndex: "year",
-              key: "year",
-              width: 80,
-              render: (y: number | null) => y ?? <Text type="secondary">—</Text>,
-            },
-            {
-              title: "全文",
-              key: "pdf",
-              width: 80,
-              render: (_: unknown, p) =>
-                p.primary_artifact_id ? <Tag color="green">已上传</Tag> : <Tag>缺失</Tag>,
-            },
-            {
-              title: "解析",
-              key: "parse",
-              width: 210,
+              width: 360,
               render: (_: unknown, p) => {
-                const status = p.parse_status as string;
-                const flags = p.quality_flags ?? [];
-                const detail = status === "failed"
-                  ? p.parse_error || "解析失败，请重试或更换文件"
-                  : status === "parsed"
-                    ? `${p.page_count ?? 0} 页 · ${p.parsed_text_chars ?? 0} 字符 · ${p.chunk_count ?? 0} 块${flags.length ? ` · ${flags.length} 个提示` : ""}`
-                    : "解析完成后才会进入证据检索和知识抽取";
+                const authors = (p.authors ?? []).slice(0, 3).join(", ") || "作者信息暂缺";
                 return (
-                  <Tooltip title={detail}>
-                    <Space size={4}>
-                      <StatusBadge status={status} />
-                      {status === "parsed" && <Text type="secondary">{p.chunk_count} 块</Text>}
-                      {flags.length > 0 && <Tag color="gold">{flags.length} 个提示</Tag>}
-                    </Space>
-                  </Tooltip>
+                  <div>
+                    <Typography.Link strong onClick={() => void openPaper(p)}>
+                      {p.title}
+                    </Typography.Link>
+                    <Paragraph type="secondary" ellipsis={{ rows: 1 }} style={{ margin: "4px 0 0" }}>
+                      {authors}
+                    </Paragraph>
+                  </div>
                 );
               },
             },
             {
-              title: "处理状态",
-              key: "processing",
-              width: 270,
+              title: "阅读状态",
+              key: "reading_status",
+              width: 110,
+              render: (_: unknown, p) => {
+                const status = readingByPaper.get(p.id)?.reading_status ?? "unread";
+                const meta = READING_STATUS_META[status];
+                return <Tag color={meta.color}>{meta.label}</Tag>;
+              },
+            },
+            {
+              title: "原文",
+              key: "pdf",
+              width: 260,
               render: (_: unknown, p) => {
                 const states = {
                   parse: paperPipelineStatus(p, p.id, tasks, "parse"),
@@ -389,29 +374,28 @@ export default function PapersSection({ workspaceId, papers, tasks, tasksAvailab
                 } as const;
                 return (
                   <Space direction="vertical" size={2}>
-                    {(Object.entries(states) as [keyof typeof states, PaperPipelineStatus][]).map(([kind, state]) => (
-                      <Tooltip key={kind} title={statusDetail(p, kind, state)}>
-                        <Space size={4}>
-                          <Text type="secondary">{kind === "parse" ? "解析" : kind === "index" ? "全文索引" : "知识提取"}</Text>
-                          <StatusBadge status={state} />
-                        </Space>
-                      </Tooltip>
-                    ))}
+                    {p.primary_artifact_id ? <Tag color="green">PDF 可读</Tag> : <Tag>待上传</Tag>}
+                    <Space wrap size={2}>
+                      {(Object.entries(states) as [keyof typeof states, PaperPipelineStatus][]).map(([kind, state]) => (
+                        <Tag key={kind} color={state === "succeeded" ? "success" : state === "failed" ? "error" : state === "running" ? "processing" : "default"}>
+                          {kind === "parse" ? "解析" : kind === "index" ? "索引" : "知识"}：{state === "succeeded" ? "已完成" : state === "not_applicable" ? "待前置" : state === "running" ? "处理中" : state === "failed" ? "失败" : "待处理"}
+                        </Tag>
+                      ))}
+                    </Space>
                   </Space>
                 );
               },
             },
             {
-              title: "来源",
-              dataIndex: "source",
-              key: "source",
+              title: "进度",
+              key: "progress",
               width: 100,
-              render: (s: string) => <Tag>{s}</Tag>,
+              render: (_: unknown, p) => `第 ${readingByPaper.get(p.id)?.last_read_page ?? 1} 页`,
             },
             {
               title: "操作",
               key: "actions",
-              width: 430,
+              width: 440,
               render: (_: unknown, p) => {
                 const states = {
                   parse: paperPipelineStatus(p, p.id, tasks, "parse"),

@@ -69,6 +69,7 @@ export default function ReadingPage() {
   const [loading, setLoading] = useState(true);
   const [workspacesLoading, setWorkspacesLoading] = useState(true);
   const [processingKey, setProcessingKey] = useState<string | null>(null);
+  const setCurrentWorkspace = useAppStore((state) => state.setCurrentWorkspace);
 
   const load = useCallback(async () => {
     if (workspacesLoading || !workspaceSelectionResolved) return;
@@ -178,6 +179,12 @@ export default function ReadingPage() {
       }, { replace: true });
     }
   }, [currentWorkspaceId, requestedWorkspaceId, setSearchParams, workspaces, workspacesLoading]);
+
+  useEffect(() => {
+    if (!workspaceSelectionResolved || workspaceSelectionError || !workspaceId) return;
+    const workspace = workspaces.find((item) => item.id === workspaceId);
+    setCurrentWorkspace(workspaceId, workspace?.name ?? null);
+  }, [setCurrentWorkspace, workspaceId, workspaceSelectionError, workspaceSelectionResolved, workspaces]);
 
   useEffect(() => {
     void load();
