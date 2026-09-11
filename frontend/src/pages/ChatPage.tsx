@@ -80,6 +80,11 @@ export default function ChatPage() {
   const [agentRuns, setAgentRuns] = useState<AgentRunDetail[]>([]);
   const [agentActionId, setAgentActionId] = useState<string>();
   const messagesRef = useRef<HTMLDivElement>(null);
+  const conversationRequestRef = useRef(0);
+  const foregroundConversationRequestRef = useRef<number | null>(null);
+  const agentRunsRequestRef = useRef(0);
+  const agentPollInFlightRef = useRef(false);
+  const streamingRefreshRef = useRef(false);
   const workspaceNames = Object.fromEntries(workspaces.map((workspace) => [workspace.id, workspace.name]));
   const activeWorkspaceId = conversation?.workspace_id ?? selectedWorkspaceId;
   const activeWorkspaceName = activeWorkspaceId ? workspaceNames[activeWorkspaceId] : undefined;
@@ -91,11 +96,14 @@ export default function ChatPage() {
   }, [conversationId, promptFromReader]);
 
   const loadAgentRuns = useCallback(async (workspaceId: string, targetConversationId: string) => {
+    const requestId = ++agentRunsRequestRef.current;
     try {
       const listed = await agentApi.list(workspaceId, { conversation_id: targetConversationId, limit: 50 });
       const details = await Promise.all(listed.items.map((run) => agentApi.get(workspaceId, run.id)));
+      if (requestId !== agentRunsRequestRef.current) return;
       setAgentRuns(details);
     } catch (error) {
+      if (requestId !== agentRunsRequestRef.current) return;
       message.error(chatErrorMessage(error));
     }
   }, []);
@@ -107,11 +115,33 @@ export default function ChatPage() {
     finally { setHistoryLoading(false); }
   }, [historyQuery]);
 
-  const loadConversation = useCallback(async (id: string) => {
-    setLoadingConversation(true); setConversationError(null);
-    try { const detail = await chatApi.getConversation(id); setConversation(detail.conversation); setMessages(sortChatMessages(detail.messages)); }
-    catch (error) { setConversation(null); setMessages([]); setConversationError(chatErrorMessage(error)); }
-    finally { setLoadingConversation(false); }
+  const loadConversation = useCallback(async (id: string, options: { background?: boolean } = {}) => {
+    const background = options.background === true;
+    const requestId = ++conversationRequestRef.current;
+    if (!background) {
+      foregroundConversationRequestRef.current = requestId;
+      setLoadingConversation(true);
+      setConversationError(null);
+    }
+    try {
+      const detail = await chatApi.getConversation(id);
+      if (requestId !== conversationRequestRef.current) return;
+      setConversation(detail.conversation);
+      setMessages(sortChatMessages(detail.messages));
+    } catch (error) {
+      if (requestId !== conversationRequestRef.current) return;
+      // 后台刷新失败时保留当前消息和证据组件，避免一次瞬时网络错误关闭 Drawer。
+      if (!background) {
+        setConversation(null);
+        setMessages([]);
+        setConversationError(chatErrorMessage(error));
+      }
+    } finally {
+      if (!background && foregroundConversationRequestRef.current === requestId) {
+        foregroundConversationRequestRef.current = null;
+        setLoadingConversation(false);
+      }
+    }
   }, []);
 
   useEffect(() => { const timer = window.setTimeout(() => void loadHistory(), 180); return () => window.clearTimeout(timer); }, [loadHistory]);
@@ -120,8 +150,25 @@ export default function ChatPage() {
 // P0.5-1：SSE 流进行期间不能在这里重新加载 conversation——此时后端只有空的
 // "generating" assistant 记录，用数据库行（真实 id）替换 optimistic
 //（local-stream-*）消息会使 appendDelta 找不到它，UI 因而看起来像只响应一次。
-// send() 流结束后会关闭 streaming 标记，此 effect 再加载持久化的完整消息。
-  useEffect(() => { if (streaming) return; if (conversationId) void loadConversation(conversationId); else { setConversation(null); setMessages([]); setConversationError(null); } }, [conversationId, loadConversation, streaming]);
+// 流结束后的刷新使用后台模式，保留已打开的证据 Drawer 和消息组件。
+  useEffect(() => {
+    if (streaming) {
+      streamingRefreshRef.current = true;
+      return;
+    }
+    if (conversationId) {
+      const background = streamingRefreshRef.current;
+      streamingRefreshRef.current = false;
+      void loadConversation(conversationId, { background });
+    } else {
+      streamingRefreshRef.current = false;
+      conversationRequestRef.current += 1;
+      foregroundConversationRequestRef.current = null;
+      setConversation(null);
+      setMessages([]);
+      setConversationError(null);
+    }
+  }, [conversationId, loadConversation, streaming]);
   useEffect(() => { if (conversation) setSelectedWorkspaceId(conversation.workspace_id ?? undefined); }, [conversation]);
   useEffect(() => { const node = messagesRef.current; if (node) node.scrollTop = node.scrollHeight; }, [messages, sending]);
   useEffect(() => {
@@ -156,13 +203,27 @@ export default function ChatPage() {
   }, [independentMode, mode]);
   useEffect(() => {
     if (conversationId && activeWorkspaceId) void loadAgentRuns(activeWorkspaceId, conversationId);
-    else setAgentRuns([]);
+    else {
+      agentRunsRequestRef.current += 1;
+      setAgentRuns([]);
+    }
   }, [activeWorkspaceId, conversationId, loadAgentRuns]);
+  const hasActiveAgentRun = agentRuns.some((run) => ["queued", "running"].includes(run.status));
   useEffect(() => {
-    if (!conversationId || !activeWorkspaceId || !agentRuns.some((run) => ["queued", "running"].includes(run.status))) return;
-    const timer = window.setInterval(() => { void loadConversation(conversationId); void loadAgentRuns(activeWorkspaceId, conversationId); }, 1800);
+    if (!conversationId || !activeWorkspaceId || !hasActiveAgentRun) return;
+    const poll = () => {
+      if (agentPollInFlightRef.current) return;
+      agentPollInFlightRef.current = true;
+      void Promise.all([
+        loadConversation(conversationId, { background: true }),
+        loadAgentRuns(activeWorkspaceId, conversationId),
+      ]).finally(() => {
+        agentPollInFlightRef.current = false;
+      });
+    };
+    const timer = window.setInterval(poll, 1800);
     return () => window.clearInterval(timer);
-  }, [activeWorkspaceId, agentRuns, conversationId, loadAgentRuns, loadConversation]);
+  }, [activeWorkspaceId, conversationId, hasActiveAgentRun, loadAgentRuns, loadConversation]);
 
   const selectConversation = (item: ChatConversation) => { navigate(chatConversationPath(item)); setImageInputs([]); setHistoryOpen(false); };
   const newConversation = () => { navigate(routeWorkspaceId ? `/workspaces/${routeWorkspaceId}/assistant` : "/chat/new"); setInput(""); setImageInputs([]); setHistoryOpen(false); };
@@ -209,7 +270,7 @@ export default function ChatPage() {
         input: agentInput,
       });
       if (!conversationId) navigate(`/workspaces/${wsId}/assistant/${targetConversationId}`, { replace: true });
-      await Promise.all([loadConversation(targetConversationId), loadAgentRuns(wsId, targetConversationId)]);
+      await Promise.all([loadConversation(targetConversationId, { background: true }), loadAgentRuns(wsId, targetConversationId)]);
       const agentLabel = mode === "research_plan" ? "研究计划" : mode === "code_generation" ? "代码生成" : mode === "analyze" ? "结果分析" : mode === "write" ? "论文写作" : mode === "respond" ? "审稿回复" : "Agent";
       message.success(`${agentLabel} Agent 已启动`);
       setAgentActionId(run.id);
@@ -375,7 +436,7 @@ export default function ChatPage() {
   const refreshAgent = async (run: AgentRunDetail) => {
     if (!activeWorkspaceId) return;
     setAgentActionId(run.id);
-    try { await Promise.all([loadAgentRuns(activeWorkspaceId, run.conversation_id ?? conversationId ?? ""), conversationId ? loadConversation(conversationId) : Promise.resolve()]); }
+    try { await Promise.all([loadAgentRuns(activeWorkspaceId, run.conversation_id ?? conversationId ?? ""), conversationId ? loadConversation(conversationId, { background: true }) : Promise.resolve()]); }
     finally { setAgentActionId(undefined); }
   };
   const confirmAgent = async (run: AgentRunDetail) => {
@@ -421,7 +482,7 @@ export default function ChatPage() {
             input: { research_plan_id: repairPlanId, framework: "PyTorch", repair_parent_run_id: run.id },
           });
           message.success("候选修复已启动；原代码不会被覆盖");
-          await Promise.all([loadConversation(repairConversationId), loadAgentRuns(activeWorkspaceId, repairConversationId)]);
+          await Promise.all([loadConversation(repairConversationId, { background: true }), loadAgentRuns(activeWorkspaceId, repairConversationId)]);
           setAgentActionId(child.id);
           window.setTimeout(() => setAgentActionId(undefined), 500);
         } catch (error) {
@@ -440,7 +501,7 @@ export default function ChatPage() {
     if (!conversationId) return;
     setRetryingId(failed.id);
     try { const result = await chatApi.retryMessage(conversationId, failed.id); setConversation(result.conversation); setMessages((current) => current.map((item) => item.id === failed.id ? result.assistant_message : item)); void loadHistory(); }
-    catch (error) { message.error(chatErrorMessage(error)); void loadConversation(conversationId); }
+    catch (error) { message.error(chatErrorMessage(error)); void loadConversation(conversationId, { background: true }); }
     finally { setRetryingId(undefined); }
   };
 
