@@ -45,7 +45,7 @@ function errorMessage(error: unknown): string {
 function statusColor(status: string): string {
   if (["succeeded", "confirmed", "edited_confirmed", "verified"].includes(status)) return "green";
   if (["failed", "cancelled", "rejected", "verification_failed"].includes(status)) return "red";
-  if (["waiting_for_user", "waiting_for_fulltext", "needs_more_evidence", "reviewable_with_warning", "verification_incomplete", "verified_with_warnings", "deferred"].includes(status)) return "orange";
+  if (["waiting_for_user", "waiting_for_fulltext", "needs_more_evidence", "reviewable_with_warning", "human_confirmable_pending_validation", "verification_incomplete", "verified_with_warnings", "deferred"].includes(status)) return "orange";
   return "blue";
 }
 
@@ -193,10 +193,10 @@ function pdfAcquisitionLabel(candidate: DiscoverExternalCandidate): string | nul
   return null;
 }
 
-function gateDetails(sourcePayload: Record<string, unknown>): { verified: boolean; confirmable: boolean; blockingMissing: string[]; warnings: string[]; missing: string[]; reason?: string } | null {
+function gateDetails(sourcePayload: Record<string, unknown>): { verified: boolean; confirmable: boolean; humanConfirmable: boolean; blockingMissing: string[]; warnings: string[]; missing: string[]; reason?: string } | null {
   const value = sourcePayload.gate;
   if (!value || typeof value !== "object") return null;
-  const gate = value as { verified?: unknown; confirmable?: unknown; blocking_missing?: unknown; warnings?: unknown; missing?: unknown; reason?: unknown };
+  const gate = value as { verified?: unknown; confirmable?: unknown; human_confirmable?: unknown; blocking_missing?: unknown; warnings?: unknown; missing?: unknown; reason?: unknown };
   const missing = Array.isArray(gate.missing) ? gate.missing.filter((item): item is string => typeof item === "string") : [];
   const blockingMissing = Array.isArray(gate.blocking_missing)
     ? gate.blocking_missing.filter((item): item is string => typeof item === "string")
@@ -207,6 +207,7 @@ function gateDetails(sourcePayload: Record<string, unknown>): { verified: boolea
   return {
     verified: gate.verified === true,
     confirmable: gate.confirmable === true || (blockingMissing.length === 0 && (gate.verified === true || warnings.length > 0)),
+    humanConfirmable: gate.human_confirmable !== false,
     blockingMissing,
     warnings,
     missing,
@@ -216,7 +217,7 @@ function gateDetails(sourcePayload: Record<string, unknown>): { verified: boolea
 
 function opportunityStatus(item: ResearchOpportunity): string {
   const gate = gateDetails(item.source_payload);
-  if (item.status === "needs_more_evidence" && gate?.confirmable) return "reviewable_with_warning";
+  if (item.status === "needs_more_evidence" && gate?.humanConfirmable) return "human_confirmable_pending_validation";
   return item.status;
 }
 
@@ -622,7 +623,8 @@ function AlertText({ text }: { text: string }) {
 function OpportunityPanel({ workspaceId, detail, loading, onAction, onEdit, onConvert, onReassess }: { workspaceId: string; detail: OpportunityDetail; loading: boolean; onAction: (action: "confirm" | "reject" | "defer") => void; onEdit: () => void; onConvert: () => void; onReassess: () => void }) {
   const version = detail.current_version;
   const gate = gateDetails(detail.opportunity.source_payload);
-  const confirmable = gate?.confirmable ?? detail.opportunity.status !== "needs_more_evidence";
+  const evidenceGatePassed = gate?.confirmable === true;
+  const humanConfirmable = gate?.humanConfirmable ?? detail.opportunity.status !== "rejected";
   const supporting = detail.evidence.filter((item) => item.relation === "supports");
   const similar = detail.evidence.filter((item) => item.relation === "similar");
   const counter = detail.evidence.filter((item) => ["contradicts", "qualifies", "overlaps", "unknown"].includes(item.relation));
@@ -631,9 +633,10 @@ function OpportunityPanel({ workspaceId, detail, loading, onAction, onEdit, onCo
   const decisionColor = (action: string) => ({ confirm: "green", edit_confirm: "blue", reject: "red", defer: "orange" }[action] ?? "default");
   return <Space direction="vertical" style={{ width: "100%" }}>
     <Space wrap><Tag color={statusColor(opportunityStatus(detail.opportunity))}>{opportunityStatusLabel(opportunityStatus(detail.opportunity))}</Tag><Tag color={statusColor(version?.verification_status || "unverified")}>{verificationDisplayLabel(version?.verification_status)}</Tag><Tag>证据覆盖率 {Math.round((version?.evidence_coverage || 0) * 100)}%</Tag><Tag>智能体置信度 {Math.round(detail.opportunity.confidence * 100)}%</Tag></Space>
-    <Alert type="info" showIcon message="置信度不等于证据覆盖率" description="智能体置信度只是候选排序信号；是否可以确认，以独立全文证据、证据门、核验状态和人工决策为准。" />
-    {!confirmable && <Alert type="warning" showIcon message="该研究机会目前还不能确认" description={gate?.blockingMissing.length ? <List size="small" dataSource={gate.blockingMissing} renderItem={(item) => <List.Item>{gateMessageLabel(item)}</List.Item>} /> : gateMessageLabel(gate?.reason || "核心证据门槛尚未满足。") } action={supporting.length ? <Button size="small" onClick={onReassess} loading={loading}>重新评估证据</Button> : undefined} />}
-    {confirmable && gate?.warnings.length ? <Alert type="info" showIcon message="可以确认，但仍有核验警告" description={<List size="small" dataSource={gate.warnings} renderItem={(item) => <List.Item>{gateMessageLabel(item)}</List.Item>} />} /> : null}
+    <Alert type="info" showIcon message="人工确认研究方向，不等于证据已经验证" description="智能体置信度和证据覆盖率用于提示核验程度。确认表示你选择将该方向推进到研究计划，候选假设仍需通过后续实验验证。" />
+    {!humanConfirmable && <Alert type="warning" showIcon message="该研究机会目前不能人工确认" description="当前候选缺少可确认的研究版本。" />}
+    {humanConfirmable && gate && !evidenceGatePassed && <Alert type="warning" showIcon message="证据尚未充分，但可以人工确认并进入实验验证" description={<Space direction="vertical" size={4}><Text>这不是已验证的科学结论。请在确认后依据验证方案开展实验，并将结果作为后续判断依据。</Text>{gate.blockingMissing.length ? <List size="small" dataSource={gate.blockingMissing} renderItem={(item) => <List.Item>{gateMessageLabel(item)}</List.Item>} /> : gateMessageLabel(gate.reason || "核心证据门槛尚未满足。")}</Space>} action={supporting.length ? <Button size="small" onClick={onReassess} loading={loading}>重新评估证据</Button> : undefined} />}
+    {humanConfirmable && gate && evidenceGatePassed && gate.warnings.length ? <Alert type="info" showIcon message="可以确认，但仍有核验警告" description={<List size="small" dataSource={gate.warnings} renderItem={(item) => <List.Item>{gateMessageLabel(item)}</List.Item>} />} /> : null}
     <EvidencePassportCard manifest={detail.evidence_manifest} />
     <Divider orientation="left">概述</Divider><Paragraph>{localizedGeneratedText(version?.problem_statement || detail.opportunity.summary)}</Paragraph>
     <Descriptions column={1} size="small"><Descriptions.Item label="研究范围">{localizedGeneratedText(version?.research_scope)}</Descriptions.Item><Descriptions.Item label="现有工作为何不足">{localizedGeneratedText(version?.why_existing_work_is_insufficient || detail.opportunity.rationale)}</Descriptions.Item><Descriptions.Item label="研究问题">{localizedGeneratedText(version?.candidate_research_question)}</Descriptions.Item><Descriptions.Item label="候选假设">{localizedGeneratedText(version?.candidate_hypothesis)}</Descriptions.Item></Descriptions>
@@ -642,7 +645,7 @@ function OpportunityPanel({ workspaceId, detail, loading, onAction, onEdit, onCo
     <EvidenceGroup workspaceId={workspaceId} title={`相似工作（${similar.length}）`} items={similar} empty="暂无已保存的相似工作" />
     <EvidenceGroup workspaceId={workspaceId} title={`反证／限定性证据（${counter.length}）`} items={counter} empty="暂无已保存的反证或限定性证据" />
     <Divider orientation="left">验证方案</Divider><List size="small" dataSource={(version?.candidate_validation_plan?.steps as string[]) || []} renderItem={(step) => <List.Item>{localizedGeneratedText(step)}</List.Item>} locale={{ emptyText: "暂无结构化验证步骤" }} />
-    <Divider orientation="left">人工决策</Divider><Space wrap><Button danger onClick={() => onAction("reject")} loading={loading}>驳回</Button><Button onClick={() => onAction("defer")} loading={loading}>暂缓</Button><Button onClick={onEdit} loading={loading} disabled={!confirmable}>编辑并确认</Button><Button type="primary" onClick={() => onAction("confirm")} loading={loading} disabled={!confirmable}>确认</Button>{["confirmed", "edited_confirmed"].includes(detail.opportunity.status) && <Button onClick={onConvert} loading={loading}>生成研究计划</Button>}</Space>
+    <Divider orientation="left">人工决策</Divider><Space wrap><Button danger onClick={() => onAction("reject")} loading={loading}>驳回</Button><Button onClick={() => onAction("defer")} loading={loading}>暂缓</Button><Button onClick={onEdit} loading={loading} disabled={!humanConfirmable}>编辑并确认</Button><Button type="primary" onClick={() => onAction("confirm")} loading={loading} disabled={!humanConfirmable}>确认研究方向</Button>{["confirmed", "edited_confirmed"].includes(detail.opportunity.status) && <Button onClick={onConvert} loading={loading}>生成研究计划</Button>}</Space>
     <Divider orientation="left">决策历史（HITL 追溯）</Divider>
     {detail.decisions.length === 0
       ? <Text type="secondary">暂无人工决策记录；每次确认 / 编辑确认 / 驳回 / 暂缓都会在此留痕，并同步写入工作区时间线。</Text>

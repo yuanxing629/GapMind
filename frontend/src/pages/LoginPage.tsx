@@ -33,11 +33,11 @@ export default function LoginPage() {
         <span className="gm-auth-kicker">GAPMIND / RESEARCH WORKSPACE</span>
         <Title>让每个研究判断，<br />都能回到证据。</Title>
         <Paragraph>
-          从文献、知识与研究机会，到可验证的计划。登录后继续你的研究上下文，邀请成员共同推进同一个课题空间。
+          从文献、知识与研究机会，到可验证的计划
         </Paragraph>
-        <div className="gm-auth-proof">
-          <span>01</span><span>Evidence-linked workspace</span>
-        </div>
+        {/*<div className="gm-auth-proof">*/}
+        {/*  <span>01</span><span>Evidence-linked workspace</span>*/}
+        {/*</div>*/}
       </section>
       <section className="gm-auth-panel">
         <div className="gm-auth-card">

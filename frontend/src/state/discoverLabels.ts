@@ -36,6 +36,7 @@ const OPPORTUNITY_STATUS_LABELS: Record<string, string> = {
   candidate: "候选",
   needs_more_evidence: "需要更多证据",
   reviewable_with_warning: "可审阅（有核验警告）",
+  human_confirmable_pending_validation: "可人工确认（待验证）",
   confirmed: "已确认",
   edited_confirmed: "编辑后确认",
   rejected: "已驳回",

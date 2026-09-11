@@ -494,7 +494,7 @@ def test_incomplete_gate_does_not_cap_agent_confidence() -> None:
     assert candidate["evidence_coverage"] == 0.25
 
 
-def test_external_warning_allows_human_confirmation_but_core_failure_does_not(db_session) -> None:
+def test_incomplete_evidence_gate_still_allows_human_confirmation(db_session) -> None:
     workspace_id = str(uuid4())
     workspace = Workspace(id=workspace_id, name="Human review workspace", is_archived=False)
     opportunity = ResearchOpportunity(
@@ -594,8 +594,7 @@ def test_external_warning_allows_human_confirmation_but_core_failure_does_not(db
     workflow._require_confirmable(opportunity, version)
 
     opportunity.source_payload = {"gate": {"missing": ["counter evidence status is degraded"]}}
-    with pytest.raises(DiscoverGateError):
-        workflow._require_confirmable(opportunity, version)
+    workflow._require_confirmable(opportunity, version)
 
 
 def test_candidate_relevance_does_not_fall_back_to_broad_topic_results(db_session) -> None:

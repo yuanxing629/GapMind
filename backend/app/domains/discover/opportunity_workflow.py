@@ -734,42 +734,16 @@ class OpportunityWorkflow:
         return version
 
     def _require_confirmable(self, item: ResearchOpportunity, version: OpportunityVersion) -> None:
-        evidence_rows = list(
-            self.db.execute(
-                select(OpportunityEvidence).where(
-                    OpportunityEvidence.opportunity_version_id == version.id,
-                    OpportunityEvidence.relation == "supports",
-                    OpportunityEvidence.judgement == "supports",
-                    OpportunityEvidence.evidence_level == "full_text",
-                )
-            ).scalars()
-        )
-        independent_papers = {
-            ev.paper_id
-            for ev in evidence_rows
-            if ev.paper_id and ev.evidence_span_id and ev.artifact_id
-        }
-        gate = (item.source_payload or {}).get("gate")
-        blocking_missing: list[str] = []
-        if isinstance(gate, dict):
-            raw_blocking = gate.get("blocking_missing")
-            if isinstance(raw_blocking, list):
-                blocking_missing = [value for value in raw_blocking if isinstance(value, str)]
-            else:
-                raw_missing = gate.get("missing")
-                if isinstance(raw_missing, list):
-                    blocking_missing = [
-                        value
-                        for value in raw_missing
-                        if isinstance(value, str)
-                        and value != "external verification did not complete"
-                    ]
-        elif version.verification_status not in {"verified", "verified_with_warnings"}:
-            blocking_missing = [f"verification status is {version.verification_status}"]
-        if version.evidence_coverage < 0.6 or len(independent_papers) < 2 or blocking_missing:
+        """确认研究方向，不将证据门误当作实验结论门槛。
+
+        ``version`` 已由 ``_current_version`` 校验属于当前 Workspace 的 opportunity。
+        证据门仍会记录 ``verified``、覆盖率和核验状态，但低置信度或证据不足的候选
+        可以由用户明确确认后进入研究计划，最终有效性由后续实验验证。
+        """
+        if item.status == "rejected":
             raise DiscoverGateError(
-                "insufficient_full_text_evidence",
-                "At least two independent full-text evidence papers are required before confirmation",
+                "rejected_opportunity",
+                "A rejected opportunity cannot be confirmed",
             )
 
 

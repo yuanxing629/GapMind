@@ -43,6 +43,14 @@ class AgentInputError(ValueError):
     pass
 
 
+class AgentOutputTruncatedError(AgentInputError):
+    """结构化 Agent 输出达到 token 上限且未形成完整 JSON。"""
+
+    def __init__(self, message: str, usage: dict[str, int]) -> None:
+        super().__init__(message)
+        self.usage = usage
+
+
 class AgentConflictError(RuntimeError):
     pass
 
@@ -66,6 +74,9 @@ PLAN_OPTIONAL_AGENT_TYPES = {"analyze", "write", "respond"}
 # 代码生成 Phase A（docs/0819_code_generation_improvement.md）：
 # 先生成 blueprint，然后每个文件执行一次有界 LLM 调用。
 CODE_BLUEPRINT_MAX_FILES = 8
+
+# 深度研究需要同时返回方法、公式和实验设计；5200 对长研究计划容易截断。
+DEEP_RESEARCH_MAX_OUTPUT_TOKENS = 8000
 
 # CodeRAG-lite（Phase B1）：在生成前对 workspace chunks 做 facet，使模型获得
 # method/formula/hyperparam/preprocessing grounding，而不是只有一个 query。
@@ -528,7 +539,29 @@ class AgentService:
 
         self._transition(run, "running", "deep_synthesis", 0.55)
         prompt = self._deep_research_prompt(run, plan_snapshot, evidence)
-        raw, usage = self._structured_completion(prompt, max_tokens=5200)
+        try:
+            raw, usage = self._structured_completion(
+                prompt, max_tokens=DEEP_RESEARCH_MAX_OUTPUT_TOKENS
+            )
+        except AgentOutputTruncatedError as exc:
+            # 仅对明确的长度截断重试；网络错误、供应商错误和结构校验错误仍直接失败。
+            retry_prompt = (
+                f"{prompt}\n\n"
+                "上一轮输出因 token 上限被截断，必须从头重新输出完整 JSON。请严格压缩："
+                "每个 string 数组最多 3 项，每项不超过 120 字；modules、algorithm_steps、"
+                "implementation_details、ablations、statistical_tests 最多各 4 项；"
+                "formulas 恰好 2 项，每项 explanation 和 symbols 不超过 160 字；"
+                "所有普通说明字段不超过 300 字。不得省略必需字段，不得输出 Markdown 围栏，"
+                "确保最后一个 JSON 括号闭合。"
+            )
+            retry_raw, retry_usage = self._structured_completion(
+                retry_prompt, max_tokens=DEEP_RESEARCH_MAX_OUTPUT_TOKENS
+            )
+            raw = retry_raw
+            usage = {
+                key: exc.usage.get(key, 0) + retry_usage.get(key, 0)
+                for key in ("prompt_tokens", "completion_tokens", "total_tokens")
+            }
         normalized = self._normalize_deep_research(raw, plan_snapshot, evidence)
         run.context_snapshot = {
             **dict(run.context_snapshot or {}),
@@ -1647,7 +1680,14 @@ class AgentService:
             except (AttributeError, IndexError, TypeError):
                 finish_reason = None
             if finish_reason == "length":
-                raise AgentInputError("模型输出被 max_tokens 截断，JSON 不完整")
+                raise AgentOutputTruncatedError(
+                    "模型输出被 max_tokens 截断，JSON 不完整",
+                    {
+                        "prompt_tokens": response.prompt_tokens,
+                        "completion_tokens": response.completion_tokens,
+                        "total_tokens": response.total_tokens,
+                    },
+                )
 # 展示原始末尾内容，以便从日志诊断真实失败
             snippet = response.content[-300:].replace("\n", " ")[:300]
             raise AgentInputError(
@@ -1706,6 +1746,11 @@ class AgentService:
             "baselines(string[]), metrics(string[]), ablations(string[]), statistical_tests(string[]), "
             "expected_supporting_results(string[]), falsification_criteria(string[])。"
             "数据集、基线和指标应尽可能具体；如果证据不足，应标记为“建议/暂定”并说明选择依据。"
+            "为保证 JSON 完整，supporting_findings、counter_findings、unresolved_questions、"
+            "recommended_methodology、experiment_plan、risk_register、next_actions 每项最多 3 条且"
+            "每条不超过 120 字；modules、algorithm_steps、implementation_details、ablations、"
+            "statistical_tests 每项最多 4 条；formulas 恰好 2 条，每条 explanation 和 symbols 不超过 160 字；"
+            "普通说明字段不超过 300 字。"
             "title 必须是简洁陈述式中文标题，所有叙述字段使用中文。\n\n"
             f"用户补充目标：{run.input_payload.get('prompt')}\n"
             f"冻结研究计划：{json.dumps(plan_snapshot, ensure_ascii=False)}\n"

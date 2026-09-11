@@ -1438,6 +1438,8 @@ class DiscoverService(OpportunityWorkflow):
         return {
             "verified": verified,
             "confirmable": confirmable,
+            # 证据门决定核验状态，不决定用户是否可以确认一个待实验验证的研究方向。
+            "human_confirmable": True,
             "independent_full_text_papers": len(seen_papers),
             "supporting_evidence_count": len(valid),
             "supporting_status": supporting.status,
