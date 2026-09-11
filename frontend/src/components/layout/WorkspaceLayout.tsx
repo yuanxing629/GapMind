@@ -36,7 +36,6 @@ export default function WorkspaceLayout() {
     reloadWorkspace()
       .catch(() => setWorkspace(null))
       .finally(() => setLoading(false));
-    return () => setCurrentWorkspace(null, null);
   }, [reloadWorkspace, setCurrentWorkspace]);
 
   if (loading) return <div className="gm-loading"><Spin tip="正在加载课题" /></div>;

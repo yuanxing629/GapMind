@@ -1,5 +1,6 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import authApi, { type AuthUser } from "../api/auth";
+import { useAppStore } from "../store/appStore";
 
 interface AuthContextValue {
   user: AuthUser | null;
@@ -16,26 +17,31 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const setCurrentWorkspace = useAppStore((state) => state.setCurrentWorkspace);
 
-  const refresh = async () => {
+  const refresh = useCallback(async () => {
     try {
       const current = await authApi.me();
       setUser(current);
       return current;
     } catch {
       setUser(null);
+      setCurrentWorkspace(null, null);
       return null;
     } finally {
       setLoading(false);
     }
-  };
+  }, [setCurrentWorkspace]);
 
   useEffect(() => {
-    const handleExpired = () => setUser(null);
+    const handleExpired = () => {
+      setUser(null);
+      setCurrentWorkspace(null, null);
+    };
     window.addEventListener("gm-auth-expired", handleExpired);
     void refresh();
     return () => window.removeEventListener("gm-auth-expired", handleExpired);
-  }, []);
+  }, [refresh, setCurrentWorkspace]);
 
   const value = useMemo<AuthContextValue>(() => ({
     user,
@@ -43,12 +49,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isAuthenticated: user !== null,
     login: async (email, password) => {
       const response = await authApi.login(email, password);
+      setCurrentWorkspace(null, null);
       setUser(response.user);
       setLoading(false);
       return response.user;
     },
     acceptInvite: async (token, password, displayName) => {
       const response = await authApi.acceptInvite(token, password, displayName);
+      setCurrentWorkspace(null, null);
       setUser(response.user);
       setLoading(false);
       return response.user;
@@ -58,10 +66,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await authApi.logout();
       } finally {
         setUser(null);
+        setCurrentWorkspace(null, null);
       }
     },
     refresh,
-  }), [loading, user]);
+  }), [loading, refresh, setCurrentWorkspace, user]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
