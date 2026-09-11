@@ -6,6 +6,7 @@ import io
 import json
 import zipfile
 from dataclasses import dataclass
+from types import SimpleNamespace
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -33,6 +34,7 @@ class FakeResponse:
     prompt_tokens: int = 20
     completion_tokens: int = 30
     total_tokens: int = 50
+    raw: object | None = None
 
 
 class FakeGateway:
@@ -45,18 +47,35 @@ class FakeGateway:
         rubric_payload: dict | None = None,
         invalid_first_file: bool = False,
         fail_paths: set[str] | None = None,
+        truncate_deep_first: bool = False,
     ) -> None:
         self.payload = payload
         self.blueprint_payload = blueprint_payload
         self.rubric_payload = rubric_payload
         self.invalid_first_file = invalid_first_file
         self.fail_paths = fail_paths or set()
+        self.truncate_deep_first = truncate_deep_first
+        self.deep_truncated = False
         self.file_calls = 0
         self.calls: list[str] = []
 
     def chat_completion(self, messages, **kwargs):
         user_prompt = messages[-1]["content"] if messages else ""
         self.calls.append(user_prompt)
+        if (
+            self.truncate_deep_first
+            and "严谨的深度研究 Agent" in user_prompt
+            and not self.deep_truncated
+        ):
+            self.deep_truncated = True
+            return FakeResponse(
+                '{"title":"截断',
+                completion_tokens=8000,
+                total_tokens=8020,
+                raw=SimpleNamespace(
+                    choices=[SimpleNamespace(finish_reason="length")]
+                ),
+            )
         if self.blueprint_payload is not None and "只做设计" in user_prompt:
             payload = self.blueprint_payload
         elif self.rubric_payload is not None and "覆盖度自检" in user_prompt:
@@ -257,7 +276,8 @@ def test_deep_research_agent_binds_plan_generates_grounded_report_and_waits_for_
             "risk_register": ["证据仅来自一个工作区片段"],
             "next_actions": ["补充第二个独立数据集"],
             "evidence_refs": ["W1", "NOT_REAL"],
-        }
+        },
+        truncate_deep_first=True,
     )
     AgentService(db_session, gateway=gateway).execute(run_id)
 
@@ -272,6 +292,7 @@ def test_deep_research_agent_binds_plan_generates_grounded_report_and_waits_for_
     assert detail["result"]["evidence_refs"] == ["W1"]
     assert len(detail["result"]["proposed_method"]["formulas"]) == 2
     assert detail["result"]["experimental_design"]["datasets"] == ["Cora", "Citeseer"]
+    assert len(gateway.calls) == 2
     assert "数学定义与候选公式" in detail["artifacts"][0]["content"]
     assert detail["artifacts"][0]["filename"] == "deep_research_report.md"
 

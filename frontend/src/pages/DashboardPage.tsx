@@ -36,6 +36,7 @@ export default function DashboardPage() {
   const [summaries, setSummaries] = useState<WorkspaceSummary[]>([]);
   const [recommendations, setRecommendations] = useState<DashboardRecommendationEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [workspaceLoadFailed, setWorkspaceLoadFailed] = useState(false);
   const recommendationRequestIdRef = useRef(0);
   const recommendationEntriesRef = useRef(new Map<string, DashboardRecommendationEntry[]>());
 
@@ -55,8 +56,9 @@ export default function DashboardPage() {
   const setCurrentWorkspace = useAppStore((state) => state.setCurrentWorkspace);
 
   useEffect(() => {
+    if (loading || workspaceLoadFailed) return;
     setCurrentWorkspace(activeSummary?.workspace.id ?? null, activeSummary?.workspace.name ?? null);
-  }, [activeSummary, setCurrentWorkspace]);
+  }, [activeSummary, loading, setCurrentWorkspace, workspaceLoadFailed]);
 
   const loadRecommendations = useCallback((workspaces: Workspace[]) => {
 // 来源到达后立即渲染。冷 workspace 可以等待 S2，同时 Demo workspace 的
@@ -85,8 +87,20 @@ export default function DashboardPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setWorkspaceLoadFailed(false);
     try {
-      const workspaces = (await workspaceApi.list({ limit: 8 })).items;
+      const listedWorkspaces = (await workspaceApi.list({ limit: 8 })).items;
+      let workspaces = listedWorkspaces;
+      if (currentWorkspaceId && !listedWorkspaces.some((workspace) => workspace.id === currentWorkspaceId)) {
+        try {
+          const currentWorkspace = await workspaceApi.get(currentWorkspaceId);
+          if (!currentWorkspace.is_archived && currentWorkspace.name !== "__independent__") {
+            workspaces = [currentWorkspace, ...listedWorkspaces];
+          }
+        } catch {
+          // 当前课题已失效或不可访问，后续由候选课题回退逻辑处理。
+        }
+      }
       const next = await Promise.all(workspaces.map(async (workspace) => {
 // 单一来源的 readiness 提供精确计数；对象级请求只保留给“需要关注”的操作列表。
         const [readiness, tasks, runs, opportunities] = await Promise.allSettled([
@@ -113,10 +127,11 @@ export default function DashboardPage() {
     } catch {
       setSummaries([]);
       setRecommendations([]);
+      setWorkspaceLoadFailed(true);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [currentWorkspaceId, loadRecommendations]);
 
   useEffect(() => { void load(); }, [load]);
 
