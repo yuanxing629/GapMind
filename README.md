@@ -28,9 +28,10 @@ AI 输出默认是候选或草稿，不会自动成为科学事实；资料不�
 ```
 GapMind/
 ├── backend/        # FastAPI 后端和 Celery Worker
+├── config/         # 配置文件
+├── evaluation/     # 评测
 ├── frontend/       # React + Vite 前端
-├── infra/          # 本地基础设施的 Docker Compose 配置
-└── docs/           # 架构和规划文档
+└── README.md       # 本文件
 ```
 
 ## 快速开始（Phase 0）
